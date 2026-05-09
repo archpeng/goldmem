@@ -6,7 +6,7 @@ export interface PermissionEngine {
 
 export class DefaultPermissionEngine implements PermissionEngine {
   async applyDefaultVisibility(plan: MemoryPlan): Promise<MemoryPlan> {
-    const next: MemoryPlan = structuredClone(plan);
+    const next = clonePlan(plan);
 
     for (const event of next.events) {
       if (event.riskLevel === "normal") {
@@ -34,4 +34,8 @@ export class DefaultPermissionEngine implements PermissionEngine {
 
     return next;
   }
+}
+
+function clonePlan(plan: MemoryPlan): MemoryPlan {
+  return JSON.parse(JSON.stringify(plan)) as MemoryPlan;
 }
