@@ -1,0 +1,24 @@
+{
+  "name": "@goldmem/memory-kernel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint: memory-kernel'",
+    "test": "echo 'test: memory-kernel'",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@goldmem/memory-schema": "workspace:*",
+    "@goldmem/model-gateway": "workspace:*",
+    "@goldmem/memory-store": "workspace:*",
+    "@goldmem/reminder-engine": "workspace:*",
+    "@goldmem/risk-engine": "workspace:*",
+    "@goldmem/permission-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
