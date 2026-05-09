@@ -28,6 +28,8 @@ export const ReminderStatusSchema = z.enum([
   "expired",
 ]);
 export const VisibilitySchema = z.enum(["private", "shared_summary", "shared_full", "family_required"]);
+export const ContextLinkTypeSchema = z.enum(["possibly_related", "fills_missing_time"]);
+export const ContextLinkStatusSchema = z.enum(["active", "needs_confirmation", "rejected"]);
 
 export const EvidenceRefSchema = z.object({
   sourceId: z.string().min(1),
@@ -177,6 +179,19 @@ export const MemoryUpdateDraftSchema = z.object({
 });
 export type MemoryUpdateDraft = z.infer<typeof MemoryUpdateDraftSchema>;
 
+export const ContextLinkDraftSchema = z.object({
+  fromEventIndex: z.number().int().nonnegative(),
+  toEventId: z.string().min(1).optional(),
+  toEventIndex: z.number().int().nonnegative().optional(),
+  reminderId: z.string().min(1).optional(),
+  type: ContextLinkTypeSchema,
+  confidence: z.number().min(0).max(1),
+  status: ContextLinkStatusSchema.default("needs_confirmation"),
+  reason: z.string().min(1),
+  evidence: z.array(EvidenceRefSchema).min(1),
+});
+export type ContextLinkDraft = z.infer<typeof ContextLinkDraftSchema>;
+
 export const UncertaintySchema = z.object({
   field: z.string().min(1),
   description: z.string().min(1),
@@ -192,6 +207,7 @@ export const MemoryPlanSchema = z.object({
   reminderCandidates: z.array(ReminderCandidateDraftSchema).default([]),
   riskFlags: z.array(RiskFlagSchema).default([]),
   familyTasks: z.array(FamilyConfirmationTaskDraftSchema).default([]),
+  contextLinks: z.array(ContextLinkDraftSchema).default([]),
   memoryUpdates: z.array(MemoryUpdateDraftSchema).default([]),
   uncertainties: z.array(UncertaintySchema).default([]),
   evidence: z.array(EvidenceRefSchema).default([]),
@@ -212,6 +228,21 @@ export const MemoryEventSchema = MemoryEventDraftSchema.extend({
   createdAt: ISODateTimeSchema,
 });
 export type MemoryEvent = z.infer<typeof MemoryEventSchema>;
+
+export const MemoryContextLinkSchema = z.object({
+  id: z.string().min(1),
+  elderId: z.string().min(1),
+  fromEventId: z.string().min(1),
+  toEventId: z.string().min(1),
+  reminderId: z.string().min(1).optional(),
+  type: ContextLinkTypeSchema,
+  status: ContextLinkStatusSchema,
+  confidence: z.number().min(0).max(1),
+  reason: z.string().min(1),
+  evidence: z.array(EvidenceRefSchema).min(1),
+  createdAt: ISODateTimeSchema,
+});
+export type MemoryContextLink = z.infer<typeof MemoryContextLinkSchema>;
 
 export const ReminderSchema = z.object({
   id: z.string().min(1),
@@ -271,7 +302,7 @@ export const MemoryAnswerSchema = z.object({
         createdAt: ISODateTimeSchema,
         summary: z.string().min(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0"]).optional(),
+        retrievalSource: z.enum(["postgres", "mem0", "context_link"]).optional(),
       }),
     )
     .default([]),
@@ -285,7 +316,7 @@ export const MemoryAnswerSchema = z.object({
         transcriptQuote: z.string().optional(),
         score: z.number().min(0).max(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0"]),
+        retrievalSource: z.enum(["postgres", "mem0", "context_link"]),
       }),
     )
     .default([]),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Brain, Check, Database, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { Bell, Brain, Check, Database, GitBranch, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
 import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 import {
   confirmFamilyTask,
@@ -291,7 +291,16 @@ function AnswerCard({ answer }: { answer: MemoryAnswer }) {
   );
 }
 
-function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" }) {
+function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" | "context_link" }) {
+  if (source === "context_link") {
+    return (
+      <Badge className="gap-1" variant="warning">
+        <GitBranch className="h-3.5 w-3.5" />
+        {copy.recall.contextLinkEvidence}
+      </Badge>
+    );
+  }
+
   const isMem0 = source === "mem0";
   const Icon = isMem0 ? Sparkles : Database;
   return (

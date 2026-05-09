@@ -3,6 +3,7 @@ import {
   MemoryPlanSchema,
   ParsedMemoryQuerySchema,
   type MemoryAnswer,
+  type MemoryContextLink,
   type MemoryEvent,
   type MemoryPlan,
   type MemorySource,
@@ -12,6 +13,7 @@ import {
 import type { ModelGateway, RetrievedEvidence } from "@goldmem/model-gateway";
 import type {
   AuditLog,
+  ContextLinkStore,
   EventStore,
   FamilyTaskStore,
   PersonalContextStore,
@@ -59,6 +61,7 @@ export type QueryMemoryInput = {
 export type ElderMemoryKernelDeps = {
   sourceStore: SourceStore;
   eventStore: EventStore;
+  contextLinkStore: ContextLinkStore;
   reminderEngine: ReminderEngine;
   familyTaskStore: FamilyTaskStore;
   riskFlagStore: RiskFlagStore;
@@ -126,7 +129,7 @@ export class ElderMemoryKernel {
         source.elderId,
       );
 
-      const applied = await this.applyMemoryPlan(permissionedPlan);
+      const applied = await this.applyMemoryPlan(permissionedPlan, context);
 
       await this.deps.auditLog.record({
         type: "memory_ingest",
@@ -137,6 +140,7 @@ export class ElderMemoryKernel {
           result: {
             eventIds: applied.events.map((event) => event.id),
             reminderIds: applied.reminderCandidates.map((reminder) => reminder.id),
+            contextLinkIds: applied.contextLinks.map((link) => link.id),
           },
         },
       });
@@ -167,9 +171,13 @@ export class ElderMemoryKernel {
     }
   }
 
-  private async applyMemoryPlan(plan: MemoryPlan): Promise<{ events: MemoryEvent[]; reminderCandidates: Reminder[] }> {
+  private async applyMemoryPlan(
+    plan: MemoryPlan,
+    context: Awaited<ReturnType<PersonalContextStore["buildContext"]>>,
+  ): Promise<{ events: MemoryEvent[]; reminderCandidates: Reminder[]; contextLinks: MemoryContextLink[] }> {
     const events: MemoryEvent[] = [];
     const reminders: Reminder[] = [];
+    const contextLinks: MemoryContextLink[] = [];
 
     for (const draft of plan.events) {
       const event = await this.deps.eventStore.create({
@@ -235,8 +243,97 @@ export class ElderMemoryKernel {
       });
     }
 
+    for (const draft of plan.contextLinks) {
+      const link = await this.applyContextLinkDraft(plan, draft, events, context);
+      if (link) contextLinks.push(link);
+    }
+
     await this.writeSemanticMemories(plan, events);
-    return { events, reminderCandidates: reminders };
+    return { events, reminderCandidates: reminders, contextLinks };
+  }
+
+  private async applyContextLinkDraft(
+    plan: MemoryPlan,
+    draft: MemoryPlan["contextLinks"][number],
+    events: MemoryEvent[],
+    context: Awaited<ReturnType<PersonalContextStore["buildContext"]>>,
+  ): Promise<MemoryContextLink | undefined> {
+    const fromEvent = events[draft.fromEventIndex];
+    const toEvent = typeof draft.toEventIndex === "number" ? events[draft.toEventIndex] : undefined;
+    const toEventId = toEvent?.id ?? draft.toEventId;
+    const openReminders = context.openReminders ?? [];
+    const allowedHistoricalEventIds = new Set([
+      ...context.recentEvents.map((event) => event.eventId).filter(isString),
+      ...openReminders.map((reminder) => reminder.eventId).filter(isString),
+    ]);
+    const allowedReminderIds = new Set(openReminders.map((reminder) => reminder.reminderId));
+
+    if (!fromEvent || !toEventId || fromEvent.id === toEventId) {
+      await this.auditSkippedContextLink(plan, draft, "missing_or_self_event_reference");
+      return undefined;
+    }
+
+    if (!events.some((event) => event.id === toEventId) && !allowedHistoricalEventIds.has(toEventId)) {
+      await this.auditSkippedContextLink(plan, draft, "to_event_not_in_context");
+      return undefined;
+    }
+
+    if (draft.reminderId && !allowedReminderIds.has(draft.reminderId)) {
+      await this.auditSkippedContextLink(plan, draft, "reminder_not_in_context");
+      return undefined;
+    }
+
+    if (draft.confidence < 0.5) {
+      await this.auditSkippedContextLink(plan, draft, "confidence_below_persistence_threshold");
+      return undefined;
+    }
+
+    const status = draft.confidence >= 0.8 && draft.status === "active" ? "active" : "needs_confirmation";
+    const link = await this.deps.contextLinkStore.create({
+      elderId: plan.elderId,
+      fromEventId: fromEvent.id,
+      toEventId,
+      reminderId: draft.reminderId,
+      type: draft.type,
+      status,
+      confidence: draft.confidence,
+      reason: draft.reason,
+      evidence: draft.evidence,
+    });
+
+    if (status === "needs_confirmation") {
+      await this.deps.familyTaskStore.create({
+        elderId: plan.elderId,
+        title: draft.type === "fills_missing_time" ? "确认提醒时间关联" : "确认记忆上下文关联",
+        summary: draft.reason,
+        type: draft.type === "fills_missing_time" && draft.reminderId ? "reminder_confirm" : "general_review",
+        urgency: "medium",
+        visibility: "shared_summary",
+        relatedEventId: fromEvent.id,
+      });
+    }
+
+    await this.deps.auditLog.record({
+      type: "memory_context_link_created",
+      elderId: plan.elderId,
+      sourceId: plan.sourceId,
+      payload: { link },
+    });
+
+    return link;
+  }
+
+  private async auditSkippedContextLink(
+    plan: MemoryPlan,
+    draft: MemoryPlan["contextLinks"][number],
+    reason: string,
+  ): Promise<void> {
+    await this.deps.auditLog.record({
+      type: "memory_context_link_skipped",
+      elderId: plan.elderId,
+      sourceId: plan.sourceId,
+      payload: { reason, contextLink: draft },
+    });
   }
 
   private async writeSemanticMemories(plan: MemoryPlan, events: MemoryEvent[]): Promise<void> {
@@ -301,10 +398,12 @@ export class ElderMemoryKernel {
       limit: 10,
     });
 
-    const evidence = mergeEvidence(structuredEvents, semanticResults, parsedQuery, input.query);
+    const initialEvidence = mergeEvidence(structuredEvents, semanticResults, parsedQuery, input.query);
+    const evidence = await this.expandEvidenceWithContextLinks(input.elderId, initialEvidence);
     const retrieval = {
       postgresCount: structuredEvents.length,
       mem0Count: semanticResults.length,
+      contextLinkCount: evidence.filter((item) => item.retrievalSource === "context_link").length,
       evidenceCount: evidence.length,
     };
     if (evidence.length === 0) {
@@ -349,6 +448,50 @@ export class ElderMemoryKernel {
 
     return answer;
   }
+
+  private async expandEvidenceWithContextLinks(elderId: string, evidence: RetrievedEvidence[]): Promise<RetrievedEvidence[]> {
+    const evidenceEventIds = [...new Set(evidence.map((item) => item.eventId).filter(isString))];
+    if (evidenceEventIds.length === 0) return evidence;
+
+    const links = (await this.deps.contextLinkStore.listByEventIds({ elderId, eventIds: evidenceEventIds }))
+      .filter((link) => link.status !== "rejected");
+    if (links.length === 0) return evidence;
+
+    const initialEventIds = new Set(evidenceEventIds);
+    const linkedEventIds = [
+      ...new Set(
+        links.flatMap((link) => [link.fromEventId, link.toEventId]),
+      ),
+    ];
+    if (linkedEventIds.length === 0) return evidence;
+
+    const linkedEvents = await this.deps.eventStore.getByIds(linkedEventIds);
+    const linkByEventId = new Map<string, MemoryContextLink>();
+    for (const link of links) {
+      if (initialEventIds.has(link.toEventId) || initialEventIds.has(link.fromEventId)) {
+        linkByEventId.set(link.fromEventId, link);
+        linkByEventId.set(link.toEventId, link);
+      }
+    }
+
+    const linkedEvidence: RetrievedEvidence[] = linkedEvents.flatMap((event) => {
+      const link = linkByEventId.get(event.id);
+      if (!link) return [];
+      return [
+        {
+          sourceId: event.sourceId,
+          eventId: event.id,
+          createdAt: event.createdAt,
+          summary: `${event.summary}（上下文关联：${link.reason}；状态：${link.status === "active" ? "已建立" : "待确认"}）`,
+          score: clampScore(link.confidence * 0.85),
+          canPlayAudio: true,
+          retrievalSource: "context_link" as const,
+        },
+      ];
+    });
+
+    return mergeRetrievedEvidence([...evidence, ...linkedEvidence]);
+  }
 }
 
 function mergeEvidence(
@@ -383,7 +526,12 @@ function mergeEvidence(
   });
 
   const byKey = new Map<string, RetrievedEvidence>();
-  for (const item of [...eventEvidence, ...semanticEvidence]) {
+  return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence]);
+}
+
+function mergeRetrievedEvidence(evidence: RetrievedEvidence[]): RetrievedEvidence[] {
+  const byKey = new Map<string, RetrievedEvidence>();
+  for (const item of evidence) {
     const key = `${item.retrievalSource}:${item.sourceId}:${item.eventId ?? item.summary}`;
     const existing = byKey.get(key);
     if (!existing || item.score > existing.score) {
@@ -392,6 +540,10 @@ function mergeEvidence(
   }
 
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, 12);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function scoreStructuredEvent(event: MemoryEvent, parsedQuery: ParsedMemoryQuery, query: string): number {

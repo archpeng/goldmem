@@ -57,6 +57,7 @@ Web/API query
   -> PostgreSQL broad structured recall
   -> Mem0 semantic recall
   -> Kernel merge/rank evidence
+  -> context link evidence expansion
   -> model-gateway generateMemoryAnswer
   -> audit log
   -> answer with matched source and retrieval-source metadata
@@ -72,6 +73,7 @@ Recall uses broad candidate retrieval plus ranking.
 - PostgreSQL first recalls candidates from truth data using elder scope plus broad title/summary/entity matching.
 - Kernel ranking gives bonuses for event type match, entity match, query text match, event confidence, importance, and active status.
 - Mem0 results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
+- PostgreSQL context links can expand evidence from an initially matched event to related events, using `retrievalSource: context_link`.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.
@@ -85,6 +87,7 @@ Authoritative state:
 - memory sources
 - memory events
 - reminders
+- memory context links
 - risk flags
 - family tasks
 - feedback
@@ -101,6 +104,12 @@ Default recall index:
 - semantic context for fuzzy recall
 
 Mem0 entries must carry source/event metadata when available and must be rebuildable from PostgreSQL. Mem0's local pgvector and Neo4j services are internal to Mem0; GoldMem does not expose them as business truth.
+
+### Memory Context Links
+
+Context links are lightweight PostgreSQL relationships between events. They express possible context continuity such as `possibly_related` or `fills_missing_time`.
+
+They do not merge events, confirm facts, or schedule reminders. Low-confidence links remain confirmation-required evidence and must be presented as uncertain in answers.
 
 ## Package Boundaries
 

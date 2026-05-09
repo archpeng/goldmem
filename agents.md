@@ -8,7 +8,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
    LLMs may produce transcripts, parsed queries, answers, and `MemoryPlan` objects. They must not write business truth directly.
 
 2. **PostgreSQL is truth.**
-   Sources, events, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default semantic index and must be rebuildable from truth data.
+   Sources, events, context links, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default semantic index and must be rebuildable from truth data.
 
 3. **Mem0 recalls; Kernel decides.**
    Mem0 must do semantic recall, not fact adjudication. Kernel-generated/PostgreSQL-derived event summaries are written to Mem0 with `infer=false`; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records, not Mem0's rewritten facts.
@@ -25,7 +25,10 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 7. **Retrieval uses broad recall plus ranking.**
    `eventTypes` are ranking signals, not hard filters. Do not add keyword special cases such as `城里 -> shopping`.
 
-8. **Chinese is the default product language.**
+8. **Context links are relationships, not facts.**
+   Context links may connect related events or missing reminder details, but they must not merge records, auto-confirm reminders, or overwrite event truth.
+
+9. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.
 
 ## Forbidden
@@ -37,6 +40,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 - Do not use Mem0-generated memory text as final evidence when PostgreSQL-derived metadata is available.
 - Do not share raw transcripts by default.
 - Do not auto-confirm ambiguous reminders.
+- Do not use context links to silently fill reminder times.
 - Do not solve recall bugs with one-off keyword/type mappings.
 - Do not swallow validation or persistence failures without caller visibility or audit.
 

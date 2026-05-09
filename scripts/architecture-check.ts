@@ -17,6 +17,7 @@ const trackedFiles = (await execFileAsync("git", ["ls-files"], { maxBuffer: 10 *
 const violations: Violation[] = [];
 
 for (const file of trackedFiles) {
+  if (file === "scripts/architecture-check.ts") continue;
   if (!/\.(ts|tsx|js|md|json|yml|yaml|Dockerfile)$/.test(file) && !file.endsWith("Dockerfile")) continue;
   const text = await readFile(file, "utf8");
 

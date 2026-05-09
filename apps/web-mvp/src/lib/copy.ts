@@ -21,6 +21,7 @@ export const copy = {
     evidenceSources: "召回来源",
     postgresEvidence: "PostgreSQL 事实源",
     mem0Evidence: "Mem0 语义记忆",
+    contextLinkEvidence: "上下文关联",
   },
   events: {
     title: "记忆记录",

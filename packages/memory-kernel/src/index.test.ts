@@ -3,6 +3,7 @@ import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "./index.js";
 import type {
   FamilyTask,
   MemoryAnswer,
+  MemoryContextLink,
   MemoryEvent,
   MemoryPlan,
   MemorySource,
@@ -12,6 +13,8 @@ import type {
 import type { ModelGateway, PersonalContext, TranscriptionResult } from "@goldmem/model-gateway";
 import type {
   AuditLog,
+  ContextLinkStore,
+  CreateContextLinkInput,
   CreateEventInput,
   CreateReminderInput,
   CreateRiskFlagInput,
@@ -194,6 +197,114 @@ describe("ElderMemoryKernel", () => {
     expect(harness.audit.records.some((record) => record.type === "memory_plan_warning")).toBe(true);
   });
 
+  it("persists medium-confidence context links as confirmation-required relationships", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Added a reminder time detail.",
+        events: [
+          buildEvent({
+            title: "下午三点提醒",
+            summary: "老人补充说大约下午三点提醒一下。",
+            type: "general",
+          }),
+        ],
+        contextLinks: [
+          {
+            fromEventIndex: 0,
+            toEventId: "event-prior",
+            reminderId: "reminder-prior",
+            type: "fills_missing_time",
+            confidence: 0.68,
+            status: "active",
+            reason: "这条下午三点可能是在补充之前下周一吃面条的提醒时间。",
+            evidence: [evidence()],
+          },
+        ],
+      }),
+    );
+    harness.eventStore.events.push({
+      ...memoryEvent({
+        id: "event-prior",
+        sourceId: "source-prior",
+        title: "下周一吃当地特色面条",
+        summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+      }),
+    });
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      recentEvents: [
+        {
+          eventId: "event-prior",
+          sourceId: "source-prior",
+          title: "下周一吃当地特色面条",
+          summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+          createdAt: now,
+        },
+      ],
+      openReminders: [
+        {
+          reminderId: "reminder-prior",
+          eventId: "event-prior",
+          title: "下周一吃面条提醒",
+          reason: "时间不明确，需要确认。",
+          status: "pending_family_confirm",
+        },
+      ],
+    };
+
+    await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "大约下午三点提醒我一下。",
+    });
+
+    expect(harness.contextLinkStore.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "event-2",
+          toEventId: "event-prior",
+          reminderId: "reminder-prior",
+          type: "fills_missing_time",
+          status: "needs_confirmation",
+        }),
+      ]),
+    );
+    expect(harness.familyTasks.tasks.some((task) => task.type === "reminder_confirm")).toBe(true);
+    expect(harness.reminderStore.reminders).toHaveLength(0);
+  });
+
+  it("skips low-confidence context links without creating business relationships", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Weak related note.",
+        events: [buildEvent({ title: "可能相关", summary: "老人提到一个可能相关的事情。" })],
+        contextLinks: [
+          {
+            fromEventIndex: 0,
+            toEventId: "event-prior",
+            type: "possibly_related",
+            confidence: 0.3,
+            status: "needs_confirmation",
+            reason: "关系太弱。",
+            evidence: [evidence()],
+          },
+        ],
+      }),
+    );
+    harness.eventStore.events.push(memoryEvent({ id: "event-prior", sourceId: "source-prior" }));
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      recentEvents: [{ eventId: "event-prior", title: "旧事件", summary: "旧事件摘要", createdAt: now }],
+    };
+
+    await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "这个可能也有点关系。",
+    });
+
+    expect(harness.contextLinkStore.links).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "memory_context_link_skipped")).toBe(true);
+  });
+
   it("validates parsed query and answer model outputs", async () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     harness.model.parsedQuery = {
@@ -263,6 +374,69 @@ describe("ElderMemoryKernel", () => {
     expect(answer.confidence).toBe(0);
     expect(answer.safetyNote).toContain("No source evidence");
     expect(harness.model.answerCalls).toBe(0);
+  });
+
+  it("expands query evidence through persisted context links", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    const noodleEvent = memoryEvent({
+      id: "event-noodle",
+      sourceId: "source-noodle",
+      title: "下周一吃当地特色面条",
+      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
+    });
+    const timeEvent = memoryEvent({
+      id: "event-time",
+      sourceId: "source-time",
+      title: "下午三点提醒",
+      summary: "老人补充说大约下午三点需要提醒。",
+    });
+    harness.eventStore.events.push(noodleEvent, timeEvent);
+    harness.eventStore.searchResults = [noodleEvent];
+    harness.contextLinkStore.links.push({
+      id: "link-1",
+      elderId: "elder-1",
+      fromEventId: "event-time",
+      toEventId: "event-noodle",
+      reminderId: "reminder-noodle",
+      type: "fills_missing_time",
+      status: "needs_confirmation",
+      confidence: 0.68,
+      reason: "下午三点可能是补充下周一吃面条提醒的时间，需要确认。",
+      evidence: [evidence()],
+      createdAt: now,
+    });
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "check_reminder",
+      requiresSourceEvidence: true,
+      eventTypes: ["general"],
+      entities: [],
+    };
+    harness.model.answer = {
+      answerText: "下周一吃特色面条有一条可能相关的下午3点提醒，但需要确认。",
+      confidence: 0.76,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "我下周一出门吃面条有说几点吗？",
+      now,
+    });
+
+    expect(answer.retrievedEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventId: "event-noodle", retrievalSource: "postgres" }),
+        expect.objectContaining({
+          eventId: "event-time",
+          retrievalSource: "context_link",
+          summary: expect.stringContaining("下午三点"),
+        }),
+      ]),
+    );
+    expect(harness.audit.records.at(-1)?.payload?.retrieval).toMatchObject({ contextLinkCount: 2 });
   });
 
   it("uses event type as a ranking signal instead of a hard recall filter", async () => {
@@ -348,18 +522,21 @@ function createHarness(plan: MemoryPlan) {
   const reminderStore = new InMemoryReminderStore();
   const familyTasks = new InMemoryFamilyTaskStore();
   const riskFlags = new InMemoryRiskFlagStore();
+  const contextLinkStore = new InMemoryContextLinkStore(eventStore);
   const semanticMemory = new InMemorySemanticMemoryStore();
   const audit = new InMemoryAuditLog();
+  const personalContextStore = new FakePersonalContextStore();
   const model = new FakeModelGateway(plan);
 
   const deps: ElderMemoryKernelDeps = {
     sourceStore,
     eventStore,
+    contextLinkStore,
     reminderEngine: new DefaultReminderEngine(reminderStore),
     familyTaskStore: familyTasks,
     riskFlagStore: riskFlags,
     semanticMemory,
-    personalContextStore: new FakePersonalContextStore(),
+    personalContextStore,
     modelGateway: model,
     riskEngine: new DefaultRiskEngine(),
     permissionEngine: new DefaultPermissionEngine(),
@@ -371,10 +548,12 @@ function createHarness(plan: MemoryPlan) {
     sourceStore,
     eventStore,
     reminderStore,
+    contextLinkStore,
     familyTasks,
     riskFlags,
     semanticMemory,
     audit,
+    personalContextStore,
     model,
   };
 }
@@ -388,6 +567,7 @@ function buildPlan(input: Partial<MemoryPlan>): MemoryPlan {
     reminderCandidates: input.reminderCandidates ?? [],
     riskFlags: input.riskFlags ?? [],
     familyTasks: input.familyTasks ?? [],
+    contextLinks: input.contextLinks ?? [],
     memoryUpdates: input.memoryUpdates ?? [],
     uncertainties: input.uncertainties ?? [],
     evidence: input.evidence ?? [evidence()],
@@ -397,6 +577,30 @@ function buildPlan(input: Partial<MemoryPlan>): MemoryPlan {
       promptVersion: "test",
     },
     confidence: input.confidence ?? 0.9,
+  };
+}
+
+function memoryEvent(input: Partial<MemoryEvent>): MemoryEvent {
+  return {
+    id: input.id ?? "event-existing",
+    elderId: input.elderId ?? "elder-1",
+    sourceId: input.sourceId ?? "source-existing",
+    type: input.type ?? "general",
+    title: input.title ?? "Existing event",
+    summary: input.summary ?? "Existing event summary.",
+    timeText: input.timeText,
+    eventTimeStart: input.eventTimeStart,
+    eventTimeEnd: input.eventTimeEnd,
+    timeConfidence: input.timeConfidence ?? 0.7,
+    entities: input.entities ?? [],
+    importance: input.importance ?? 0.5,
+    confidence: input.confidence ?? 0.8,
+    riskLevel: input.riskLevel ?? "normal",
+    requiresConfirmation: input.requiresConfirmation ?? false,
+    visibility: input.visibility ?? "private",
+    evidence: input.evidence ?? [evidence()],
+    status: input.status ?? "active",
+    createdAt: input.createdAt ?? now,
   };
 }
 
@@ -484,15 +688,22 @@ class FakeModelGateway implements ModelGateway {
 }
 
 class FakePersonalContextStore implements PersonalContextStore {
+  context: PersonalContext = emptyContext();
+
   async buildContext(): Promise<PersonalContext> {
-    return {
-      recentEvents: [],
-      semanticMemories: [],
-      knownEntities: [],
-      familyRelations: [],
-      safetyPolicy: [],
-    };
+    return this.context;
   }
+}
+
+function emptyContext(): PersonalContext {
+  return {
+    recentEvents: [],
+    openReminders: [],
+    semanticMemories: [],
+    knownEntities: [],
+    familyRelations: [],
+    safetyPolicy: [],
+  };
 }
 
 class InMemorySourceStore implements SourceStore {
@@ -529,6 +740,39 @@ class InMemoryEventStore implements EventStore {
 
   async search(): Promise<MemoryEvent[]> {
     return this.searchResults ?? this.events;
+  }
+
+  async getByIds(eventIds: string[]): Promise<MemoryEvent[]> {
+    return this.events.filter((event) => eventIds.includes(event.id));
+  }
+}
+
+class InMemoryContextLinkStore implements ContextLinkStore {
+  links: MemoryContextLink[] = [];
+
+  constructor(private readonly eventStore: InMemoryEventStore) {}
+
+  async create(input: CreateContextLinkInput): Promise<MemoryContextLink> {
+    const fromEvent = this.eventStore.events.find((event) => event.id === input.fromEventId);
+    const toEvent = this.eventStore.events.find((event) => event.id === input.toEventId);
+    if (!fromEvent || !toEvent) throw new Error("Context link event reference not found");
+    if (fromEvent.elderId !== input.elderId || toEvent.elderId !== input.elderId) {
+      throw new Error("Context link events must belong to the same elder");
+    }
+    const link = { ...input, id: `link-${this.links.length + 1}`, createdAt: now };
+    this.links.push(link);
+    return link;
+  }
+
+  async listByEventIds(input: { elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]> {
+    const ids = new Set(input.eventIds);
+    return this.links.filter(
+      (link) => link.elderId === input.elderId && (ids.has(link.fromEventId) || ids.has(link.toEventId)),
+    );
+  }
+
+  async listByElder(elderId: string): Promise<MemoryContextLink[]> {
+    return this.links.filter((link) => link.elderId === elderId);
   }
 }
 

@@ -19,7 +19,8 @@ const GoldenCaseSchema = z.object({
       query: z.string().min(1),
       expectedAnswerHints: z.array(z.string().min(1)).default([]),
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
-      allowedSources: z.array(z.enum(["postgres", "mem0"])).default(["postgres", "mem0"]),
+      allowedSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default(["postgres", "mem0", "context_link"]),
+      expectedEvidenceSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default([]),
       requiresMem0: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),
     }),
@@ -42,6 +43,8 @@ const GoldenCaseSchema = z.object({
       }),
     )
     .default([]),
+  familyTaskExpectations: z.array(z.object({ type: z.string().optional(), hint: z.string().min(1) })).default([]),
+  forbidAutoConfirmedReminderHints: z.array(z.string().min(1)).default([]),
 });
 
 const baseUrl = (process.env.API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
@@ -95,6 +98,27 @@ for (const expectation of fixture.reminderExpectations) {
   );
 }
 
+for (const expectation of fixture.familyTaskExpectations) {
+  assert(
+    familyTasks.some((task) => {
+      const text = `${task.title}\n${task.summary}`;
+      return (!expectation.type || task.type === expectation.type) && textIncludes(text, expectation.hint);
+    }),
+    `Expected family task containing ${expectation.hint}`,
+  );
+}
+
+for (const hint of fixture.forbidAutoConfirmedReminderHints) {
+  assert(
+    !reminders.some(
+      (reminder) =>
+        (reminder.status === "confirmed" || reminder.status === "scheduled") &&
+        (textIncludes(reminder.title, hint) || textIncludes(reminder.reason, hint) || textIncludes(reminder.description, hint)),
+    ),
+    `Reminder containing ${hint} was auto-confirmed or scheduled`,
+  );
+}
+
 let mem0EvidenceQueries = 0;
 for (const queryCase of fixture.queries) {
   console.log(`golden query start: ${queryCase.id}`);
@@ -118,6 +142,9 @@ for (const queryCase of fixture.queries) {
   }
   for (const hint of queryCase.expectedEvidenceHints) {
     assert(textIncludes(evidenceText, hint), `${queryCase.id} evidence missing hint: ${hint}`);
+  }
+  for (const source of queryCase.expectedEvidenceSources) {
+    assert(evidenceSources.has(source), `${queryCase.id} expected evidence source: ${source}`);
   }
 
   if (evidenceSources.has("mem0")) mem0EvidenceQueries += 1;

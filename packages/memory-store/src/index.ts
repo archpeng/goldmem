@@ -2,6 +2,7 @@ import type {
   FamilyTask,
   Feedback,
   MemoryAnswer,
+  MemoryContextLink,
   MemoryEvent,
   MemoryPlan,
   MemorySource,
@@ -14,6 +15,7 @@ import type { PersonalContext } from "@goldmem/model-gateway";
 export type CreateSourceInput = Omit<MemorySource, "id">;
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
 export type CreateReminderInput = Omit<Reminder, "id" | "createdAt">;
+export type CreateContextLinkInput = Omit<MemoryContextLink, "id" | "createdAt">;
 export type CreateRiskFlagInput = RiskFlag & {
   elderId: string;
   sourceId: string;
@@ -28,6 +30,7 @@ export interface SourceStore {
 
 export interface EventStore {
   create(input: CreateEventInput): Promise<MemoryEvent>;
+  getByIds(eventIds: string[]): Promise<MemoryEvent[]>;
   search(input: {
     elderId: string;
     query?: string;
@@ -36,6 +39,12 @@ export interface EventStore {
     entityNames?: string[];
     limit?: number;
   }): Promise<MemoryEvent[]>;
+}
+
+export interface ContextLinkStore {
+  create(input: CreateContextLinkInput): Promise<MemoryContextLink>;
+  listByEventIds(input: { elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]>;
+  listByElder(elderId: string): Promise<MemoryContextLink[]>;
 }
 
 export interface ReminderStore {

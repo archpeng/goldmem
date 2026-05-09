@@ -123,6 +123,20 @@ export const familyTasks = pgTable("family_tasks", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const memoryContextLinks = pgTable("memory_context_links", {
+  id: text("id").primaryKey(),
+  elderId: text("elder_id").notNull(),
+  fromEventId: text("from_event_id").notNull(),
+  toEventId: text("to_event_id").notNull(),
+  reminderId: text("reminder_id"),
+  type: text("type").notNull(),
+  status: text("status").notNull(),
+  confidence: real("confidence").notNull(),
+  reason: text("reason").notNull(),
+  evidence: jsonb("evidence").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const feedback = pgTable("feedback", {
   id: text("id").primaryKey(),
   elderId: text("elder_id").notNull(),

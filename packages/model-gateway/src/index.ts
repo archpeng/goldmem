@@ -47,12 +47,22 @@ export type RetrievedEvidence = {
   transcriptQuote?: string;
   score: number;
   canPlayAudio: boolean;
-  retrievalSource: "postgres" | "mem0";
+  retrievalSource: "postgres" | "mem0" | "context_link";
 };
 
 export type PersonalContext = {
   elderProfile?: Record<string, unknown>;
-  recentEvents: Array<{ title: string; summary: string; createdAt: string }>;
+  recentEvents: Array<{ eventId?: string; sourceId?: string; title: string; summary: string; createdAt: string }>;
+  openReminders?: Array<{
+    reminderId: string;
+    eventId?: string;
+    title: string;
+    reason: string;
+    timeText?: string;
+    remindAt?: string;
+    timeConfidence?: number;
+    status: string;
+  }>;
   semanticMemories: Array<{ memory: string; score?: number }>;
   knownEntities: Array<{ type: string; name: string; aliases?: string[] }>;
   familyRelations: Array<{ name: string; relationship: string; userId?: string }>;
@@ -240,6 +250,8 @@ const URGENCIES = ["low", "medium", "high"] as const;
 const MEMORY_UPDATE_TARGETS = ["semantic_memory", "wiki_page"] as const;
 const MEMORY_UPDATE_OPERATIONS = ["add", "append", "replace_section", "create"] as const;
 const UNCERTAINTY_ACTIONS = ["ask_elder", "ask_family", "leave_unresolved", "review_later"] as const;
+const CONTEXT_LINK_TYPES = ["possibly_related", "fills_missing_time"] as const;
+const CONTEXT_LINK_STATUSES = ["active", "needs_confirmation", "rejected"] as const;
 const QUERY_INTENTS = [
   "recall_event",
   "check_reminder",
@@ -270,6 +282,9 @@ function normalizeMemoryPlanResult(
       .filter(isRecord),
     riskFlags: arrayValue(record.riskFlags).map((risk) => normalizeRiskFlag(risk, input)).filter(isRecord),
     familyTasks: arrayValue(record.familyTasks).map(normalizeFamilyTask).filter(isRecord),
+    contextLinks: arrayValue(record.contextLinks)
+      .map((link) => normalizeContextLink(link, input, events.length))
+      .filter(isRecord),
     memoryUpdates: arrayValue(record.memoryUpdates).map(normalizeMemoryUpdate).filter(isRecord),
     uncertainties: arrayValue(record.uncertainties).map(normalizeUncertainty).filter(isRecord),
     evidence: normalizeEvidenceRefs(record.evidence, input, summary, false),
@@ -407,6 +422,29 @@ function normalizeMemoryUpdate(raw: unknown): JsonRecord | undefined {
   };
 }
 
+function normalizeContextLink(raw: unknown, input: GenerateMemoryPlanInput, eventCount: number): JsonRecord | undefined {
+  const record = asRecord(raw);
+  const fromEventIndex = integerValue(record.fromEventIndex);
+  if (fromEventIndex === undefined || fromEventIndex >= eventCount) return undefined;
+
+  const toEventIndex = integerValue(record.toEventIndex);
+  const toEventId = optionalString(record.toEventId);
+  const reason = stringValue(record.reason, "Related context proposed from the transcript and recent context.");
+
+  return {
+    ...record,
+    fromEventIndex,
+    toEventId,
+    toEventIndex: toEventIndex !== undefined && toEventIndex < eventCount ? toEventIndex : undefined,
+    reminderId: optionalString(record.reminderId),
+    type: enumValue(record.type, CONTEXT_LINK_TYPES, "possibly_related"),
+    confidence: numberValue(record.confidence, 0.5),
+    status: enumValue(record.status, CONTEXT_LINK_STATUSES, "needs_confirmation"),
+    reason,
+    evidence: normalizeEvidenceRefs(record.evidence, input, reason, true),
+  };
+}
+
 function normalizeUncertainty(raw: unknown): JsonRecord | undefined {
   const record = typeof raw === "string" ? { description: raw } : asRecord(raw);
   const description = stringValue(record.description, "");
@@ -526,7 +564,11 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
     createdAt: optionalIso(record.createdAt) ?? matched?.createdAt ?? new Date().toISOString(),
     summary: stringValue(record.summary, matched?.summary ?? "Matched memory source."),
     canPlayAudio: booleanValue(record.canPlayAudio, matched?.canPlayAudio ?? false),
-    retrievalSource: enumValue(record.retrievalSource, ["postgres", "mem0"] as const, matched?.retrievalSource ?? "postgres"),
+    retrievalSource: enumValue(
+      record.retrievalSource,
+      ["postgres", "mem0", "context_link"] as const,
+      matched?.retrievalSource ?? "postgres",
+    ),
   };
 }
 

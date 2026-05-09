@@ -17,6 +17,7 @@ import {
   HttpSemanticMemoryStore,
   type FamilyTaskStore,
   type AuditLog,
+  type ContextLinkStore,
   type EventStore,
   type ReminderStore,
   type SourceStore,
@@ -48,6 +49,7 @@ export type ApiServerDeps = {
   kernel: ElderMemoryKernel;
   sourceStore: SourceStore;
   eventStore: EventStore;
+  contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
   reminderEngine: DefaultReminderEngine;
   familyTaskStore: FamilyTaskStore;
@@ -184,6 +186,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
   const kernelDeps: ElderMemoryKernelDeps = {
     sourceStore: postgres.sourceStore,
     eventStore: postgres.eventStore,
+    contextLinkStore: postgres.contextLinkStore,
     reminderEngine,
     familyTaskStore: postgres.familyTaskStore,
     riskFlagStore: postgres.riskFlagStore,
@@ -200,6 +203,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       kernel: new ElderMemoryKernel(kernelDeps),
       sourceStore: postgres.sourceStore,
       eventStore: postgres.eventStore,
+      contextLinkStore: postgres.contextLinkStore,
       reminderStore: postgres.reminderStore,
       reminderEngine,
       familyTaskStore: postgres.familyTaskStore,

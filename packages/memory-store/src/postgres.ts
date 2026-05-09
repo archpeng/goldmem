@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type {
   FamilyTask,
+  MemoryContextLink,
   MemoryEvent,
   MemorySource,
   Reminder,
@@ -14,6 +15,8 @@ import type {
 import type { PersonalContext } from "@goldmem/model-gateway";
 import type {
   AuditLog,
+  ContextLinkStore,
+  CreateContextLinkInput,
   CreateEventInput,
   CreateReminderInput,
   CreateRiskFlagInput,
@@ -41,6 +44,7 @@ export type PostgresStores = {
   db: Db;
   sourceStore: SourceStore;
   eventStore: EventStore;
+  contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
   familyTaskStore: FamilyTaskStore;
   riskFlagStore: RiskFlagStore;
@@ -59,6 +63,7 @@ export function createPostgresStores(options: PostgresStoreOptions): PostgresSto
     db,
     sourceStore: new PostgresSourceStore(db, options),
     eventStore: new PostgresEventStore(db),
+    contextLinkStore: new PostgresContextLinkStore(db),
     reminderStore: new PostgresReminderStore(db),
     familyTaskStore: new PostgresFamilyTaskStore(db),
     riskFlagStore: new PostgresRiskFlagStore(db),
@@ -147,6 +152,18 @@ class PostgresEventStore implements EventStore {
     return event;
   }
 
+  async getByIds(eventIds: string[]): Promise<MemoryEvent[]> {
+    const uniqueIds = [...new Set(eventIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return [];
+
+    const rows = await this.db
+      .select()
+      .from(schema.memoryEvents)
+      .where(inArray(schema.memoryEvents.id, uniqueIds));
+
+    return rows.map(mapEvent);
+  }
+
   async search(input: {
     elderId: string;
     query?: string;
@@ -175,6 +192,78 @@ class PostgresEventStore implements EventStore {
       .limit(input.limit ?? 20);
 
     return rows.map(mapEvent);
+  }
+}
+
+class PostgresContextLinkStore implements ContextLinkStore {
+  constructor(private readonly db: Db) {}
+
+  async create(input: CreateContextLinkInput): Promise<MemoryContextLink> {
+    const [fromEvent, toEvent] = await Promise.all([
+      this.event(input.fromEventId),
+      this.event(input.toEventId),
+    ]);
+    if (!fromEvent || !toEvent) throw new Error("Context link event reference not found");
+    if (fromEvent.elderId !== input.elderId || toEvent.elderId !== input.elderId) {
+      throw new Error("Context link events must belong to the same elder");
+    }
+
+    const link: MemoryContextLink = {
+      ...input,
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.db.insert(schema.memoryContextLinks).values({
+      id: link.id,
+      elderId: link.elderId,
+      fromEventId: link.fromEventId,
+      toEventId: link.toEventId,
+      reminderId: link.reminderId,
+      type: link.type,
+      status: link.status,
+      confidence: link.confidence,
+      reason: link.reason,
+      evidence: link.evidence,
+      createdAt: new Date(link.createdAt),
+    });
+
+    return link;
+  }
+
+  async listByEventIds(input: { elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]> {
+    const uniqueIds = [...new Set(input.eventIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return [];
+
+    const rows = await this.db
+      .select()
+      .from(schema.memoryContextLinks)
+      .where(
+        and(
+          eq(schema.memoryContextLinks.elderId, input.elderId),
+          or(
+            inArray(schema.memoryContextLinks.fromEventId, uniqueIds),
+            inArray(schema.memoryContextLinks.toEventId, uniqueIds),
+          ),
+        ),
+      )
+      .orderBy(desc(schema.memoryContextLinks.createdAt));
+
+    return rows.map(mapContextLink);
+  }
+
+  async listByElder(elderId: string): Promise<MemoryContextLink[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.memoryContextLinks)
+      .where(eq(schema.memoryContextLinks.elderId, elderId))
+      .orderBy(desc(schema.memoryContextLinks.createdAt));
+    return rows.map(mapContextLink);
+  }
+
+  private async event(eventId: string): Promise<MemoryEvent | null> {
+    const [row] = await this.db.select().from(schema.memoryEvents).where(eq(schema.memoryEvents.id, eventId)).limit(1);
+    return row ? mapEvent(row) : null;
   }
 }
 
@@ -353,6 +442,22 @@ class PostgresPersonalContextStore implements PersonalContextStore {
       .orderBy(desc(schema.memoryEvents.createdAt))
       .limit(10);
 
+    const openReminders = await this.db
+      .select()
+      .from(schema.reminders)
+      .where(
+        and(
+          eq(schema.reminders.elderId, input.elderId),
+          or(
+            eq(schema.reminders.status, "candidate"),
+            eq(schema.reminders.status, "pending_elder_confirm"),
+            eq(schema.reminders.status, "pending_family_confirm"),
+          ),
+        ),
+      )
+      .orderBy(desc(schema.reminders.createdAt))
+      .limit(10);
+
     const family = await this.db
       .select()
       .from(schema.familyLinks)
@@ -361,9 +466,21 @@ class PostgresPersonalContextStore implements PersonalContextStore {
 
     return {
       recentEvents: recentEvents.map((event) => ({
+        eventId: event.id,
+        sourceId: event.sourceId,
         title: event.title,
         summary: event.summary,
         createdAt: event.createdAt.toISOString(),
+      })),
+      openReminders: openReminders.map((reminder) => ({
+        reminderId: reminder.id,
+        eventId: reminder.eventId ?? undefined,
+        title: reminder.title,
+        reason: reminder.reason,
+        timeText: undefined,
+        remindAt: reminder.remindAt?.toISOString(),
+        timeConfidence: reminder.confidence,
+        status: reminder.status,
       })),
       semanticMemories: [],
       knownEntities: [],
@@ -467,6 +584,22 @@ function mapFamilyTask(row: typeof schema.familyTasks.$inferSelect): FamilyTask 
     relatedEventId: row.relatedEventId ?? undefined,
     confirmedBy: row.confirmedBy ?? undefined,
     confirmedAt: row.confirmedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapContextLink(row: typeof schema.memoryContextLinks.$inferSelect): MemoryContextLink {
+  return {
+    id: row.id,
+    elderId: row.elderId,
+    fromEventId: row.fromEventId,
+    toEventId: row.toEventId,
+    reminderId: row.reminderId ?? undefined,
+    type: row.type as MemoryContextLink["type"],
+    status: row.status as MemoryContextLink["status"],
+    confidence: row.confidence,
+    reason: row.reason,
+    evidence: row.evidence as MemoryContextLink["evidence"],
     createdAt: row.createdAt.toISOString(),
   };
 }

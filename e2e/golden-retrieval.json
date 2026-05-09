@@ -13,6 +13,14 @@
     {
       "id": "hospital-followup",
       "transcript": "下周二下午三点我要去社区医院复查血压，女儿小敏会陪我一起去。"
+    },
+    {
+      "id": "noodle-plan",
+      "transcript": "下周一我准备出门吃当地特色面条，可能需要到时提醒我一下，但是我还没想清楚具体几点。"
+    },
+    {
+      "id": "noodle-time-detail",
+      "transcript": "大约下午三点提醒我一下，应该就是刚才说的那件出门吃面条的事。"
     }
   ],
   "queries": [
@@ -21,7 +29,7 @@
       "query": "我说过去城里做什么吗",
       "expectedAnswerHints": ["城里", "牙膏"],
       "expectedEvidenceHints": ["牙膏", "肥皂"],
-      "allowedSources": ["postgres", "mem0"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
       "minConfidence": 0.45
     },
     {
@@ -29,7 +37,7 @@
       "query": "Where did I put the blue notebook and health insurance card?",
       "expectedAnswerHints": ["电视柜", "抽屉"],
       "expectedEvidenceHints": ["医保卡", "蓝色小本子"],
-      "allowedSources": ["mem0", "postgres"],
+      "allowedSources": ["mem0", "postgres", "context_link"],
       "requiresMem0": true,
       "minConfidence": 0.4
     },
@@ -38,7 +46,16 @@
       "query": "小敏要陪我去哪儿",
       "expectedAnswerHints": ["社区医院", "复查"],
       "expectedEvidenceHints": ["小敏", "血压"],
-      "allowedSources": ["postgres", "mem0"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "context-linked-noodle-reminder",
+      "query": "我下周一出门吃面条有说几点吗？",
+      "expectedAnswerHints": ["下周一", "面条", "下午"],
+      "expectedEvidenceHints": ["特色面条", "下午三点"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "expectedEvidenceSources": ["context_link"],
       "minConfidence": 0.45
     }
   ],
@@ -48,6 +65,18 @@
       "seedNoteId": "hospital-followup",
       "titleHint": "社区医院",
       "requiresConfirmation": true
+    },
+    {
+      "seedNoteId": "noodle-plan",
+      "titleHint": "面条",
+      "requiresConfirmation": true
     }
-  ]
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "reminder_confirm",
+      "hint": "下午三点"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["面条"]
 }
