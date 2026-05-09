@@ -6,7 +6,7 @@ export interface RiskEngine {
 
 export class DefaultRiskEngine implements RiskEngine {
   async enforce(plan: MemoryPlan): Promise<MemoryPlan> {
-    const next: MemoryPlan = structuredClone(plan);
+    const next = clonePlan(plan);
 
     for (const event of next.events) {
       if (["medical", "financial", "fraud_risk", "sensitive"].includes(event.riskLevel)) {
@@ -39,4 +39,8 @@ export class DefaultRiskEngine implements RiskEngine {
 
     return next;
   }
+}
+
+function clonePlan(plan: MemoryPlan): MemoryPlan {
+  return JSON.parse(JSON.stringify(plan)) as MemoryPlan;
 }
