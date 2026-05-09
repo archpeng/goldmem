@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: goldmem
+      POSTGRES_PASSWORD: goldmem
+      POSTGRES_DB: goldmem
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Mem0 and Graphiti are intentionally left as adapters first.
+  # Add concrete self-hosted services after the text-only kernel milestone is green.
