@@ -10,19 +10,22 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 2. **PostgreSQL is truth.**
    Sources, events, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default semantic index and must be rebuildable from truth data.
 
-3. **The Kernel owns memory orchestration.**
+3. **Mem0 recalls; Kernel decides.**
+   Mem0 must do semantic recall, not fact adjudication. Kernel-generated/PostgreSQL-derived event summaries are written to Mem0 with `infer=false`; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records, not Mem0's rewritten facts.
+
+4. **The Kernel owns memory orchestration.**
    Ingest and recall behavior belongs in `packages/memory-kernel`. API routes and frontends must stay thin.
 
-4. **Safety is deterministic.**
+5. **Safety is deterministic.**
    Medical, medication, financial, fraud, identity, password, privacy, visibility, and reminder-confirmation behavior must be enforced by schema, engines, stores, and audit. Prompts are not enough.
 
-5. **Recall is evidence-bound.**
+6. **Recall is evidence-bound.**
    Answers must be generated from merged evidence. No evidence means no invented answer.
 
-6. **Retrieval uses broad recall plus ranking.**
+7. **Retrieval uses broad recall plus ranking.**
    `eventTypes` are ranking signals, not hard filters. Do not add keyword special cases such as `城里 -> shopping`.
 
-7. **Chinese is the default product language.**
+8. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.
 
 ## Forbidden
@@ -30,6 +33,8 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 - Do not bypass `memory-kernel` for memory writes or recall answers.
 - Do not let providers, prompts, frontends, or API routes mutate truth state directly.
 - Do not treat Mem0 as authoritative state.
+- Do not enable Mem0 `infer=true` for canonical event memory writes.
+- Do not use Mem0-generated memory text as final evidence when PostgreSQL-derived metadata is available.
 - Do not share raw transcripts by default.
 - Do not auto-confirm ambiguous reminders.
 - Do not solve recall bugs with one-off keyword/type mappings.
@@ -62,6 +67,7 @@ pnpm test
 pnpm build
 pnpm lint
 pnpm eval
+pnpm architecture:check
 ```
 
 For MVP confidence, run:
@@ -69,6 +75,7 @@ For MVP confidence, run:
 ```bash
 pnpm mvp:verify
 pnpm mvp:smoke
+pnpm e2e:golden
 ```
 
 If a bug was discovered from a real query or model failure, add a regression test or eval case before considering it fixed.

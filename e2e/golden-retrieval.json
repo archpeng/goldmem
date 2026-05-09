@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "Real-service golden E2E baseline for PostgreSQL truth + Mem0 semantic recall.",
+  "seedNotes": [
+    {
+      "id": "city-shopping",
+      "transcript": "今天上午我去城里买生活用品，买了牙膏、肥皂和两节电池。回来以后把小票放在门口鞋柜上。"
+    },
+    {
+      "id": "blue-notebook",
+      "transcript": "我把医保卡和蓝色小本子放在电视柜第二个抽屉里，晚上看电视前还确认过。"
+    },
+    {
+      "id": "hospital-followup",
+      "transcript": "下周二下午三点我要去社区医院复查血压，女儿小敏会陪我一起去。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "previous-city-shopping-failure",
+      "query": "我说过去城里做什么吗",
+      "expectedAnswerHints": ["城里", "牙膏"],
+      "expectedEvidenceHints": ["牙膏", "肥皂"],
+      "allowedSources": ["postgres", "mem0"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "cross-language-object-recall",
+      "query": "Where did I put the blue notebook and health insurance card?",
+      "expectedAnswerHints": ["电视柜", "抽屉"],
+      "expectedEvidenceHints": ["医保卡", "蓝色小本子"],
+      "allowedSources": ["mem0", "postgres"],
+      "requiresMem0": true,
+      "minConfidence": 0.4
+    },
+    {
+      "id": "person-place-recall",
+      "query": "小敏要陪我去哪儿",
+      "expectedAnswerHints": ["社区医院", "复查"],
+      "expectedEvidenceHints": ["小敏", "血压"],
+      "allowedSources": ["postgres", "mem0"],
+      "minConfidence": 0.45
+    }
+  ],
+  "riskExpectations": [],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "hospital-followup",
+      "titleHint": "社区医院",
+      "requiresConfirmation": true
+    }
+  ]
+}

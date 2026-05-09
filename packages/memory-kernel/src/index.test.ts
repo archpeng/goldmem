@@ -211,9 +211,14 @@ describe("ElderMemoryKernel", () => {
     };
     harness.semanticMemory.searchResults = [
       {
-        memory: "The elder bought vegetables at the market.",
+        memory: "A compressed Mem0 fact.",
         score: 0.8,
-        metadata: { sourceId: "source-1" },
+        metadata: {
+          sourceId: "source-1",
+          eventId: "event-semantic",
+          summary: "The elder bought vegetables at the market.",
+          createdAt: now,
+        },
       },
     ];
 
@@ -225,6 +230,7 @@ describe("ElderMemoryKernel", () => {
 
     expect(answer.answerText).toContain("vegetables");
     expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "mem0")).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.summary === "The elder bought vegetables at the market.")).toBe(true);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
 
     harness.model.parsedQuery = { intent: "not-valid" } as unknown as ParsedMemoryQuery;

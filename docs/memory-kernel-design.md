@@ -57,6 +57,8 @@ source
 
 Mem0's self-hosted service may use its own pgvector and Neo4j services internally. GoldMem does not expose those internal services as business truth or as a separate temporal graph path in the MVP.
 
+GoldMem writes canonical event memory to Mem0 with `infer=false`. Mem0 provides semantic recall; Kernel and PostgreSQL remain responsible for fact adjudication and evidence text.
+
 ## Rule philosophy
 
 GoldMem avoids case-by-case elder rules.

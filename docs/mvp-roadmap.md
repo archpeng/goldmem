@@ -121,6 +121,23 @@ Acceptance:
 - `pnpm eval` runs locally without external services
 - eval set covers normal note, ambiguous reminder, medication risk, fraud risk, and no-invention recall
 
+## Golden E2E Baseline
+
+Goal: keep the real MVP path from regressing after Mem0 or retrieval changes.
+
+Deliverables:
+
+- `e2e/golden-retrieval.json` stores stable seed notes, queries, and expected evidence hints
+- `pnpm e2e:golden` runs against the real API, PostgreSQL, Mem0, and model gateway
+- at least one case must return Mem0 evidence
+- the previously failed query `我说过去城里做什么吗` is a required baseline case
+- fraud-risk behavior stays in the lightweight eval suite unless a future real-service regression requires an E2E case
+
+Acceptance:
+
+- golden E2E passes before changing retrieval, prompts, Mem0 wiring, or answer schema
+- failures become fixture updates only when product behavior intentionally changes
+
 ## MVP Success Criteria
 
 MVP is complete when a developer can:

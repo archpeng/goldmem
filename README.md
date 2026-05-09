@@ -165,6 +165,8 @@ docker compose -f infra/docker-compose.yml up -d mem0-postgres mem0-neo4j mem0
 
 The local Mem0 API is available at `http://localhost:8888/docs`. Local compose uses `AUTH_DISABLED=true`; do not use that setting outside development.
 
+GoldMem writes structured Kernel summaries to Mem0 with `infer=false`. Mem0 still provides semantic vector recall, while PostgreSQL-derived metadata remains the evidence text.
+
 3. Verify direct Mem0 add/search.
 
 ```bash
@@ -194,3 +196,22 @@ pnpm mvp:verify
 ```
 
 This runs typecheck, tests, build, lint, and eval fixtures. It does not require OpenAI, Mem0, or a running database.
+
+Architecture constraints can also be checked directly:
+
+```bash
+pnpm architecture:check
+```
+
+## Golden E2E
+
+The golden E2E suite is the long-lived real-service regression baseline. It requires the API server, PostgreSQL, Mem0, and the OpenAI-compatible model gateway.
+
+```bash
+set -a
+source .env
+set +a
+pnpm e2e:golden
+```
+
+The fixture lives in `e2e/golden-retrieval.json`. It verifies the previously failed city-shopping recall, cross-language Mem0 recall, person/place recall, and reminder creation. Fraud-risk behavior remains covered by the non-network eval suite.

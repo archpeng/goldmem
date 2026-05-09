@@ -15,6 +15,7 @@ export class HttpSemanticMemoryStore implements SemanticMemoryStore {
         user_id: input.userId,
         messages: [{ role: "user", content: input.memory }],
         metadata: input.metadata,
+        infer: false,
       }),
     });
   }
