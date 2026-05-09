@@ -1,0 +1,10 @@
+{
+  "id": "ambiguous-reminder",
+  "input": {
+    "transcript": "过几天提醒我去医院复查。"
+  },
+  "expected": {
+    "eventTypes": ["appointment", "health"],
+    "requiresConfirmation": true
+  }
+}

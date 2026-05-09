@@ -6,8 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint: reminder-engine'",
-    "test": "echo 'test: reminder-engine'",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {

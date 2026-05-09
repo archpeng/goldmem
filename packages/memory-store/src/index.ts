@@ -1,9 +1,24 @@
-import type { MemoryAnswer, MemoryEvent, MemoryPlan, MemorySource, Reminder } from "@goldmem/memory-schema";
+import type {
+  FamilyTask,
+  Feedback,
+  MemoryAnswer,
+  MemoryEvent,
+  MemoryPlan,
+  MemorySource,
+  Reminder,
+  RiskFlag,
+  RiskFlagRecord,
+} from "@goldmem/memory-schema";
 import type { PersonalContext, RetrievedEvidence } from "@goldmem/model-gateway";
 
 export type CreateSourceInput = Omit<MemorySource, "id">;
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
 export type CreateReminderInput = Omit<Reminder, "id" | "createdAt">;
+export type CreateRiskFlagInput = RiskFlag & {
+  elderId: string;
+  sourceId: string;
+  eventId?: string;
+};
 
 export interface SourceStore {
   saveAudio(audio: Uint8Array): Promise<string>;
@@ -26,6 +41,7 @@ export interface EventStore {
 export interface ReminderStore {
   create(input: CreateReminderInput): Promise<Reminder>;
   get(reminderId: string): Promise<Reminder | null>;
+  listByElder(elderId: string): Promise<Reminder[]>;
   update(reminderId: string, patch: Partial<Reminder>): Promise<Reminder>;
 }
 
@@ -38,7 +54,13 @@ export interface FamilyTaskStore {
     urgency: string;
     visibility: string;
     relatedEventId?: string;
-  }): Promise<void>;
+  }): Promise<FamilyTask>;
+  listPending(elderId: string): Promise<FamilyTask[]>;
+  confirm(taskId: string, actorUserId: string): Promise<FamilyTask>;
+}
+
+export interface RiskFlagStore {
+  create(input: CreateRiskFlagInput): Promise<RiskFlagRecord>;
 }
 
 export interface AuditLog {
@@ -46,7 +68,7 @@ export interface AuditLog {
 }
 
 export interface FeedbackStore {
-  create(input: Record<string, unknown>): Promise<void>;
+  create(input: Omit<Feedback, "id" | "createdAt">): Promise<Feedback>;
 }
 
 export interface SemanticMemoryStore {
@@ -99,6 +121,12 @@ export class NullSemanticMemoryStore implements SemanticMemoryStore {
   }
 }
 
+export class NullRiskFlagStore implements RiskFlagStore {
+  async create(input: CreateRiskFlagInput): Promise<RiskFlagRecord> {
+    return { ...input, id: "null-risk-flag", createdAt: new Date().toISOString() };
+  }
+}
+
 export type ApplyMemoryPlanResult = {
   sourceId: string;
   events: MemoryEvent[];
@@ -110,3 +138,7 @@ export type MemoryPlanAuditPayload = {
   plan: MemoryPlan;
   result: ApplyMemoryPlanResult;
 };
+
+export * from "./http-adapters.js";
+export * from "./postgres.js";
+export * from "./postgres-schema.js";

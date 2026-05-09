@@ -125,6 +125,15 @@ export const RiskFlagSchema = z.object({
 });
 export type RiskFlag = z.infer<typeof RiskFlagSchema>;
 
+export const RiskFlagRecordSchema = RiskFlagSchema.extend({
+  id: z.string().min(1),
+  elderId: z.string().min(1),
+  sourceId: z.string().min(1),
+  eventId: z.string().optional(),
+  createdAt: ISODateTimeSchema,
+});
+export type RiskFlagRecord = z.infer<typeof RiskFlagRecordSchema>;
+
 export const FamilyConfirmationTaskDraftSchema = z.object({
   type: z.enum(["reminder_confirm", "risk_review", "memory_correction", "general_review"]),
   title: z.string().min(1),
@@ -134,6 +143,30 @@ export const FamilyConfirmationTaskDraftSchema = z.object({
   relatedEventIndex: z.number().int().nonnegative().optional(),
 });
 export type FamilyConfirmationTaskDraft = z.infer<typeof FamilyConfirmationTaskDraftSchema>;
+
+export const FamilyTaskSchema = FamilyConfirmationTaskDraftSchema.omit({ relatedEventIndex: true }).extend({
+  id: z.string().min(1),
+  elderId: z.string().min(1),
+  familyUserId: z.string().optional(),
+  relatedEventId: z.string().optional(),
+  status: z.enum(["pending", "confirmed", "cancelled"]),
+  confirmedBy: z.string().optional(),
+  confirmedAt: ISODateTimeSchema.optional(),
+  createdAt: ISODateTimeSchema,
+});
+export type FamilyTask = z.infer<typeof FamilyTaskSchema>;
+
+export const FeedbackSchema = z.object({
+  id: z.string().min(1),
+  elderId: z.string().min(1),
+  sourceId: z.string().optional(),
+  eventId: z.string().optional(),
+  actorUserId: z.string().min(1),
+  feedbackType: z.string().min(1),
+  correction: z.record(z.unknown()).default({}),
+  createdAt: ISODateTimeSchema,
+});
+export type Feedback = z.infer<typeof FeedbackSchema>;
 
 export const MemoryUpdateDraftSchema = z.object({
   target: z.enum(["semantic_memory", "temporal_graph", "wiki_page"]),
@@ -253,3 +286,34 @@ export const MemoryAnswerSchema = z.object({
   safetyNote: z.string().optional(),
 });
 export type MemoryAnswer = z.infer<typeof MemoryAnswerSchema>;
+
+export const CreateTextNoteRequestSchema = z.object({
+  elderId: z.string().min(1),
+  transcript: z.string().min(1),
+  localCreatedAt: ISODateTimeSchema.optional(),
+  metadata: MemorySourceSchema.shape.metadata,
+});
+export type CreateTextNoteRequest = z.infer<typeof CreateTextNoteRequestSchema>;
+
+export const QueryMemoryRequestSchema = z.object({
+  elderId: z.string().min(1),
+  query: z.string().min(1),
+  now: ISODateTimeSchema.optional(),
+});
+export type QueryMemoryRequest = z.infer<typeof QueryMemoryRequestSchema>;
+
+export const ConfirmReminderRequestSchema = z.object({
+  actorUserId: z.string().min(1),
+  remindAt: ISODateTimeSchema.optional(),
+});
+export type ConfirmReminderRequest = z.infer<typeof ConfirmReminderRequestSchema>;
+
+export const CreateFamilyReminderRequestSchema = z.object({
+  elderId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  remindAt: ISODateTimeSchema.optional(),
+  reason: z.string().default("Family-created reminder."),
+});
+export type CreateFamilyReminderRequest = z.infer<typeof CreateFamilyReminderRequestSchema>;

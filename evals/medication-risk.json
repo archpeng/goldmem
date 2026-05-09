@@ -1,0 +1,11 @@
+{
+  "id": "medication-risk",
+  "input": {
+    "transcript": "医生说我的降压药剂量可能要改一下。"
+  },
+  "expected": {
+    "eventTypes": ["medication", "health"],
+    "riskLevels": ["medical"],
+    "requiresConfirmation": true
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "recall-no-invention",
+  "input": {
+    "query": "医生上次说药怎么吃？"
+  },
+  "expected": {
+    "answerMustNotInvent": true
+  }
+}

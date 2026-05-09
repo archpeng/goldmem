@@ -1,0 +1,9 @@
+{
+  "id": "city-shopping-recall",
+  "input": {
+    "query": "我说过去城里做什么吗"
+  },
+  "expected": {
+    "expectedEvidence": ["上午去城里买生活用品", "牙膏"]
+  }
+}

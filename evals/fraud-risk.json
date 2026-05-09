@@ -1,0 +1,11 @@
+{
+  "id": "fraud-risk",
+  "input": {
+    "transcript": "有人打电话说我的账户有问题，让我把钱转到安全账户。"
+  },
+  "expected": {
+    "eventTypes": ["finance"],
+    "riskLevels": ["fraud_risk"],
+    "requiresConfirmation": true
+  }
+}

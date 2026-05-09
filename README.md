@@ -78,3 +78,108 @@ This repo is initialized as a pnpm TypeScript monorepo.
 pnpm install
 pnpm typecheck
 ```
+
+## MVP Quickstart
+
+The MVP is text-first: local PostgreSQL, Fastify API, OpenAI model gateway, deterministic Kernel guardrails, and PostgreSQL truth records.
+
+1. Install dependencies.
+
+```bash
+pnpm install
+```
+
+2. Create local environment.
+
+```bash
+cp .env.example .env
+```
+
+Set `OPENAI_API_KEY` in `.env`.
+
+3. Start local PostgreSQL.
+
+```bash
+docker compose -f infra/docker-compose.yml up -d postgres
+```
+
+4. Apply migrations.
+
+```bash
+set -a
+source .env
+set +a
+pnpm db:migrate
+```
+
+5. Start the API server.
+
+```bash
+pnpm dev:api:env
+```
+
+6. Start the Web MVP in another terminal.
+
+```bash
+pnpm dev:web
+```
+
+Open `http://localhost:5173` and use the single-page MVP console to save a memory, confirm reminders, ask a recall question, and review family tasks.
+
+7. Run the MVP smoke flow in another terminal.
+
+```bash
+set -a
+source .env
+set +a
+pnpm mvp:smoke
+```
+
+The smoke flow calls health, text ingest, reminder list/confirm, and recall query.
+
+## Local Mem0
+
+Mem0 is the first optional external dependency. PostgreSQL remains the truth store; Mem0 is only a semantic recall index and every write must carry source/event metadata.
+
+1. Set `MEM0_BASE_URL=http://localhost:8888` in `.env`.
+
+2. Start Mem0 and its local pgvector/Neo4j backing services.
+
+```bash
+set -a
+source .env
+set +a
+docker compose -f infra/docker-compose.yml up -d mem0-postgres mem0-neo4j mem0
+```
+
+The local Mem0 API is available at `http://localhost:8888/docs`. Local compose uses `AUTH_DISABLED=true`; do not use that setting outside development.
+
+3. Verify direct Mem0 add/search.
+
+```bash
+set -a
+source .env
+set +a
+pnpm mem0:smoke
+```
+
+4. Rebuild the semantic index from PostgreSQL truth records when needed.
+
+```bash
+set -a
+source .env
+set +a
+pnpm semantic:rebuild
+```
+
+Restart the API server after changing `MEM0_BASE_URL`; otherwise it will keep using the null semantic adapter.
+
+## MVP Verification
+
+Run the local non-network verification suite:
+
+```bash
+pnpm mvp:verify
+```
+
+This runs typecheck, tests, build, lint, and eval fixtures. It does not require OpenAI, Mem0, Graphiti, or a running database.

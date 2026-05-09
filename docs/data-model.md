@@ -112,6 +112,9 @@ This document defines the first PostgreSQL truth-source tables. Mem0 and Graphit
 - status
 - visibility
 - urgency
+- related_event_id
+- confirmed_by
+- confirmed_at
 - created_at
 
 ## feedback
@@ -129,6 +132,17 @@ This document defines the first PostgreSQL truth-source tables. Mem0 and Graphit
 
 - id
 - elder_id
+- source_id
 - type
 - payload_json
 - created_at
+
+## Implementation status
+
+The first concrete truth-store implementation uses Drizzle + PostgreSQL.
+
+- Schema source: `packages/memory-store/src/postgres-schema.ts`
+- Migration directory: `infra/db/migrations`
+- Drizzle config: `drizzle.config.ts`
+
+Mem0-compatible semantic memory and Graphiti-compatible temporal graph memory are external auxiliary stores. They must carry `sourceId` and, when available, `eventId` metadata so their contents remain traceable to PostgreSQL truth records.

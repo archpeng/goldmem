@@ -1,9 +1,12 @@
 import {
+  MemoryAnswerSchema,
   MemoryPlanSchema,
+  ParsedMemoryQuerySchema,
   type MemoryAnswer,
   type MemoryEvent,
   type MemoryPlan,
   type MemorySource,
+  type ParsedMemoryQuery,
   type Reminder,
 } from "@goldmem/memory-schema";
 import type { ModelGateway, RetrievedEvidence } from "@goldmem/model-gateway";
@@ -12,6 +15,7 @@ import type {
   EventStore,
   FamilyTaskStore,
   PersonalContextStore,
+  RiskFlagStore,
   SemanticMemoryStore,
   SourceStore,
   TemporalGraphStore,
@@ -58,6 +62,7 @@ export type ElderMemoryKernelDeps = {
   eventStore: EventStore;
   reminderEngine: ReminderEngine;
   familyTaskStore: FamilyTaskStore;
+  riskFlagStore: RiskFlagStore;
   semanticMemory: SemanticMemoryStore;
   temporalGraph: TemporalGraphStore;
   personalContextStore: PersonalContextStore;
@@ -102,53 +107,66 @@ export class ElderMemoryKernel {
   }
 
   private async ingestSource(source: MemorySource): Promise<IngestResult> {
-    const context = await this.deps.personalContextStore.buildContext({
-      elderId: source.elderId,
-      queryText: source.transcript,
-    });
+    try {
+      const context = await this.deps.personalContextStore.buildContext({
+        elderId: source.elderId,
+        queryText: source.transcript,
+      });
 
-    const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
-      elderId: source.elderId,
-      sourceId: source.id,
-      transcript: source.transcript,
-      createdAt: source.createdAt,
-      context,
-    });
+      const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
+        elderId: source.elderId,
+        sourceId: source.id,
+        transcript: source.transcript,
+        createdAt: source.createdAt,
+        context,
+      });
 
-    const validatedPlan = MemoryPlanSchema.parse(rawPlan);
-    const riskGuardedPlan = await this.deps.riskEngine.enforce(validatedPlan);
-    const permissionedPlan = await this.deps.permissionEngine.applyDefaultVisibility(
-      riskGuardedPlan,
-      source.elderId,
-    );
+      const validatedPlan = MemoryPlanSchema.parse(rawPlan);
+      const riskGuardedPlan = await this.deps.riskEngine.enforce(validatedPlan);
+      const permissionedPlan = await this.deps.permissionEngine.applyDefaultVisibility(
+        riskGuardedPlan,
+        source.elderId,
+      );
 
-    const applied = await this.applyMemoryPlan(permissionedPlan);
+      const applied = await this.applyMemoryPlan(permissionedPlan);
 
-    await this.deps.auditLog.record({
-      type: "memory_ingest",
-      elderId: source.elderId,
-      sourceId: source.id,
-      payload: {
-        plan: permissionedPlan,
-        result: {
-          eventIds: applied.events.map((event) => event.id),
-          reminderIds: applied.reminderCandidates.map((reminder) => reminder.id),
+      await this.deps.auditLog.record({
+        type: "memory_ingest",
+        elderId: source.elderId,
+        sourceId: source.id,
+        payload: {
+          plan: permissionedPlan,
+          result: {
+            eventIds: applied.events.map((event) => event.id),
+            reminderIds: applied.reminderCandidates.map((reminder) => reminder.id),
+          },
         },
-      },
-    });
+      });
 
-    return {
-      sourceId: source.id,
-      summary: permissionedPlan.summary,
-      events: applied.events,
-      reminderCandidates: applied.reminderCandidates,
-      elderFacingCards: applied.events.map((event) => ({
-        title: event.title,
-        summary: event.summary,
-        needsConfirmation: event.requiresConfirmation,
-        riskLevel: event.riskLevel,
-      })),
-    };
+      return {
+        sourceId: source.id,
+        summary: permissionedPlan.summary,
+        events: applied.events,
+        reminderCandidates: applied.reminderCandidates,
+        elderFacingCards: applied.events.map((event) => ({
+          title: event.title,
+          summary: event.summary,
+          needsConfirmation: event.requiresConfirmation,
+          riskLevel: event.riskLevel,
+        })),
+      };
+    } catch (error) {
+      await this.deps.auditLog.record({
+        type: "memory_ingest_failed",
+        elderId: source.elderId,
+        sourceId: source.id,
+        payload: {
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
   }
 
   private async applyMemoryPlan(plan: MemoryPlan): Promise<{ events: MemoryEvent[]; reminderCandidates: Reminder[] }> {
@@ -165,7 +183,7 @@ export class ElderMemoryKernel {
       events.push(event);
     }
 
-    for (const [index, draft] of plan.reminderCandidates.entries()) {
+    for (const draft of plan.reminderCandidates) {
       const relatedEvent = typeof draft.relatedEventIndex === "number" ? events[draft.relatedEventIndex] : undefined;
       const reminder = await this.deps.reminderEngine.createCandidate({
         ...draft,
@@ -187,7 +205,7 @@ export class ElderMemoryKernel {
         });
       }
 
-      if (index > events.length) {
+      if (typeof draft.relatedEventIndex === "number" && draft.relatedEventIndex >= events.length) {
         // Keep future lint simple: suspicious relatedEventIndex values are audit-only, not fatal.
         await this.deps.auditLog.record({
           type: "memory_plan_warning",
@@ -196,6 +214,14 @@ export class ElderMemoryKernel {
           payload: { warning: "Reminder relatedEventIndex out of range", reminder: draft },
         });
       }
+    }
+
+    for (const risk of plan.riskFlags) {
+      await this.deps.riskFlagStore.create({
+        ...risk,
+        elderId: plan.elderId,
+        sourceId: plan.sourceId,
+      });
     }
 
     for (const task of plan.familyTasks) {
@@ -275,12 +301,12 @@ export class ElderMemoryKernel {
       queryText: input.query,
     });
 
-    const parsedQuery = await this.deps.modelGateway.parseMemoryQuery({
+    const parsedQuery = ParsedMemoryQuerySchema.parse(await this.deps.modelGateway.parseMemoryQuery({
       elderId: input.elderId,
       query: input.query,
       now,
       context,
-    });
+    }));
 
     const structuredEvents = await this.deps.eventStore.search({
       elderId: input.elderId,
@@ -305,18 +331,42 @@ export class ElderMemoryKernel {
       limit: 10,
     });
 
-    const evidence = mergeEvidence(structuredEvents, semanticResults, graphResults);
-    const answer = await this.deps.modelGateway.generateMemoryAnswer({
+    const evidence = mergeEvidence(structuredEvents, semanticResults, graphResults, parsedQuery, input.query);
+    const retrieval = {
+      structuredCount: structuredEvents.length,
+      semanticCount: semanticResults.length,
+      graphCount: graphResults.length,
+      evidenceCount: evidence.length,
+    };
+    if (evidence.length === 0) {
+      const answer: MemoryAnswer = {
+        answerText: "I could not find a matching memory for that question.",
+        confidence: 0,
+        matchedSources: [],
+        suggestedActions: [],
+        safetyNote: "No source evidence was found.",
+      };
+
+      await this.deps.auditLog.record({
+        type: "memory_query",
+        elderId: input.elderId,
+        payload: { query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true },
+      });
+
+      return answer;
+    }
+
+    const answer = MemoryAnswerSchema.parse(await this.deps.modelGateway.generateMemoryAnswer({
       query: input.query,
       parsedQuery,
       evidence,
       responseStyle: "elder_friendly_voice",
-    });
+    }));
 
     await this.deps.auditLog.record({
       type: "memory_query",
       elderId: input.elderId,
-      payload: { query: input.query, parsedQuery, evidence, answer },
+      payload: { query: input.query, parsedQuery, evidence, retrieval, answer },
     });
 
     return answer;
@@ -340,13 +390,15 @@ function mergeEvidence(
   events: MemoryEvent[],
   semanticResults: Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>,
   graphResults: RetrievedEvidence[],
+  parsedQuery: ParsedMemoryQuery,
+  query: string,
 ): RetrievedEvidence[] {
   const eventEvidence: RetrievedEvidence[] = events.map((event) => ({
     sourceId: event.sourceId,
     eventId: event.id,
     createdAt: event.createdAt,
     summary: event.summary,
-    score: 0.8 + event.importance * 0.2,
+    score: scoreStructuredEvent(event, parsedQuery, query),
     canPlayAudio: true,
   }));
 
@@ -369,4 +421,58 @@ function mergeEvidence(
   }
 
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, 12);
+}
+
+function scoreStructuredEvent(event: MemoryEvent, parsedQuery: ParsedMemoryQuery, query: string): number {
+  const eventText = `${event.title}\n${event.summary}`.toLowerCase();
+  const queryTerms = buildRecallTerms(query, parsedQuery.entities.map((entity) => entity.name));
+  const entityNames = event.entities.map((entity) => entity.name.toLowerCase());
+
+  let score = 0.45 + event.importance * 0.2 + event.confidence * 0.15;
+  if (parsedQuery.eventTypes.includes(event.type)) score += 0.12;
+  if (queryTerms.some((term) => eventText.includes(term))) score += 0.16;
+  if (parsedQuery.entities.some((entity) => entityNames.includes(entity.name.toLowerCase()))) score += 0.1;
+  if (event.status === "active") score += 0.03;
+
+  return clampScore(score);
+}
+
+function buildRecallTerms(query: string, entityNames: string[]): string[] {
+  const terms = new Set<string>();
+  for (const value of [query, ...entityNames]) {
+    for (const term of tokenizeRecallText(value)) terms.add(term);
+  }
+  return [...terms].slice(0, 16);
+}
+
+function tokenizeRecallText(value: string): string[] {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return [];
+
+  const terms = new Set<string>();
+  for (const token of normalized.split(/[^\p{L}\p{N}]+/u)) {
+    if (token.length >= 2) terms.add(token);
+    if (/[\p{Script=Han}]/u.test(token)) {
+      for (const item of cjkNgrams(token)) terms.add(item);
+    }
+  }
+
+  return [...terms];
+}
+
+function cjkNgrams(value: string): string[] {
+  const chars = [...value].filter((char) => /[\p{Script=Han}]/u.test(char));
+  const grams: string[] = [];
+  for (const size of [2, 3]) {
+    for (let index = 0; index <= chars.length - size; index += 1) {
+      grams.push(chars.slice(index, index + size).join(""));
+    }
+  }
+  return grams;
+}
+
+function clampScore(score: number): number {
+  if (score < 0) return 0;
+  if (score > 1) return 1;
+  return score;
 }

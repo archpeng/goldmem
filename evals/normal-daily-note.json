@@ -1,0 +1,11 @@
+{
+  "id": "normal-daily-note",
+  "input": {
+    "transcript": "今天我去菜市场买了青菜，回来后给女儿打了电话。"
+  },
+  "expected": {
+    "eventTypes": ["shopping", "family"],
+    "riskLevels": ["normal"],
+    "requiresConfirmation": false
+  }
+}
