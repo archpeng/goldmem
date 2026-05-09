@@ -18,6 +18,9 @@ export const copy = {
     defaultQuestion: "我买了什么？",
     confidence: "可信度",
     matchedSources: "匹配证据",
+    evidenceSources: "召回来源",
+    postgresEvidence: "PostgreSQL 事实源",
+    mem0Evidence: "Mem0 语义记忆",
   },
   events: {
     title: "记忆记录",

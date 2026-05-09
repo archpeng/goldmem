@@ -18,7 +18,6 @@ import type {
   RiskFlagStore,
   SemanticMemoryStore,
   SourceStore,
-  TemporalGraphStore,
 } from "@goldmem/memory-store";
 import type { ReminderEngine } from "@goldmem/reminder-engine";
 import type { RiskEngine } from "@goldmem/risk-engine";
@@ -64,7 +63,6 @@ export type ElderMemoryKernelDeps = {
   familyTaskStore: FamilyTaskStore;
   riskFlagStore: RiskFlagStore;
   semanticMemory: SemanticMemoryStore;
-  temporalGraph: TemporalGraphStore;
   personalContextStore: PersonalContextStore;
   modelGateway: ModelGateway;
   riskEngine: RiskEngine;
@@ -238,8 +236,6 @@ export class ElderMemoryKernel {
     }
 
     await this.writeSemanticMemories(plan, events);
-    await this.writeTemporalGraph(plan, events);
-
     return { events, reminderCandidates: reminders };
   }
 
@@ -273,27 +269,6 @@ export class ElderMemoryKernel {
     }
   }
 
-  private async writeTemporalGraph(plan: MemoryPlan, events: MemoryEvent[]): Promise<void> {
-    for (const event of events) {
-      if (!shouldWriteToTemporalGraph(event)) continue;
-
-      await this.deps.temporalGraph.addEpisode({
-        groupId: event.elderId,
-        episodeType: "memory_event",
-        occurredAt: event.eventTimeStart ?? event.createdAt,
-        sourceId: event.sourceId,
-        content: {
-          title: event.title,
-          summary: event.summary,
-          type: event.type,
-          riskLevel: event.riskLevel,
-          entities: event.entities,
-          evidence: event.evidence,
-        },
-      });
-    }
-  }
-
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {
     const now = input.now ?? new Date().toISOString();
     const context = await this.deps.personalContextStore.buildContext({
@@ -323,19 +298,10 @@ export class ElderMemoryKernel {
       limit: 10,
     });
 
-    const graphResults = await this.deps.temporalGraph.search({
-      groupId: input.elderId,
-      query: input.query,
-      timeRange: parsedQuery.timeRange,
-      entities: parsedQuery.entities,
-      limit: 10,
-    });
-
-    const evidence = mergeEvidence(structuredEvents, semanticResults, graphResults, parsedQuery, input.query);
+    const evidence = mergeEvidence(structuredEvents, semanticResults, parsedQuery, input.query);
     const retrieval = {
-      structuredCount: structuredEvents.length,
-      semanticCount: semanticResults.length,
-      graphCount: graphResults.length,
+      postgresCount: structuredEvents.length,
+      mem0Count: semanticResults.length,
       evidenceCount: evidence.length,
     };
     if (evidence.length === 0) {
@@ -343,6 +309,7 @@ export class ElderMemoryKernel {
         answerText: "I could not find a matching memory for that question.",
         confidence: 0,
         matchedSources: [],
+        retrievedEvidence: [],
         suggestedActions: [],
         safetyNote: "No source evidence was found.",
       };
@@ -356,12 +323,20 @@ export class ElderMemoryKernel {
       return answer;
     }
 
-    const answer = MemoryAnswerSchema.parse(await this.deps.modelGateway.generateMemoryAnswer({
+    const generatedAnswer = MemoryAnswerSchema.parse(await this.deps.modelGateway.generateMemoryAnswer({
       query: input.query,
       parsedQuery,
       evidence,
       responseStyle: "elder_friendly_voice",
     }));
+    const answer: MemoryAnswer = {
+      ...generatedAnswer,
+      retrievedEvidence: evidence,
+      matchedSources: generatedAnswer.matchedSources.map((source) => ({
+        ...source,
+        retrievalSource: source.retrievalSource ?? evidence.find((item) => item.sourceId === source.sourceId)?.retrievalSource,
+      })),
+    };
 
     await this.deps.auditLog.record({
       type: "memory_query",
@@ -373,23 +348,9 @@ export class ElderMemoryKernel {
   }
 }
 
-function shouldWriteToTemporalGraph(event: MemoryEvent): boolean {
-  return (
-    event.type === "health" ||
-    event.type === "medication" ||
-    event.type === "appointment" ||
-    event.type === "finance" ||
-    event.riskLevel === "medical" ||
-    event.riskLevel === "financial" ||
-    event.riskLevel === "fraud_risk" ||
-    event.importance > 0.8
-  );
-}
-
 function mergeEvidence(
   events: MemoryEvent[],
   semanticResults: Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>,
-  graphResults: RetrievedEvidence[],
   parsedQuery: ParsedMemoryQuery,
   query: string,
 ): RetrievedEvidence[] {
@@ -400,20 +361,27 @@ function mergeEvidence(
     summary: event.summary,
     score: scoreStructuredEvent(event, parsedQuery, query),
     canPlayAudio: true,
+    retrievalSource: "postgres",
   }));
 
-  const semanticEvidence: RetrievedEvidence[] = semanticResults.map((result) => ({
-    sourceId: String(result.metadata?.sourceId ?? "unknown"),
-    eventId: typeof result.metadata?.eventId === "string" ? result.metadata.eventId : undefined,
-    createdAt: new Date().toISOString(),
-    summary: result.memory,
-    score: result.score ?? 0.5,
-    canPlayAudio: typeof result.metadata?.sourceId === "string",
-  }));
+  const semanticEvidence: RetrievedEvidence[] = semanticResults.flatMap((result) => {
+    if (typeof result.metadata?.sourceId !== "string") return [];
+    return [
+      {
+        sourceId: result.metadata.sourceId,
+        eventId: typeof result.metadata.eventId === "string" ? result.metadata.eventId : undefined,
+        createdAt: new Date().toISOString(),
+        summary: result.memory,
+        score: result.score ?? 0.5,
+        canPlayAudio: true,
+        retrievalSource: "mem0" as const,
+      },
+    ];
+  });
 
   const byKey = new Map<string, RetrievedEvidence>();
-  for (const item of [...eventEvidence, ...semanticEvidence, ...graphResults]) {
-    const key = `${item.sourceId}:${item.eventId ?? item.summary}`;
+  for (const item of [...eventEvidence, ...semanticEvidence]) {
+    const key = `${item.retrievalSource}:${item.sourceId}:${item.eventId ?? item.summary}`;
     const existing = byKey.get(key);
     if (!existing || item.score > existing.score) {
       byKey.set(key, item);

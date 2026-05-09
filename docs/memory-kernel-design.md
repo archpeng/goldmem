@@ -29,7 +29,6 @@ source
   -> create reminder candidates
   -> create family tasks
   -> write semantic memory
-  -> optionally write temporal graph
   -> audit log
 ```
 
@@ -56,16 +55,7 @@ source
 - common people/places/objects
 - recall context
 
-### Graphiti temporal graph memory
-
-- high-value event relations
-- medication changes
-- appointment timelines
-- repeated health symptoms
-- family confirmations
-- financial/fraud risk chains
-
-Graphiti is optional in the first milestone. The `TemporalGraphStore` adapter is present from day one to avoid architectural rework.
+Mem0's self-hosted service may use its own pgvector and Neo4j services internally. GoldMem does not expose those internal services as business truth or as a separate temporal graph path in the MVP.
 
 ## Rule philosophy
 
@@ -89,4 +79,4 @@ Text-only ingestion:
 transcript -> MemoryPlan -> events + reminder candidates + Mem0 writes
 ```
 
-No Android, no Graphiti, no scheduler required yet.
+No Android, no separate temporal graph, no scheduler required yet.

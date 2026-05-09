@@ -15,9 +15,6 @@ import { DefaultRiskEngine } from "@goldmem/risk-engine";
 import {
   createPostgresStores,
   HttpSemanticMemoryStore,
-  HttpTemporalGraphStore,
-  NullSemanticMemoryStore,
-  NullTemporalGraphStore,
   type FamilyTaskStore,
   type AuditLog,
   type EventStore,
@@ -182,6 +179,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
   });
   const reminderEngine = new DefaultReminderEngine(postgres.reminderStore);
   const modelGateway = buildModelGatewayFromEnv();
+  const mem0BaseUrl = requiredEnv("MEM0_BASE_URL");
 
   const kernelDeps: ElderMemoryKernelDeps = {
     sourceStore: postgres.sourceStore,
@@ -189,12 +187,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     reminderEngine,
     familyTaskStore: postgres.familyTaskStore,
     riskFlagStore: postgres.riskFlagStore,
-    semanticMemory: process.env.MEM0_BASE_URL
-      ? new HttpSemanticMemoryStore({ baseUrl: process.env.MEM0_BASE_URL, apiKey: process.env.MEM0_API_KEY })
-      : new NullSemanticMemoryStore(),
-    temporalGraph: process.env.GRAPHITI_BASE_URL
-      ? new HttpTemporalGraphStore({ baseUrl: process.env.GRAPHITI_BASE_URL, apiKey: process.env.GRAPHITI_API_KEY })
-      : new NullTemporalGraphStore(),
+    semanticMemory: new HttpSemanticMemoryStore({ baseUrl: mem0BaseUrl, apiKey: process.env.MEM0_API_KEY }),
     personalContextStore: postgres.personalContextStore,
     modelGateway,
     riskEngine: new DefaultRiskEngine(),
@@ -213,7 +206,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       auditLog: postgres.auditLog,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
-        return { postgres: "ok" };
+        return { postgres: "ok", mem0: "configured", mem0BaseUrl };
       },
     },
     close: postgres.close,

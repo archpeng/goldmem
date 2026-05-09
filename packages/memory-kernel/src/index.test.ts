@@ -23,7 +23,6 @@ import type {
   RiskFlagStore,
   SemanticMemoryStore,
   SourceStore,
-  TemporalGraphStore,
 } from "@goldmem/memory-store";
 import { DefaultPermissionEngine } from "@goldmem/permission-engine";
 import { DefaultReminderEngine } from "@goldmem/reminder-engine";
@@ -207,6 +206,7 @@ describe("ElderMemoryKernel", () => {
       answerText: "You bought vegetables at the market.",
       confidence: 0.9,
       matchedSources: [],
+      retrievedEvidence: [],
       suggestedActions: [],
     };
     harness.semanticMemory.searchResults = [
@@ -224,6 +224,7 @@ describe("ElderMemoryKernel", () => {
     });
 
     expect(answer.answerText).toContain("vegetables");
+    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "mem0")).toBe(true);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
 
     harness.model.parsedQuery = { intent: "not-valid" } as unknown as ParsedMemoryQuery;
@@ -240,7 +241,6 @@ describe("ElderMemoryKernel", () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     harness.eventStore.searchResults = [];
     harness.semanticMemory.searchResults = [];
-    harness.temporalGraph.searchResults = [];
     harness.model.parsedQuery = {
       intent: "recall_event",
       requiresSourceEvidence: true,
@@ -282,7 +282,6 @@ describe("ElderMemoryKernel", () => {
       },
     ];
     harness.semanticMemory.searchResults = [];
-    harness.temporalGraph.searchResults = [];
     harness.model.parsedQuery = {
       intent: "recall_event",
       requiresSourceEvidence: true,
@@ -293,6 +292,7 @@ describe("ElderMemoryKernel", () => {
       answerText: "您说过去城里买生活用品，比如牙膏。",
       confidence: 0.8,
       matchedSources: [],
+      retrievedEvidence: [],
       suggestedActions: [],
     };
 
@@ -303,9 +303,10 @@ describe("ElderMemoryKernel", () => {
     });
 
     expect(answer.answerText).toContain("生活用品");
+    expect(answer.retrievedEvidence[0]?.retrievalSource).toBe("postgres");
     expect(harness.model.answerCalls).toBe(1);
     const auditPayload = harness.audit.records.at(-1)?.payload;
-    expect(auditPayload?.retrieval).toMatchObject({ structuredCount: 1, evidenceCount: 1 });
+    expect(auditPayload?.retrieval).toMatchObject({ postgresCount: 1, evidenceCount: 1 });
     expect(auditPayload?.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -342,7 +343,6 @@ function createHarness(plan: MemoryPlan) {
   const familyTasks = new InMemoryFamilyTaskStore();
   const riskFlags = new InMemoryRiskFlagStore();
   const semanticMemory = new InMemorySemanticMemoryStore();
-  const temporalGraph = new InMemoryTemporalGraphStore();
   const audit = new InMemoryAuditLog();
   const model = new FakeModelGateway(plan);
 
@@ -353,7 +353,6 @@ function createHarness(plan: MemoryPlan) {
     familyTaskStore: familyTasks,
     riskFlagStore: riskFlags,
     semanticMemory,
-    temporalGraph,
     personalContextStore: new FakePersonalContextStore(),
     modelGateway: model,
     riskEngine: new DefaultRiskEngine(),
@@ -369,7 +368,6 @@ function createHarness(plan: MemoryPlan) {
     familyTasks,
     riskFlags,
     semanticMemory,
-    temporalGraph,
     audit,
     model,
   };
@@ -455,6 +453,7 @@ class FakeModelGateway implements ModelGateway {
     answerText: "I found one memory.",
     confidence: 0.8,
     matchedSources: [],
+    retrievedEvidence: [],
     suggestedActions: [],
   };
 
@@ -611,19 +610,6 @@ class InMemorySemanticMemoryStore implements SemanticMemoryStore {
       metadata: memory.metadata,
       score: 0.7,
     }));
-  }
-}
-
-class InMemoryTemporalGraphStore implements TemporalGraphStore {
-  episodes: Array<Parameters<TemporalGraphStore["addEpisode"]>[0]> = [];
-  searchResults: Awaited<ReturnType<TemporalGraphStore["search"]>> = [];
-
-  async addEpisode(input: Parameters<TemporalGraphStore["addEpisode"]>[0]): Promise<void> {
-    this.episodes.push(input);
-  }
-
-  async search() {
-    return this.searchResults;
   }
 }
 

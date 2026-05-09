@@ -8,7 +8,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
    LLMs may produce transcripts, parsed queries, answers, and `MemoryPlan` objects. They must not write business truth directly.
 
 2. **PostgreSQL is truth.**
-   Sources, events, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 and Graphiti are auxiliary indexes only and must be rebuildable from truth data.
+   Sources, events, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default semantic index and must be rebuildable from truth data.
 
 3. **The Kernel owns memory orchestration.**
    Ingest and recall behavior belongs in `packages/memory-kernel`. API routes and frontends must stay thin.
@@ -29,7 +29,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 
 - Do not bypass `memory-kernel` for memory writes or recall answers.
 - Do not let providers, prompts, frontends, or API routes mutate truth state directly.
-- Do not treat Mem0/Graphiti as authoritative state.
+- Do not treat Mem0 as authoritative state.
 - Do not share raw transcripts by default.
 - Do not auto-confirm ambiguous reminders.
 - Do not solve recall bugs with one-off keyword/type mappings.
@@ -49,7 +49,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 - `apps/web-mvp`: React + Tailwind + shadcn-style components, Chinese-first single-page MVP.
 - `services/api-server`: Fastify adapter, request parsing, Kernel calls, minimal health/read routes.
 - `packages/memory-kernel`: source ingest, MemoryPlan validation, guardrails, persistence, recall, evidence merge, audit.
-- `packages/memory-store`: PostgreSQL truth adapter plus optional Mem0/Graphiti-style adapters.
+- `packages/memory-store`: PostgreSQL truth adapter plus the Mem0 HTTP adapter.
 - `packages/model-gateway`: OpenAI-compatible LLM/ASR boundary with Zod-normalized outputs.
 
 ## Required Verification

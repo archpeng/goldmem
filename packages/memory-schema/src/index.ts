@@ -169,7 +169,7 @@ export const FeedbackSchema = z.object({
 export type Feedback = z.infer<typeof FeedbackSchema>;
 
 export const MemoryUpdateDraftSchema = z.object({
-  target: z.enum(["semantic_memory", "temporal_graph", "wiki_page"]),
+  target: z.enum(["semantic_memory", "wiki_page"]),
   path: z.string().optional(),
   operation: z.enum(["add", "append", "replace_section", "create"]),
   content: z.string().min(1),
@@ -271,6 +271,21 @@ export const MemoryAnswerSchema = z.object({
         createdAt: ISODateTimeSchema,
         summary: z.string().min(1),
         canPlayAudio: z.boolean(),
+        retrievalSource: z.enum(["postgres", "mem0"]).optional(),
+      }),
+    )
+    .default([]),
+  retrievedEvidence: z
+    .array(
+      z.object({
+        sourceId: z.string().min(1),
+        eventId: z.string().min(1).optional(),
+        createdAt: ISODateTimeSchema,
+        summary: z.string().min(1),
+        transcriptQuote: z.string().optional(),
+        score: z.number().min(0).max(1),
+        canPlayAudio: z.boolean(),
+        retrievalSource: z.enum(["postgres", "mem0"]),
       }),
     )
     .default([]),

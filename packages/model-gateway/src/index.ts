@@ -47,6 +47,7 @@ export type RetrievedEvidence = {
   transcriptQuote?: string;
   score: number;
   canPlayAudio: boolean;
+  retrievalSource: "postgres" | "mem0";
 };
 
 export type PersonalContext = {
@@ -236,7 +237,7 @@ const RISK_TYPES = [
 const SEVERITIES = ["low", "medium", "high"] as const;
 const FAMILY_TASK_TYPES = ["reminder_confirm", "risk_review", "memory_correction", "general_review"] as const;
 const URGENCIES = ["low", "medium", "high"] as const;
-const MEMORY_UPDATE_TARGETS = ["semantic_memory", "temporal_graph", "wiki_page"] as const;
+const MEMORY_UPDATE_TARGETS = ["semantic_memory", "wiki_page"] as const;
 const MEMORY_UPDATE_OPERATIONS = ["add", "append", "replace_section", "create"] as const;
 const UNCERTAINTY_ACTIONS = ["ask_elder", "ask_family", "leave_unresolved", "review_later"] as const;
 const QUERY_INTENTS = [
@@ -498,6 +499,7 @@ function normalizeMatchedSources(raw: unknown, evidence: RetrievedEvidence[]): J
     createdAt: item.createdAt,
     summary: item.summary,
     canPlayAudio: item.canPlayAudio,
+    retrievalSource: item.retrievalSource,
   }));
 }
 
@@ -510,6 +512,7 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
       createdAt: matched.createdAt,
       summary: matched.summary,
       canPlayAudio: matched.canPlayAudio,
+      retrievalSource: matched.retrievalSource,
     };
   }
 
@@ -523,6 +526,7 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
     createdAt: optionalIso(record.createdAt) ?? matched?.createdAt ?? new Date().toISOString(),
     summary: stringValue(record.summary, matched?.summary ?? "Matched memory source."),
     canPlayAudio: booleanValue(record.canPlayAudio, matched?.canPlayAudio ?? false),
+    retrievalSource: enumValue(record.retrievalSource, ["postgres", "mem0"] as const, matched?.retrievalSource ?? "postgres"),
   };
 }
 

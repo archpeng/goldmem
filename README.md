@@ -14,7 +14,6 @@ Elder voice/text
   -> risk flag
   -> family confirmation task
   -> semantic memory
-  -> temporal graph memory
   -> query recall
   -> feedback/eval loop
 ```
@@ -24,7 +23,7 @@ Elder voice/text
 1. **LLM understands; Kernel constrains.** Models produce a `MemoryPlan`; deterministic code validates, guards, and applies it.
 2. **PostgreSQL is the truth source.** Original source, event state, reminders, permissions, risk records, and audit logs are not delegated to memory frameworks.
 3. **Mem0 is semantic memory.** It remembers user facts, preferences, event summaries, and recall context.
-4. **Graphiti is temporal graph memory.** It is optional in the first version and reserved for high-value long-term relations: medication changes, health timelines, family confirmations, financial risk, repeated symptoms.
+4. **Mem0 includes the MVP semantic index.** Its local pgvector/Neo4j backing services are Mem0 internals; GoldMem does not run a separate Graphiti path in the MVP.
 5. **Failures become eval data, not ad-hoc rules.** Case-by-case mistakes are collected into evaluation cases and prompt/model improvements.
 
 ## Repository layout
@@ -43,7 +42,7 @@ packages/
   memory-schema/        # Zod schemas and shared domain types
   memory-kernel/        # Elder Memory Kernel orchestration
   model-gateway/        # LLM/ASR abstraction
-  memory-store/         # truth/semantic/graph store interfaces
+  memory-store/         # PostgreSQL truth store and Mem0 adapter
   reminder-engine/      # deterministic reminder state machine
   risk-engine/          # hard risk guardrails
   permission-engine/    # visibility and family sharing guardrails
@@ -68,7 +67,7 @@ input transcript
   -> return elder-facing cards
 ```
 
-Then add ASR/audio, reminder scheduling, fuzzy recall, family confirmation, and later Graphiti.
+Then add ASR/audio, reminder scheduling, fuzzy recall hardening, family confirmation, and later a separate temporal graph only if evals prove Mem0 is insufficient.
 
 ## Development
 
@@ -97,10 +96,13 @@ cp .env.example .env
 
 Set `OPENAI_API_KEY` in `.env`.
 
-3. Start local PostgreSQL.
+3. Start local PostgreSQL and Mem0.
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d postgres
+set -a
+source .env
+set +a
+docker compose -f infra/docker-compose.yml up -d postgres mem0-postgres mem0-neo4j mem0
 ```
 
 4. Apply migrations.
@@ -112,13 +114,22 @@ set +a
 pnpm db:migrate
 ```
 
-5. Start the API server.
+5. Verify direct Mem0 add/search.
+
+```bash
+set -a
+source .env
+set +a
+pnpm mem0:smoke
+```
+
+6. Start the API server.
 
 ```bash
 pnpm dev:api:env
 ```
 
-6. Start the Web MVP in another terminal.
+7. Start the Web MVP in another terminal.
 
 ```bash
 pnpm dev:web
@@ -126,7 +137,7 @@ pnpm dev:web
 
 Open `http://localhost:5173` and use the single-page MVP console to save a memory, confirm reminders, ask a recall question, and review family tasks.
 
-7. Run the MVP smoke flow in another terminal.
+8. Run the MVP smoke flow in another terminal.
 
 ```bash
 set -a
@@ -139,7 +150,7 @@ The smoke flow calls health, text ingest, reminder list/confirm, and recall quer
 
 ## Local Mem0
 
-Mem0 is the first optional external dependency. PostgreSQL remains the truth store; Mem0 is only a semantic recall index and every write must carry source/event metadata.
+Mem0 is the default local external dependency. PostgreSQL remains the truth store; Mem0 is the semantic recall index and every write must carry source/event metadata.
 
 1. Set `MEM0_BASE_URL=http://localhost:8888` in `.env`.
 
@@ -172,7 +183,7 @@ set +a
 pnpm semantic:rebuild
 ```
 
-Restart the API server after changing `MEM0_BASE_URL`; otherwise it will keep using the null semantic adapter.
+Restart the API server after changing `MEM0_BASE_URL`.
 
 ## MVP Verification
 
@@ -182,4 +193,4 @@ Run the local non-network verification suite:
 pnpm mvp:verify
 ```
 
-This runs typecheck, tests, build, lint, and eval fixtures. It does not require OpenAI, Mem0, Graphiti, or a running database.
+This runs typecheck, tests, build, lint, and eval fixtures. It does not require OpenAI, Mem0, or a running database.

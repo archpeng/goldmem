@@ -1,5 +1,4 @@
-import type { RetrievedEvidence } from "@goldmem/model-gateway";
-import type { SemanticMemoryStore, TemporalGraphStore } from "./index.js";
+import type { SemanticMemoryStore } from "./index.js";
 
 export type HttpAdapterOptions = {
   baseUrl: string;
@@ -34,37 +33,6 @@ export class HttpSemanticMemoryStore implements SemanticMemoryStore {
       }),
     });
     return normalizeMem0SearchResult(result);
-  }
-}
-
-export class HttpTemporalGraphStore implements TemporalGraphStore {
-  constructor(private readonly options: HttpAdapterOptions) {}
-
-  async addEpisode(input: {
-    groupId: string;
-    episodeType: string;
-    occurredAt: string;
-    sourceId: string;
-    content: Record<string, unknown>;
-  }): Promise<void> {
-    await request(this.options, "/episodes", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-  }
-
-  async search(input: {
-    groupId: string;
-    query: string;
-    timeRange?: { start: string; end: string };
-    entities?: Array<{ name: string; type?: string }>;
-    limit?: number;
-  }): Promise<RetrievedEvidence[]> {
-    const result = await request(this.options, "/search", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return Array.isArray(result) ? result : [];
   }
 }
 

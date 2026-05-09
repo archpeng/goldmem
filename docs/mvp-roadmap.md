@@ -29,7 +29,6 @@ MVP 不追求完整产品形态。它只证明 Elder Memory Kernel 的核心价�
 - full authentication
 - production scheduler
 - Mem0 production deployment beyond local OSS smoke
-- Graphiti production deployment
 - voice/audio ingestion
 - complex timeline UI
 - multi-provider model routing
@@ -46,7 +45,7 @@ Deliverables:
 - document local startup commands
 - verify docker Postgres + migration + API server startup
 - expose health endpoint
-- keep semantic memory and graph store as `Null*` adapters by default
+- require local Mem0 for the real API server
 
 Acceptance:
 
@@ -79,8 +78,8 @@ Deliverables:
 
 - `POST /elder/query` parses query through OpenAI
 - search PostgreSQL events first
-- use Null semantic/graph stores unless explicitly configured
-- support local Mem0 as an optional semantic recall index
+- use PostgreSQL structured recall plus Mem0 semantic recall
+- include retrieval-source metadata for frontend evidence display
 - answer generation must receive merged evidence only
 - record query audit log
 
@@ -127,13 +126,14 @@ Acceptance:
 MVP is complete when a developer can:
 
 1. start local Postgres
-2. run migrations
-3. start API server with `OPENAI_API_KEY`
-4. submit a text note
-5. see source/events/reminders/risk/audit persisted in PostgreSQL
-6. confirm a reminder
-7. ask one recall question and get an evidence-bound answer
-8. run the test/eval suite successfully
+2. start local Mem0 and its pgvector/Neo4j backing services
+3. run migrations
+4. start API server with `OPENAI_API_KEY` and `MEM0_BASE_URL`
+5. submit a text note
+6. see source/events/reminders/risk/audit persisted in PostgreSQL
+7. confirm a reminder
+8. ask one recall question and get an evidence-bound answer with retrieval-source metadata
+9. run the test/eval suite successfully
 
 ## Local Mem0 Milestone
 
@@ -149,8 +149,8 @@ Deliverables:
 
 Acceptance:
 
-- API server uses `HttpSemanticMemoryStore` when `MEM0_BASE_URL` is configured
-- recall audit shows semantic retrieval counts when Mem0 returns evidence
+- API server requires `MEM0_BASE_URL` and uses `HttpSemanticMemoryStore`
+- recall audit shows Mem0 retrieval counts when Mem0 returns evidence
 - no answer may rely on semantic memory without source/event metadata
 
 ## Post-MVP Roadmap
@@ -161,8 +161,8 @@ After MVP, expand in this order:
 2. production reminder scheduler
 3. Mem0-compatible semantic memory hardening for real deployment
 4. voice ingestion and audio evidence offsets
-5. Graphiti temporal graph adapter for high-value event chains
-6. full authentication and permission management
-7. elder mobile client and family web/miniprogram client
+5. full authentication and permission management
+6. elder mobile client and family web/miniprogram client
+7. evaluate a separate temporal graph only after Mem0 recall evals expose a clear gap
 
 This order keeps the MVP focused on proving the Kernel and truth-store loop before adding product surfaces.

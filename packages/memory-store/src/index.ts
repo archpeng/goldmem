@@ -9,7 +9,7 @@ import type {
   RiskFlag,
   RiskFlagRecord,
 } from "@goldmem/memory-schema";
-import type { PersonalContext, RetrievedEvidence } from "@goldmem/model-gateway";
+import type { PersonalContext } from "@goldmem/model-gateway";
 
 export type CreateSourceInput = Omit<MemorySource, "id">;
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
@@ -85,40 +85,8 @@ export interface SemanticMemoryStore {
   }): Promise<Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>>;
 }
 
-export interface TemporalGraphStore {
-  addEpisode(input: {
-    groupId: string;
-    episodeType: string;
-    occurredAt: string;
-    sourceId: string;
-    content: Record<string, unknown>;
-  }): Promise<void>;
-
-  search(input: {
-    groupId: string;
-    query: string;
-    timeRange?: { start: string; end: string };
-    entities?: Array<{ name: string; type?: string }>;
-    limit?: number;
-  }): Promise<RetrievedEvidence[]>;
-}
-
 export interface PersonalContextStore {
   buildContext(input: { elderId: string; queryText: string }): Promise<PersonalContext>;
-}
-
-export class NullTemporalGraphStore implements TemporalGraphStore {
-  async addEpisode(): Promise<void> {}
-  async search(): Promise<RetrievedEvidence[]> {
-    return [];
-  }
-}
-
-export class NullSemanticMemoryStore implements SemanticMemoryStore {
-  async addMemory(): Promise<void> {}
-  async searchMemory(): Promise<Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>> {
-    return [];
-  }
 }
 
 export class NullRiskFlagStore implements RiskFlagStore {

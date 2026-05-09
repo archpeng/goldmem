@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Brain, Check, RefreshCw, Save, Search, ShieldCheck, Users } from "lucide-react";
+import { Bell, Brain, Check, Database, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
 import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 import {
   confirmFamilyTask,
@@ -265,16 +265,40 @@ function AnswerCard({ answer }: { answer: MemoryAnswer }) {
         </Badge>
         {answer.matchedSources.length ? <Badge>{copy.recall.matchedSources}</Badge> : null}
       </div>
+      {answer.retrievedEvidence.length ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+          <p className="text-xs font-medium uppercase text-slate-500">{copy.recall.evidenceSources}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {Array.from(new Set(answer.retrievedEvidence.map((item) => item.retrievalSource))).map((source) => (
+              <EvidenceSourceBadge key={source} source={source} />
+            ))}
+          </div>
+        </div>
+      ) : null}
       {answer.matchedSources.length ? (
         <ul className="mt-3 grid gap-2 text-sm leading-6 text-slate-600">
           {answer.matchedSources.map((source) => (
             <li className="rounded-md border border-slate-200 bg-white px-3 py-2" key={`${source.sourceId}:${source.summary}`}>
+              <div className="mb-1">
+                <EvidenceSourceBadge source={source.retrievalSource ?? "postgres"} />
+              </div>
               {source.summary}
             </li>
           ))}
         </ul>
       ) : null}
     </article>
+  );
+}
+
+function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" }) {
+  const isMem0 = source === "mem0";
+  const Icon = isMem0 ? Sparkles : Database;
+  return (
+    <Badge className="gap-1" variant={isMem0 ? "default" : "secondary"}>
+      <Icon className="h-3.5 w-3.5" />
+      {isMem0 ? copy.recall.mem0Evidence : copy.recall.postgresEvidence}
+    </Badge>
   );
 }
 

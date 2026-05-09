@@ -45,8 +45,7 @@ Web/API text input
   -> risk-engine
   -> permission-engine
   -> PostgreSQL events/reminders/risk/family/audit
-  -> optional semantic memory write
-  -> optional temporal graph write
+  -> Mem0 semantic memory write
   -> elder-facing result
 ```
 
@@ -56,12 +55,11 @@ Web/API text input
 Web/API query
   -> model-gateway parseMemoryQuery
   -> PostgreSQL broad structured recall
-  -> optional Mem0 semantic recall
-  -> optional Graphiti temporal recall
+  -> Mem0 semantic recall
   -> Kernel merge/rank evidence
   -> model-gateway generateMemoryAnswer
   -> audit log
-  -> answer with matched source metadata
+  -> answer with matched source and retrieval-source metadata
 ```
 
 Recall is evidence-bound. If merged evidence is empty, the Kernel returns a safe no-evidence answer and does not call answer generation.
@@ -73,7 +71,7 @@ Recall uses broad candidate retrieval plus ranking.
 - `ParsedMemoryQuery.eventTypes` are hints, not hard filters.
 - PostgreSQL first recalls candidates from truth data using elder scope plus broad title/summary/entity matching.
 - Kernel ranking gives bonuses for event type match, entity match, query text match, event confidence, importance, and active status.
-- Semantic and graph results are merged with structured evidence and deduplicated by source/event identity.
+- Mem0 results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.
@@ -96,25 +94,13 @@ PostgreSQL must be sufficient to reconstruct business truth.
 
 ### Mem0-Compatible Semantic Memory
 
-Optional recall index:
+Default recall index:
 
 - event summaries
 - stable preferences and facts
 - semantic context for fuzzy recall
 
-Mem0 entries must carry source/event metadata when available and must be rebuildable from PostgreSQL.
-
-### Graphiti-Compatible Temporal Graph
-
-Optional high-value temporal index:
-
-- medical timelines
-- medication changes
-- appointment history
-- fraud/finance chains
-- family confirmation history
-
-Graphiti should not become the source of truth and should not be used as the primary store for ordinary daily events.
+Mem0 entries must carry source/event metadata when available and must be rebuildable from PostgreSQL. Mem0's local pgvector and Neo4j services are internal to Mem0; GoldMem does not expose them as business truth.
 
 ## Package Boundaries
 
@@ -147,7 +133,7 @@ Owns LLM/ASR provider access.
 Owns the domain pipeline.
 
 - Applies model outputs through schemas and deterministic engines.
-- Persists events, reminders, risk flags, family tasks, semantic writes, graph writes, and audit.
+- Persists events, reminders, risk flags, family tasks, Mem0 semantic writes, and audit.
 - Merges and ranks recall evidence.
 - Depends on interfaces, not concrete providers.
 
@@ -156,9 +142,7 @@ Owns the domain pipeline.
 Owns persistence interfaces and adapters.
 
 - PostgreSQL truth store.
-- Optional HTTP semantic memory adapter.
-- Optional HTTP temporal graph adapter.
-- Null adapters for MVP when external systems are disabled.
+- Mem0 HTTP semantic memory adapter.
 
 ### `packages/risk-engine`
 
@@ -207,11 +191,9 @@ The MVP can run with:
 
 - local PostgreSQL via Docker
 - OpenAI-compatible model gateway using `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`
+- local Mem0 via Docker using `MEM0_BASE_URL`
 
-Mem0 and Graphiti are optional:
-
-- If `MEM0_BASE_URL` is unset, `NullSemanticMemoryStore` is used.
-- If `GRAPHITI_BASE_URL` is unset, `NullTemporalGraphStore` is used.
+`MEM0_BASE_URL` is required for the real API server. Tests use in-memory fakes instead of a null production adapter.
 
 ## Verification
 

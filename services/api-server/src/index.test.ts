@@ -140,6 +140,7 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         answerText: "You bought vegetables.",
         confidence: 0.9,
         matchedSources: [],
+        retrievedEvidence: [],
         suggestedActions: [],
       }),
     } as ApiServerDeps["kernel"],
