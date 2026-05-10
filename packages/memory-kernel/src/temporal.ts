@@ -6,7 +6,7 @@ import {
 } from "@goldmem/temporal-memory";
 
 export type BuildTemporalEpisodeInput = {
-  tenantId?: string;
+  tenantId: string;
   elderId: string;
   source: MemorySource;
   events: MemoryEvent[];
@@ -20,11 +20,10 @@ export type WriteTemporalEpisodeInput = BuildTemporalEpisodeInput & {
 };
 
 /**
- * Builds a curated temporal episode from already-persisted GoldMem truth records.
+ * Builds a curated Graphiti episode from already-persisted GoldMem truth records.
  *
- * This is intentionally separate from the real-time ingest path. Early Graphiti
- * integration should call this from a nightly or shadow job after PostgreSQL
- * writes are complete and auditable.
+ * This stays outside the real-time ingest path. Early Graphiti integration should
+ * call it from nightly or shadow jobs after PostgreSQL writes are complete.
  */
 export function buildMemorySourceTemporalEpisode(input: BuildTemporalEpisodeInput): AddTemporalEpisodeInput {
   const riskFlags = input.riskFlags ?? [];
@@ -92,6 +91,5 @@ export function buildMemorySourceTemporalEpisode(input: BuildTemporalEpisodeInpu
 }
 
 export async function writeMemorySourceTemporalEpisode(input: WriteTemporalEpisodeInput): Promise<void> {
-  const episode = buildMemorySourceTemporalEpisode(input);
-  await input.temporalMemory.addEpisode(episode);
+  await input.temporalMemory.addEpisode(buildMemorySourceTemporalEpisode(input));
 }
