@@ -40,6 +40,7 @@ describe("buildMemorySourceTemporalEpisode", () => {
     });
 
     expect(episode.groupId).toBe("tenant-1:elder-1");
+    expect(episode.tenantId).toBe("tenant-1");
     expect(episode.episodeType).toBe("text_memory");
     expect(episode.sourceIds).toEqual(["source-1"]);
     expect(episode.eventIds).toEqual(["event-1"]);
@@ -54,6 +55,7 @@ describe("buildMemorySourceTemporalEpisode", () => {
     await expect(
       writeMemorySourceTemporalEpisode({
         temporalMemory: new NullTemporalMemoryStore(),
+        tenantId: "tenant-1",
         elderId: "elder-1",
         source,
         events: [event],
