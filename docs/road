@@ -1,0 +1,529 @@
+# GoldMem Roadmap
+
+GoldMem 的长期目标不是做一个老人语音备忘录，而是做一个多租户、证据绑定、可持续整理的老人照护记忆系统。
+
+核心路线：
+
+```text
+PostgreSQL / Citus-ready truth store
++ Memory Kernel deterministic orchestration
++ Mem0 multilingual recall engine candidates
++ Chinese-first evidence-bound recall
++ Long-Term Relation Layer for care facts
++ Nightly Consolidation and eval feedback loop
++ optional Graphiti backend after the relation layer is stable
+```
+
+## Current Baseline
+
+当前代码已经具备第一版 Memory Kernel MVP：
+
+- `packages/memory-schema` 定义 MemoryPlan、source、event、reminder、risk、family task、context link、answer 等 domain schema。
+- `packages/memory-kernel` 负责 ingest、MemoryPlan validation、risk/permission/reminder guardrails、PostgreSQL persistence、Mem0 write、recall evidence merge。
+- `packages/memory-store` 提供 PostgreSQL truth adapter 和 Mem0 HTTP semantic adapter。
+- `packages/model-gateway` 提供 OpenAI-compatible MemoryPlan/query/answer boundary。
+- `services/api-server` 提供 thin Fastify API。
+- `apps/web-mvp` 是中文优先的单页 Web MVP。
+- `evals`、`e2e/golden-retrieval.json`、`e2e/golden-context-links.json` 已经开始覆盖 recall、risk、context link 和 Mem0 evidence boundary。
+
+已经成立的架构原则：
+
+- LLM 理解，Kernel 约束。
+- PostgreSQL 是唯一业务 truth。
+- Mem0 负责多语言召回候选，不做事实裁决。
+- Mem0 writes 使用 `infer=false`。
+- Recall answer 必须 evidence-bound。
+- Context links 是关系，不是事实合并。
+- 中文是默认产品语言。
+
+## Strategic Decisions
+
+### PostgreSQL
+
+PostgreSQL 是 GoldMem 的事实底座，必须持有：
+
+- sources
+- events
+- reminders
+- risk flags
+- family tasks
+- context links
+- feedback
+- audit logs
+- future long-term facts and fact history
+
+所有业务状态、权限、安全、提醒确认和事实有效期都必须可从 PostgreSQL 重建。
+
+### Mem0
+
+Mem0 的定位是中短期记忆召回引擎和模糊召回候选源。GoldMem 应尽量利用 Mem0 的 semantic search、keyword/BM25、entity linking、rerank、dedup/context lookup 等能力，但不把这些输出当业务 truth。
+
+Mem0 不负责：
+
+- 事实有效期
+- 提醒状态
+- 权限
+- 风险最终判断
+- 长期关系链
+- final evidence truth
+
+中文注意事项：
+
+- Mem0 使用 OpenAI embedding 时可以支持中文语义召回。
+- Mem0 当前 hybrid/BM25/entity NLP 路径可能偏英语，对中文姓名、地点、药名、短词和时间表达的 boost 不可靠。
+- GoldMem 应优先增强自托管 Mem0 的中文分词、领域词典、entity recall 和 rerank，而不是把 Mem0 降级为纯向量搜索。
+- Mem0 entity/relation/graph 输出可以作为 candidate 和 ranking signal，但不能直接成为 GoldMem truth。
+- 中文 precision 由 Mem0 多信号召回、PostgreSQL truth 回查、Kernel ranking、eval/golden 和未来 Long-Term Relation Layer 共同保障。
+
+### Long-Term Relation Layer
+
+GoldMem 的长期壁垒是照护事实演化，而不是单次语义搜索。
+
+长期层应表达：
+
+- 当前有效事实
+- uncertain / rejected / superseded facts
+- 事实来源 source/event
+- 事实有效期
+- 谁确认或修正
+- 事实随时间如何变化
+
+### Nightly Consolidation
+
+白天快速 ingest，晚上深度整理：
+
+```text
+daily records
+-> daily summary
+-> conflict / duplicate / uncertainty detection
+-> fact candidates
+-> family digest
+-> curated semantic summary
+-> eval cases
+```
+
+Consolidation 不能绕过 Kernel 和 PostgreSQL truth。医疗、药物、金融、诈骗、身份、密码、提醒确认等敏感变更只能生成 confirmation-required candidates，不能静默覆盖事实。
+
+### Graphiti
+
+Graphiti 或其他 temporal graph backend 只能作为未来高级增强层。
+
+它不能替代 PostgreSQL truth，也不能早于自建 Long-Term Relation Layer 成为主链路。未来只应选择性接入高价值链路，如 medication、health、appointment、fraud risk、family confirmation。
+
+## Phase 0: Tenant Foundation
+
+目标：现在完成多租户基础，避免后续重构。
+
+新增统一身份维度：
+
+```text
+tenantId: family / institution / B2B customer scope
+elderId: cared elder
+userId: actor account
+sourceId: raw text/audio source
+eventId: structured memory event
+```
+
+改造范围：
+
+- `MemoryPlan` 增加 `tenantId`。
+- `MemorySource`、`MemoryEvent`、`Reminder`、`RiskFlagRecord`、`FamilyTask`、`MemoryContextLink`、`Feedback`、`AuditLog` 增加 `tenantId`。
+- API request schemas 增加 `tenantId`，MVP 可默认 `tenant-mvp`。
+- Store interfaces 全部 tenant-aware。
+- PostgreSQL schema 全部核心表增加 `tenant_id NOT NULL`。
+- 查询必须同时带 `tenantId` 和 `elderId`。
+- Mem0 metadata 必须带 `tenantId`、`elderId`、`sourceId`、`eventId`。
+- object/audio path tenant-scoped。
+
+验收：
+
+- 所有核心 writes 都带 `tenantId`。
+- 所有 reads 都按 `tenantId` scope。
+- Mem0 search result 回查 PostgreSQL 时校验 `tenantId` 和 `elderId`。
+- `pnpm mvp:verify` 通过。
+- 新增 tenant isolation Kernel/store tests。
+
+## Phase 1: Text MVP Hardening
+
+目标：把 text-only Kernel MVP 从可演示变成可持续迭代。
+
+当前已经基本完成，但需要加固：
+
+- 增强 extraction eval cases：
+  - 医院复查
+  - 用药建议
+  - 家人交代
+  - 购物事项
+  - 缴费事项
+  - 财务风险
+  - 验证码/诈骗
+  - 时间不明确
+  - 人物不明确
+  - 中文短词召回
+- Store tests 覆盖 PostgreSQL persistence failure visibility。
+- Kernel tests 覆盖 no-evidence no-answer、context link 不合并事实、ambiguous reminder 不自动确认。
+- API routes 保持 thin，不复制 Kernel rules。
+
+验收：
+
+- `POST /elder/text-notes` 可稳定生成 source/events/reminders/risk/family/audit。
+- 所有重要写入有 evidence 和 audit。
+- schema validation failure 不写入 business truth。
+- `pnpm mvp:verify` 通过。
+
+## Phase 2: Mem0 Multilingual Recall Engine
+
+目标：最大化利用 Mem0 多信号召回能力，同时保证 Mem0 不是事实层。
+
+当前已有 Mem0 HTTP adapter，需要继续强化：
+
+- `addMemory` 必须保持 `infer=false`。
+- canonical event memory 写入必须带 PostgreSQL-derived metadata：
+  - `tenantId`
+  - `elderId`
+  - `sourceId`
+  - `eventId`
+  - `eventType`
+  - `title`
+  - `summary`
+  - `createdAt`
+  - `riskLevel`
+  - `visibility`
+- `searchMemory` 返回后必须由 Kernel 回查 PostgreSQL。
+- evidence text 优先使用 PostgreSQL-derived `metadata.summary` 或 PostgreSQL record。
+- Mem0 graph relations、entity linking、rerank scores 不进入 GoldMem truth，只能进入 candidate/ranking/audit diagnostics。
+- 对中文 query 使用 broad search + Kernel ranking，不做 keyword special cases。
+- 自托管 Mem0 镜像需要增强中文 NLP：
+  - 使用 `jieba + GoldMem 领域词典`。
+  - 保留中文输入语言，避免中文记忆被抽取/改写成英文。
+  - 让中文短词、医院、药名、家人称呼、时间表达更容易参与 keyword/entity recall。
+
+中文召回加固：
+
+- 增加中文/跨语言 golden cases：
+  - 中文问中文记录
+  - 英文问中文记录
+  - 中文短实体问答
+  - 药名/医院/人物召回
+  - 时间表达召回
+- 使用 semantic judge 检查答案语义，固定字符串只用于证据 hint 和禁止高风险断言。
+- 如果中文召回不稳，优先评估：
+  - 更宽的 Mem0 `limit`
+  - Mem0 中文分词和领域词典
+  - Mem0 entity/rerank signal
+  - `text-embedding-3-large`
+  - multilingual reranker
+
+验收：
+
+- Mem0 evidence 必须携带 metadata source/event。
+- 无 metadata 的 Mem0 result 不进入 final evidence。
+- Context-link candidate 可以来自 Mem0 metadata eventId，但必须回查 PostgreSQL。
+- Mem0 多信号诊断信息进入 audit，但不能直接落为事实。
+- `pnpm e2e:golden` 和 `pnpm e2e:context` 通过。
+
+## Phase 3: Chinese-First Web MVP
+
+目标：保留当前单页 Web MVP，同时让老人端/家人端体验更接近实际 workflow。
+
+当前 `apps/web-mvp` 已具备：
+
+- text memory capture
+- event list
+- reminder confirmation
+- fuzzy recall
+- family task confirmation
+
+下一步：
+
+- 保持中文默认文案。
+- 所有 API calls 继续集中在 `apps/web-mvp/src/lib/api.ts`。
+- 不在 React 中复制后端规则。
+- 增加 evidence display：
+  - PostgreSQL
+  - Mem0
+  - context link
+- 增加 confirmation-required 和 uncertainty 的清晰展示。
+- 家人视角先保留在 Web MVP，不急于拆成独立 app。
+
+验收：
+
+- 老人端只展示 cards 和确认动作，不展示复杂知识库。
+- 家人端只展示摘要、待确认事项和风险提示。
+- 医疗/财务事项默认摘要共享，不默认全文共享。
+
+## Phase 4: Long-Term Relation Layer v0
+
+目标：沉淀老人照护长期事实和事实演化。
+
+新增 package：
+
+```text
+packages/long-term-relation
+```
+
+核心表：
+
+```text
+memory_entities
+- tenant_id
+- elder_id
+- entity_id
+- type
+- name
+- aliases
+- created_at
+
+memory_event_entities
+- tenant_id
+- elder_id
+- event_id
+- entity_id
+- relation
+- confidence
+
+memory_facts
+- tenant_id
+- elder_id
+- fact_id
+- subject_entity_id
+- predicate
+- object_entity_id
+- value_text
+- source_id
+- event_id
+- valid_from
+- valid_to
+- status: active | superseded | uncertain | rejected
+- confidence
+- confirmed_by
+- created_at
+
+memory_fact_history
+- tenant_id
+- elder_id
+- fact_id
+- action: created | confirmed | superseded | corrected | rejected
+- actor_type: model | elder | family | admin
+- actor_id
+- reason
+- created_at
+```
+
+先覆盖高价值事实：
+
+- medication usage
+- appointment / follow-up
+- family confirmation
+- fraud / financial risk
+- repeated symptom
+
+接口：
+
+```text
+upsertEntity
+linkEventToEntity
+addFactCandidate
+confirmFact
+supersedeFact
+rejectFact
+findActiveFacts
+getEntityTimeline
+```
+
+原则：
+
+- Ingest 阶段可以生成 fact candidates。
+- Risky fact 默认为 `uncertain` 或 `needs_confirmation`。
+- Supersede 不能由模型静默完成，必须保留 history 和 source evidence。
+- Recall 可以使用 active facts 作为 PostgreSQL evidence。
+
+验收：
+
+- 能查询某个药的当前有效说明。
+- 能查询某个医生/医院相关时间线。
+- 能看到复查事项从提到、确认到完成的链路。
+- 事实变更有 audit/history。
+
+## Phase 5: Nightly Consolidation v1
+
+目标：把白天碎片记忆整理成长期事实、家庭摘要和 eval 数据。
+
+新增 job：
+
+```text
+services/worker-service/jobs/nightlyConsolidation.ts
+```
+
+流程：
+
+```text
+load tenant/day data
+-> generate consolidation plan
+-> create daily summary
+-> detect duplicates/conflicts/uncertainties
+-> create fact candidates
+-> create family digest
+-> write curated semantic summary to Mem0
+-> create eval cases from failures and corrections
+-> audit all actions
+```
+
+第一版只做：
+
+- daily summary
+- family digest
+- fact candidates
+- eval case candidates
+
+暂不做：
+
+- 自动覆盖 active facts
+- 跨租户学习
+- 自动医疗/财务结论
+
+验收：
+
+- 每天每个 elder 可生成 summary。
+- 能发现低置信度或冲突事项。
+- 家人端可查看 digest。
+- 错误样本进入 eval candidates。
+- curated summary 写入 Mem0 时仍带 `infer=false` 和 metadata。
+
+## Phase 6: Tenant Isolation and Citus-Ready Scale
+
+目标：让系统在租户增长时不用重构。
+
+PostgreSQL 要求：
+
+```text
+tenant_id NOT NULL
+elder_id NOT NULL
+created_at NOT NULL
+```
+
+核心索引：
+
+```sql
+CREATE INDEX idx_sources_tenant_elder_time
+ON memory_sources (tenant_id, elder_id, created_at DESC);
+
+CREATE INDEX idx_events_tenant_elder_time
+ON memory_events (tenant_id, elder_id, created_at DESC);
+
+CREATE INDEX idx_reminders_tenant_elder_status
+ON reminders (tenant_id, elder_id, status, remind_at);
+```
+
+RLS：
+
+- 为核心 truth tables 设计 Row Level Security。
+- request/session 设置 `app.tenant_id`。
+- 没有 tenant policy 时默认拒绝。
+
+Citus-ready：
+
+- 以 `tenant_id` 作为未来 distribution column 候选。
+- 同租户数据 co-located。
+- 大租户可拆分，小租户共享。
+
+验收：
+
+- 所有 API/jobs tenant-aware。
+- 所有 Mem0 metadata tenant-aware。
+- 支持按 tenant export/delete。
+- RLS 测试覆盖跨租户拒绝访问。
+
+## Phase 7: Selective Temporal Graph Backend
+
+目标：在自建 relation layer 稳定后，选择性评估 Graphiti 或其他 temporal graph backend。
+
+接口命名保持 provider-neutral：
+
+```text
+TemporalGraphBackend
+- addEpisode
+- searchTemporalContext
+- getEntityTimeline
+```
+
+实现：
+
+```text
+NullTemporalGraphBackend
+GraphitiTemporalGraphBackend
+```
+
+接入原则：
+
+- 不全量写入。
+- 不替代 PostgreSQL truth。
+- 不参与提醒状态、权限、风险最终判断。
+- 只从 Nightly Consolidation 写高价值 temporal episodes。
+- Graph backend 失败不影响主业务。
+
+优先链路：
+
+- medication changes
+- health symptoms
+- appointment evolution
+- family confirmation chains
+- financial/fraud risk chains
+
+验收：
+
+- 能回答“这个药后来是否改过”。
+- 能回答“症状是否发生在换药之后”。
+- 能回答“谁确认了这个复查事项”。
+- Graph backend 可关停，主流程仍正常。
+
+## Near-Term Execution Order
+
+当前最建议的落地顺序：
+
+```text
+1. Commit current semantic judge and context E2E fix.
+2. Add tenantId through schema, stores, Kernel, API, Mem0 metadata.
+3. Add tenant isolation tests.
+4. Add Chinese recall golden/eval cases.
+5. Harden Mem0 multilingual recall and metadata validation.
+6. Implement Long-Term Relation Layer v0 for medication/appointment/risk.
+7. Add Nightly Consolidation v1 daily summary and eval candidates.
+8. Review RLS and Citus-ready schema.
+9. Evaluate Graphiti only after relation layer and nightly jobs are stable.
+```
+
+## Non-Goals For Now
+
+- Full authentication.
+- Production scheduler.
+- Native mobile app.
+- Cross-tenant analytics.
+- Graphiti as primary memory store.
+- Mem0 as authoritative fact store.
+- Auto-confirming ambiguous reminders.
+- Automatic medical/financial fact replacement.
+
+## Required Verification
+
+For broad roadmap phases:
+
+```bash
+pnpm mvp:verify
+pnpm e2e:golden
+pnpm e2e:context
+pnpm mvp:smoke
+```
+
+For tenant and persistence changes:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm lint
+pnpm eval
+pnpm architecture:check
+```
+
+Any bug discovered from a real query or model failure must become a regression test, eval case, or golden E2E fixture before it is considered fixed.

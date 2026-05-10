@@ -13,7 +13,7 @@ Elder voice/text
   -> reminder candidate
   -> risk flag
   -> family confirmation task
-  -> semantic memory
+  -> memory recall index
   -> query recall
   -> feedback/eval loop
 ```
@@ -22,8 +22,8 @@ Elder voice/text
 
 1. **LLM understands; Kernel constrains.** Models produce a `MemoryPlan`; deterministic code validates, guards, and applies it.
 2. **PostgreSQL is the truth source.** Original source, event state, reminders, permissions, risk records, and audit logs are not delegated to memory frameworks.
-3. **Mem0 is semantic memory.** It remembers user facts, preferences, event summaries, and recall context.
-4. **Mem0 includes the MVP semantic index.** Its local pgvector/Neo4j backing services are Mem0 internals; GoldMem does not run a separate Graphiti path in the MVP.
+3. **Mem0 is the recall engine, not truth.** It can use semantic search, keyword/BM25, entity linking, rerank, and context lookup to find candidate memories.
+4. **Mem0 includes the MVP recall index.** Its local pgvector/Neo4j backing services are Mem0 internals; GoldMem does not run a separate Graphiti path in the MVP.
 5. **Failures become eval data, not ad-hoc rules.** Case-by-case mistakes are collected into evaluation cases and prompt/model improvements.
 
 ## Repository layout
@@ -63,7 +63,7 @@ input transcript
   -> validate schema
   -> enforce risk/permission guardrails
   -> create events and reminder candidates
-  -> write semantic memory
+  -> write recall memory
   -> return elder-facing cards
 ```
 
@@ -150,7 +150,7 @@ The smoke flow calls health, text ingest, reminder list/confirm, and recall quer
 
 ## Local Mem0
 
-Mem0 is the default local external dependency. PostgreSQL remains the truth store; Mem0 is the semantic recall index and every write must carry source/event metadata.
+Mem0 is the default local external dependency. PostgreSQL remains the truth store; Mem0 is the multilingual recall engine and every write must carry source/event metadata.
 
 1. Set `MEM0_BASE_URL=http://localhost:8888` in `.env`.
 
@@ -165,7 +165,7 @@ docker compose -f infra/docker-compose.yml up -d mem0-postgres mem0-neo4j mem0
 
 The local Mem0 API is available at `http://localhost:8888/docs`. Local compose uses `AUTH_DISABLED=true`; do not use that setting outside development.
 
-GoldMem writes structured Kernel summaries to Mem0 with `infer=false`. Mem0 still provides semantic vector recall, while PostgreSQL-derived metadata remains the evidence text.
+GoldMem writes structured Kernel summaries to Mem0 with `infer=false`. Mem0 may provide semantic, keyword/BM25, entity-linked, and reranked recall candidates, while PostgreSQL-derived metadata remains the evidence text.
 
 3. Verify direct Mem0 add/search.
 
@@ -176,7 +176,7 @@ set +a
 pnpm mem0:smoke
 ```
 
-4. Rebuild the semantic index from PostgreSQL truth records when needed.
+4. Rebuild the Mem0 recall index from PostgreSQL truth records when needed.
 
 ```bash
 set -a

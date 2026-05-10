@@ -5,7 +5,10 @@ RUN pip install --no-cache-dir \
   psycopg2-binary \
   langchain-neo4j \
   neo4j \
-  rank-bm25
+  rank-bm25 \
+  jieba
+
+COPY mem0-chinese /app/goldmem
 
 RUN python - <<'PY'
 from pathlib import Path
@@ -26,3 +29,5 @@ source = source.replace(
 )
 path.write_text(source)
 PY
+
+RUN python /app/goldmem/patch_mem0_api.py

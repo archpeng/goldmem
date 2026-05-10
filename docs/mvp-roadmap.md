@@ -28,7 +28,7 @@ MVP 不追求完整产品形态。它只证明 Elder Memory Kernel 的核心价�
 - family web app
 - full authentication
 - production scheduler
-- Mem0 production deployment beyond local OSS smoke
+- Mem0 production deployment beyond local OSS smoke and Chinese NLP hardening
 - voice/audio ingestion
 - complex timeline UI
 - multi-provider model routing
@@ -78,7 +78,7 @@ Deliverables:
 
 - `POST /elder/query` parses query through OpenAI
 - search PostgreSQL events first
-- use PostgreSQL structured recall plus Mem0 semantic recall
+- use PostgreSQL structured recall plus Mem0 multilingual recall
 - include retrieval-source metadata for frontend evidence display
 - answer generation must receive merged evidence only
 - record query audit log
@@ -152,7 +152,7 @@ MVP is complete when a developer can:
 8. ask one recall question and get an evidence-bound answer with retrieval-source metadata
 9. run the test/eval suite successfully
 
-## Local Mem0 Milestone
+## Local Mem0 Recall Milestone
 
 Goal: wire the first external dependency without changing the truth-store boundary.
 
@@ -161,14 +161,16 @@ Deliverables:
 - run local Mem0 OSS REST API at `http://localhost:8888`
 - keep PostgreSQL as the source of truth
 - write event summaries to Mem0 with `sourceId` and `eventId`
+- keep Mem0 available as a multilingual recall engine using semantic, keyword/BM25, entity, and rerank signals when supported
+- improve self-hosted Mem0 Chinese tokenization/entity recall with a small GoldMem domain dictionary
 - rebuild Mem0 from PostgreSQL truth records
 - verify direct add/search with `pnpm mem0:smoke`
 
 Acceptance:
 
-- API server requires `MEM0_BASE_URL` and uses `HttpSemanticMemoryStore`
+- API server requires `MEM0_BASE_URL` and uses the Mem0 HTTP recall adapter
 - recall audit shows Mem0 retrieval counts when Mem0 returns evidence
-- no answer may rely on semantic memory without source/event metadata
+- no answer may rely on Mem0 recall results without source/event metadata
 
 ## Post-MVP Roadmap
 
@@ -176,7 +178,7 @@ After MVP, expand in this order:
 
 1. family task APIs and family-facing digest
 2. production reminder scheduler
-3. Mem0-compatible semantic memory hardening for real deployment
+3. Mem0-compatible multilingual recall hardening for real deployment
 4. voice ingestion and audio evidence offsets
 5. full authentication and permission management
 6. elder mobile client and family web/miniprogram client

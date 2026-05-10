@@ -1,13 +1,13 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { HttpSemanticMemoryStore } from "../packages/memory-store/src/http-adapters.js";
+import { HttpMem0RecallStore } from "../packages/memory-store/src/http-adapters.js";
 import * as schema from "../packages/memory-store/src/postgres-schema.js";
 
 const databaseUrl = requiredEnv("DATABASE_URL");
 const mem0BaseUrl = requiredEnv("MEM0_BASE_URL");
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle(pool, { schema });
-const semanticMemory = new HttpSemanticMemoryStore({
+const recallMemory = new HttpMem0RecallStore({
   baseUrl: mem0BaseUrl,
   apiKey: process.env.MEM0_API_KEY,
 });
@@ -15,7 +15,7 @@ const semanticMemory = new HttpSemanticMemoryStore({
 try {
   const events = await db.select().from(schema.memoryEvents);
   for (const event of events) {
-    await semanticMemory.addMemory({
+    await recallMemory.addMemory({
       userId: event.elderId,
       memory: [
         `Title: ${event.title}`,

@@ -17,6 +17,7 @@ import type {
   ContextLinkStore,
   EventStore,
   FamilyTaskStore,
+  MemoryRecallResult,
   PersonalContextStore,
   RiskFlagStore,
   SemanticMemoryStore,
@@ -453,6 +454,9 @@ export class ElderMemoryKernel {
     const retrieval = {
       postgresCount: structuredEvents.length,
       mem0Count: semanticResults.length,
+      mem0MetadataCount: semanticResults.filter((result) => typeof result.metadata?.sourceId === "string").length,
+      mem0UnlinkedCount: semanticResults.filter((result) => typeof result.metadata?.sourceId !== "string").length,
+      mem0SignalCount: semanticResults.filter((result) => result.retrievalSignals).length,
       contextLinkCount: evidence.filter((item) => item.retrievalSource === "context_link").length,
       evidenceCount: evidence.length,
     };
@@ -546,7 +550,7 @@ export class ElderMemoryKernel {
 
 function mergeEvidence(
   events: MemoryEvent[],
-  semanticResults: Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>,
+  semanticResults: MemoryRecallResult[],
   parsedQuery: ParsedMemoryQuery,
   query: string,
 ): RetrievedEvidence[] {

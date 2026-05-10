@@ -1,11 +1,11 @@
-import type { SemanticMemoryStore } from "./index.js";
+import type { MemoryRecallResult, SemanticMemoryStore } from "./index.js";
 
 export type HttpAdapterOptions = {
   baseUrl: string;
   apiKey?: string;
 };
 
-export class HttpSemanticMemoryStore implements SemanticMemoryStore {
+export class HttpMem0RecallStore implements SemanticMemoryStore {
   constructor(private readonly options: HttpAdapterOptions) {}
 
   async addMemory(input: { userId: string; memory: string; metadata?: Record<string, unknown> }): Promise<void> {
@@ -24,7 +24,7 @@ export class HttpSemanticMemoryStore implements SemanticMemoryStore {
     userId: string;
     query: string;
     limit?: number;
-  }): Promise<Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>> {
+  }): Promise<MemoryRecallResult[]> {
     const result = await request(this.options, "/search", {
       method: "POST",
       body: JSON.stringify({
@@ -36,6 +36,8 @@ export class HttpSemanticMemoryStore implements SemanticMemoryStore {
     return normalizeMem0SearchResult(result);
   }
 }
+
+export class HttpSemanticMemoryStore extends HttpMem0RecallStore {}
 
 async function request(options: HttpAdapterOptions, path: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}${path}`, {
@@ -57,7 +59,7 @@ async function request(options: HttpAdapterOptions, path: string, init: RequestI
 
 function normalizeMem0SearchResult(
   result: unknown,
-): Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }> {
+): MemoryRecallResult[] {
   const items = Array.isArray(result)
     ? result
     : isRecord(result) && Array.isArray(result.results)
@@ -72,7 +74,23 @@ function normalizeMem0SearchResult(
     if (!memory) return [];
     const score = numberValue(item.score);
     const metadata = isRecord(item.metadata) ? item.metadata : undefined;
-    return [{ memory, score, metadata }];
+    const retrievalSignals = retrievalSignalsValue(item);
+    const entities = stringArrayValue(item.entities ?? item.entity_names ?? item.entityNames);
+    const relations = Array.isArray(item.relations) ? item.relations : undefined;
+    const providerId = stringValue(item.id ?? item.memory_id ?? item.memoryId);
+    return [
+      {
+        memory,
+        score,
+        metadata,
+        provider: "mem0",
+        providerId,
+        retrievalSignals,
+        entities,
+        relations,
+        raw: item,
+      },
+    ];
   });
 }
 
@@ -86,4 +104,20 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return strings.length ? strings : undefined;
+}
+
+function retrievalSignalsValue(item: Record<string, unknown>): MemoryRecallResult["retrievalSignals"] | undefined {
+  const signals = {
+    semanticScore: numberValue(item.semantic_score ?? item.semanticScore ?? item.vector_score ?? item.vectorScore),
+    keywordScore: numberValue(item.keyword_score ?? item.keywordScore ?? item.bm25_score ?? item.bm25Score),
+    entityScore: numberValue(item.entity_score ?? item.entityScore),
+    rerankScore: numberValue(item.rerank_score ?? item.rerankScore),
+  };
+  return Object.values(signals).some((value) => value !== undefined) ? signals : undefined;
 }

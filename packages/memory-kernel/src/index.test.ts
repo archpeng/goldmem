@@ -21,6 +21,7 @@ import type {
   CreateSourceInput,
   EventStore,
   FamilyTaskStore,
+  MemoryRecallResult,
   PersonalContextStore,
   ReminderStore,
   RiskFlagStore,
@@ -430,6 +431,13 @@ describe("ElderMemoryKernel", () => {
           summary: "The elder bought vegetables at the market.",
           createdAt: now,
         },
+        retrievalSignals: { semanticScore: 0.8, keywordScore: 0.4 },
+      },
+      {
+        memory: "Provider-only Mem0 result without PostgreSQL metadata must not become final evidence.",
+        score: 0.95,
+        provider: "mem0",
+        retrievalSignals: { entityScore: 0.9, rerankScore: 0.85 },
       },
     ];
 
@@ -442,7 +450,16 @@ describe("ElderMemoryKernel", () => {
     expect(answer.answerText).toContain("vegetables");
     expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "mem0")).toBe(true);
     expect(answer.retrievedEvidence.some((item) => item.summary === "The elder bought vegetables at the market.")).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.summary.includes("Provider-only Mem0"))).toBe(false);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
+    expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
+      expect.objectContaining({
+        mem0Count: 2,
+        mem0MetadataCount: 1,
+        mem0UnlinkedCount: 1,
+        mem0SignalCount: 2,
+      }),
+    );
 
     harness.model.parsedQuery = { intent: "not-valid" } as unknown as ParsedMemoryQuery;
     await expect(
@@ -950,13 +967,13 @@ class InMemoryRiskFlagStore implements RiskFlagStore {
 
 class InMemorySemanticMemoryStore implements SemanticMemoryStore {
   memories: Array<Parameters<SemanticMemoryStore["addMemory"]>[0]> = [];
-  searchResults?: Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>;
+  searchResults?: MemoryRecallResult[];
 
   async addMemory(input: Parameters<SemanticMemoryStore["addMemory"]>[0]): Promise<void> {
     this.memories.push(input);
   }
 
-  async searchMemory(): Promise<Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>> {
+  async searchMemory(): Promise<MemoryRecallResult[]> {
     if (this.searchResults) return this.searchResults;
     return this.memories.map((memory) => ({
       memory: memory.memory,

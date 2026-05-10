@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Real-service golden E2E baseline for PostgreSQL truth + Mem0 semantic recall.",
+  "description": "Real-service golden E2E baseline for PostgreSQL truth + Mem0 multilingual recall.",
   "seedNotes": [
     {
       "id": "city-shopping",

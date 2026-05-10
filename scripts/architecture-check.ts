@@ -22,7 +22,7 @@ for (const file of trackedFiles) {
   const text = await readFile(file, "utf8");
 
   if (/\binfer\s*:\s*true\b/.test(text)) {
-    violations.push({ file, reason: "Mem0 canonical memory writes must not enable infer=true." });
+    violations.push({ file, reason: "Canonical Mem0 memory writes must not enable infer=true." });
   }
 
   if (/GRAPHITI_BASE_URL|TemporalGraphStore|HttpTemporalGraphStore|NullTemporalGraphStore/.test(text)) {
@@ -35,6 +35,10 @@ for (const file of trackedFiles) {
     /(truth|authoritative)\s+(source|state)?\s*[:=]\s*Mem0/i.test(text)
   ) {
     violations.push({ file, reason: "Mem0 must not be authorized as truth/authoritative state." });
+  }
+
+  if (/Mem0\s+(is|as|=)?\s*semantic-only/i.test(text) || /Mem0\s+semantic-only/i.test(text)) {
+    violations.push({ file, reason: "Mem0 should be described as a multilingual recall engine, not semantic-only." });
   }
 }
 

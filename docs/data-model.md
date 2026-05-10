@@ -1,6 +1,6 @@
 # Initial Data Model
 
-This document defines the first PostgreSQL truth-source tables. Mem0 is the semantic recall index, not the source of business truth.
+This document defines the first PostgreSQL truth-source tables. Mem0 is the multilingual recall engine, not the source of business truth.
 
 ## users
 
@@ -145,4 +145,4 @@ The first concrete truth-store implementation uses Drizzle + PostgreSQL.
 - Migration directory: `infra/db/migrations`
 - Drizzle config: `drizzle.config.ts`
 
-Mem0-compatible semantic memory is the external auxiliary store. It must carry `sourceId` and, when available, `eventId` metadata so its contents remain traceable to PostgreSQL truth records.
+Mem0-compatible recall memory is the external auxiliary store. It may use semantic, keyword/BM25, entity, and rerank signals internally, but every canonical write must carry `sourceId` and, when available, `eventId` metadata so its contents remain traceable to PostgreSQL truth records.

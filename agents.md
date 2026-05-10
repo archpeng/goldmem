@@ -8,10 +8,10 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
    LLMs may produce transcripts, parsed queries, answers, and `MemoryPlan` objects. They must not write business truth directly.
 
 2. **PostgreSQL is truth.**
-   Sources, events, context links, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default semantic index and must be rebuildable from truth data.
+   Sources, events, context links, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default multilingual recall engine and must be rebuildable from truth data.
 
 3. **Mem0 recalls; Kernel decides.**
-   Mem0 must do semantic recall, not fact adjudication. Kernel-generated/PostgreSQL-derived event summaries are written to Mem0 with `infer=false`; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records, not Mem0's rewritten facts.
+   Mem0 may use semantic search, keyword/BM25, entity linking, rerank, and dedup/context lookup to propose recall candidates. It must not adjudicate business truth. Kernel-generated/PostgreSQL-derived canonical event summaries are written to Mem0 with `infer=false`; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records, not Mem0's rewritten facts.
 
 4. **The Kernel owns memory orchestration.**
    Ingest and recall behavior belongs in `packages/memory-kernel`. API routes and frontends must stay thin.
@@ -28,8 +28,8 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 8. **Context links are relationships, not facts.**
    Context links may connect related events or missing reminder details, but they must not merge records, auto-confirm reminders, or overwrite event truth.
 
-9. **Mem0 relation output is not a contract.**
-   Mem0 semantic results may propose candidate event IDs through metadata. Do not depend on Mem0 Neo4j, graph `relations`, or any provider-owned graph as GoldMem relationship truth.
+9. **Mem0 relation/entity output is not truth.**
+   Mem0 results may propose candidate event IDs, entities, relations, and ranking signals. Do not depend on Mem0 Neo4j, graph `relations`, entity linking, or any provider-owned graph as GoldMem relationship truth.
 
 10. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.

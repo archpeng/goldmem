@@ -51,9 +51,16 @@
     {
       "id": "semantic-disambiguation-link",
       "query": "下周三下午三点那个吃饭提醒和医院复查是一回事吗？",
-      "expectedAnswerAnyHints": [["不确定", "不太确定", "不像是同一回事"]],
+      "semanticAnswerExpectations": [
+        "The answer expresses uncertainty instead of presenting a context link as confirmed truth.",
+        "The answer says the meal reminder and the hospital blood-pressure follow-up are probably separate events.",
+        "The answer explains that both records mention around 3pm and should be checked or confirmed."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says the meal reminder and the hospital follow-up are definitely the same event.",
+        "The answer says the meal reminder is the hospital visit."
+      ],
       "expectedEvidenceHints": ["老街", "老字号", "社区医院", "血压"],
-      "forbiddenAnswerHints": ["就是同一件事", "确定是一回事"],
       "allowedSources": ["postgres", "mem0", "context_link"],
       "expectedEvidenceSources": ["context_link"],
       "minConfidence": 0.4

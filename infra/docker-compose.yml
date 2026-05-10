@@ -47,6 +47,9 @@ services:
       HISTORY_DB_PATH: /app/history/history.db
       MEM0_DEFAULT_LLM_MODEL: ${MEM0_DEFAULT_LLM_MODEL:-${OPENAI_MODEL:-gpt-5.5}}
       MEM0_DEFAULT_EMBEDDER_MODEL: ${MEM0_DEFAULT_EMBEDDER_MODEL:-text-embedding-3-small}
+      MEM0_USE_INPUT_LANGUAGE: ${MEM0_USE_INPUT_LANGUAGE:-true}
+      MEM0_CHINESE_NLP: ${MEM0_CHINESE_NLP:-jieba}
+      MEM0_CHINESE_DICT: ${MEM0_CHINESE_DICT:-/app/goldmem/chinese_dict.txt}
       POSTGRES_HOST: mem0-postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mem0

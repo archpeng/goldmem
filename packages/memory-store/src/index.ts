@@ -80,6 +80,23 @@ export interface FeedbackStore {
   create(input: Omit<Feedback, "id" | "createdAt">): Promise<Feedback>;
 }
 
+export type MemoryRecallResult = {
+  memory: string;
+  score?: number;
+  metadata?: Record<string, unknown>;
+  provider?: "mem0" | string;
+  providerId?: string;
+  retrievalSignals?: {
+    semanticScore?: number;
+    keywordScore?: number;
+    entityScore?: number;
+    rerankScore?: number;
+  };
+  entities?: string[];
+  relations?: unknown[];
+  raw?: unknown;
+};
+
 export interface SemanticMemoryStore {
   addMemory(input: {
     userId: string;
@@ -91,8 +108,10 @@ export interface SemanticMemoryStore {
     userId: string;
     query: string;
     limit?: number;
-  }): Promise<Array<{ memory: string; score?: number; metadata?: Record<string, unknown> }>>;
+  }): Promise<MemoryRecallResult[]>;
 }
+
+export type MemoryRecallStore = SemanticMemoryStore;
 
 export interface PersonalContextStore {
   buildContext(input: { elderId: string; queryText: string }): Promise<PersonalContext>;

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import OpenAI from "openai";
 import { z } from "zod";
 import {
   MemoryAnswerSchema,
@@ -19,6 +20,8 @@ const GoldenCaseSchema = z.object({
       query: z.string().min(1),
       expectedAnswerHints: z.array(z.string().min(1)).default([]),
       expectedAnswerAnyHints: z.array(z.array(z.string().min(1)).min(1)).default([]),
+      semanticAnswerExpectations: z.array(z.string().min(1)).default([]),
+      semanticAnswerForbiddenClaims: z.array(z.string().min(1)).default([]),
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
@@ -50,11 +53,19 @@ const GoldenCaseSchema = z.object({
   forbidAutoConfirmedReminderHints: z.array(z.string().min(1)).default([]),
 });
 
+const SemanticJudgeResultSchema = z.object({
+  pass: z.boolean(),
+  reason: z.string().min(1),
+  metExpectations: z.array(z.string()).default([]),
+  violatedForbiddenClaims: z.array(z.string()).default([]),
+});
+
 const baseUrl = (process.env.API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const elderId = process.env.GOLDEN_E2E_ELDER_ID ?? `golden-e2e-${Date.now()}`;
 const fixturePath = process.env.GOLDEN_E2E_FIXTURE ?? join(process.cwd(), "e2e", "golden-retrieval.json");
 const requestTimeoutMs = Number(process.env.GOLDEN_E2E_TIMEOUT_MS ?? 600_000);
 const fixture = GoldenCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
+const semanticJudge = createSemanticJudge();
 
 const health = await request<Json>("GET", "/health");
 assert(health.ok === true, "API health check failed");
@@ -149,6 +160,21 @@ for (const queryCase of fixture.queries) {
       `${queryCase.id} answer missing any hint: ${hints.join(" | ")}`,
     );
   }
+  if (queryCase.semanticAnswerExpectations.length || queryCase.semanticAnswerForbiddenClaims.length) {
+    const judgment = await semanticJudge({
+      queryId: queryCase.id,
+      query: queryCase.query,
+      answerText: answer.answerText,
+      evidence: answer.retrievedEvidence.map((item) => ({
+        summary: item.summary,
+        retrievalSource: item.retrievalSource,
+      })),
+      expectations: queryCase.semanticAnswerExpectations,
+      forbiddenClaims: queryCase.semanticAnswerForbiddenClaims,
+    });
+    assert(judgment.pass, `${queryCase.id} semantic answer check failed: ${judgment.reason}`);
+    console.log(`golden semantic ok: ${queryCase.id} ${judgment.reason}`);
+  }
   for (const hint of queryCase.expectedEvidenceHints) {
     assert(textIncludes(evidenceText, hint), `${queryCase.id} evidence missing hint: ${hint}`);
   }
@@ -224,4 +250,48 @@ function textIncludes(value: string | undefined, hint: string): boolean {
 
 function normalizeText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "");
+}
+
+function createSemanticJudge() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  let client: OpenAI | undefined;
+
+  return async (input: {
+    queryId: string;
+    query: string;
+    answerText: string;
+    evidence: Array<{ summary: string; retrievalSource: string }>;
+    expectations: string[];
+    forbiddenClaims: string[];
+  }): Promise<z.infer<typeof SemanticJudgeResultSchema>> => {
+    if (!apiKey) {
+      throw new Error("Semantic answer checks require OPENAI_API_KEY");
+    }
+    client ??= new OpenAI({ apiKey, baseURL: process.env.OPENAI_BASE_URL || undefined });
+
+    const response = await client.chat.completions.create({
+      model: process.env.GOLDEN_E2E_JUDGE_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are a strict semantic judge for GoldMem golden E2E tests.",
+            "Judge meaning, not exact wording. Do not require fixed substrings.",
+            "Use only the question, answer, and provided evidence summaries.",
+            "Pass only if every expected meaning is clearly expressed and none of the forbidden claims are present.",
+            "Return strict JSON: {\"pass\": boolean, \"reason\": string, \"metExpectations\": string[], \"violatedForbiddenClaims\": string[]}.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify(input),
+        },
+      ],
+    });
+
+    const content = response.choices[0]?.message.content;
+    assert(content, `${input.queryId} semantic judge returned empty response`);
+    return SemanticJudgeResultSchema.parse(JSON.parse(content));
+  };
 }
