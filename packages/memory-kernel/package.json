@@ -14,6 +14,7 @@
     "@goldmem/memory-schema": "workspace:*",
     "@goldmem/model-gateway": "workspace:*",
     "@goldmem/memory-store": "workspace:*",
+    "@goldmem/temporal-memory": "workspace:*",
     "@goldmem/reminder-engine": "workspace:*",
     "@goldmem/risk-engine": "workspace:*",
     "@goldmem/permission-engine": "workspace:*"
