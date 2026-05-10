@@ -6,64 +6,67 @@ export type TemporalEpisodeType =
   | "risk_review"
   | "daily_consolidation";
 
-export type AddTemporalEpisodeInput = {
-  /** Tenant-scoped Graphiti group, recommended format: `${tenantId}:${elderId}`. */
-  groupId: string;
-  tenantId?: string;
+export type TemporalEntityType =
+  | "person"
+  | "place"
+  | "medicine"
+  | "object"
+  | "organization"
+  | "symptom"
+  | "unknown";
+
+export type TemporalFactStatus = "active" | "superseded" | "uncertain" | "rejected";
+
+export type TemporalGroupRef = {
+  tenantId: string;
   elderId: string;
-  episodeType: TemporalEpisodeType | string;
+  groupId: string;
+};
+
+export type AddTemporalEpisodeInput = TemporalGroupRef & {
+  episodeType: TemporalEpisodeType;
   occurredAt: string;
   sourceIds: string[];
   eventIds: string[];
   reminderIds?: string[];
   riskFlagIds?: string[];
   familyTaskIds?: string[];
-  content: string | Record<string, unknown>;
+  content: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 };
 
 export type TemporalQueryEntity = {
   name: string;
-  type?: "person" | "place" | "medicine" | "object" | "organization" | "symptom" | "unknown" | string;
+  type: TemporalEntityType;
 };
 
-export type SearchTemporalFactsInput = {
-  groupId: string;
-  tenantId?: string;
-  elderId: string;
+export type TemporalTimeRange = {
+  start: string;
+  end: string;
+};
+
+export type SearchTemporalFactsInput = TemporalGroupRef & {
   query: string;
   entities?: TemporalQueryEntity[];
-  timeRange?: {
-    start: string;
-    end: string;
-  };
+  timeRange?: TemporalTimeRange;
   limit?: number;
 };
 
-export type EntityTimelineInput = {
-  groupId: string;
-  tenantId?: string;
-  elderId: string;
+export type EntityTimelineInput = TemporalGroupRef & {
   entityName: string;
-  entityType?: string;
-  timeRange?: {
-    start: string;
-    end: string;
-  };
+  entityType: TemporalEntityType;
+  timeRange?: TemporalTimeRange;
   limit?: number;
 };
 
-export type CurrentFactsInput = {
-  groupId: string;
-  tenantId?: string;
-  elderId: string;
+export type CurrentFactsInput = TemporalGroupRef & {
   entities?: TemporalQueryEntity[];
   predicates?: string[];
   limit?: number;
 };
 
 export type TemporalEvidence = {
-  retrievalSource: "graphiti" | "temporal_memory";
+  retrievalSource: "graphiti";
   sourceId?: string;
   eventId?: string;
   episodeId?: string;
@@ -84,7 +87,7 @@ export type TimelineItem = {
   episodeId?: string;
   title?: string;
   fact: string;
-  status?: "active" | "superseded" | "uncertain" | "rejected" | string;
+  status: TemporalFactStatus;
   metadata?: Record<string, unknown>;
 };
 
@@ -103,47 +106,30 @@ export type CurrentFact = {
 };
 
 export interface TemporalMemoryStore {
-  /**
-   * Add an episode to the long-term temporal memory backend.
-   * This should be async-safe: callers may enqueue and retry failed writes.
-   */
+  /** Add a curated GoldMem episode to the long-term temporal memory backend. */
   addEpisode(input: AddTemporalEpisodeInput): Promise<void>;
 
-  /**
-   * Search long-term temporal facts and relationship evidence.
-   * This is intended for long-horizon queries, not ordinary recent recall.
-   */
+  /** Search long-term temporal facts and relationship evidence. */
   searchFacts(input: SearchTemporalFactsInput): Promise<TemporalEvidence[]>;
 
-  /**
-   * Return a timeline for one entity, such as a medicine, doctor, hospital, or family member.
-   */
+  /** Return a timeline for one entity, such as a medicine, doctor, hospital, or family member. */
   getEntityTimeline(input: EntityTimelineInput): Promise<TimelineItem[]>;
 
-  /**
-   * Return currently effective facts for one elder/family graph.
-   */
+  /** Return currently effective facts for one elder/family graph. */
   getCurrentFacts(input: CurrentFactsInput): Promise<CurrentFact[]>;
 }
 
+/**
+ * No-op implementation used only to keep Graphiti out of the realtime MVP path.
+ * It is not a compatibility layer and should not grow behavior.
+ */
 export class NullTemporalMemoryStore implements TemporalMemoryStore {
-  async addEpisode(): Promise<void> {
-    // Intentionally no-op. Keeps MVP runtime independent from Graphiti.
-  }
-
-  async searchFacts(): Promise<TemporalEvidence[]> {
-    return [];
-  }
-
-  async getEntityTimeline(): Promise<TimelineItem[]> {
-    return [];
-  }
-
-  async getCurrentFacts(): Promise<CurrentFact[]> {
-    return [];
-  }
+  async addEpisode(): Promise<void> {}
+  async searchFacts(): Promise<TemporalEvidence[]> { return []; }
+  async getEntityTimeline(): Promise<TimelineItem[]> { return []; }
+  async getCurrentFacts(): Promise<CurrentFact[]> { return []; }
 }
 
-export function buildTemporalGroupId(input: { tenantId?: string; elderId: string }): string {
-  return input.tenantId ? `${input.tenantId}:${input.elderId}` : input.elderId;
+export function buildTemporalGroupId(input: { tenantId: string; elderId: string }): string {
+  return `${input.tenantId}:${input.elderId}`;
 }
