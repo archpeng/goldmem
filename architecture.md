@@ -74,6 +74,7 @@ Recall uses broad candidate retrieval plus ranking.
 - Kernel ranking gives bonuses for event type match, entity match, query text match, event confidence, importance, and active status.
 - Mem0 results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
 - PostgreSQL context links can expand evidence from an initially matched event to related events, using `retrievalSource: context_link`.
+- During ingest, Mem0 semantic results may supply candidate PostgreSQL event IDs for context-link proposal. Mem0 graph `relations` are ignored.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.

@@ -472,6 +472,7 @@ class PostgresPersonalContextStore implements PersonalContextStore {
         summary: event.summary,
         createdAt: event.createdAt.toISOString(),
       })),
+      semanticCandidateEvents: [],
       openReminders: openReminders.map((reminder) => ({
         reminderId: reminder.id,
         eventId: reminder.eventId ?? undefined,

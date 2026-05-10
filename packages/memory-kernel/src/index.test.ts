@@ -10,7 +10,7 @@ import type {
   ParsedMemoryQuery,
   Reminder,
 } from "@goldmem/memory-schema";
-import type { ModelGateway, PersonalContext, TranscriptionResult } from "@goldmem/model-gateway";
+import type { GenerateMemoryPlanInput, ModelGateway, PersonalContext, TranscriptionResult } from "@goldmem/model-gateway";
 import type {
   AuditLog,
   ContextLinkStore,
@@ -303,6 +303,106 @@ describe("ElderMemoryKernel", () => {
 
     expect(harness.contextLinkStore.links).toHaveLength(0);
     expect(harness.audit.records.some((record) => record.type === "memory_context_link_skipped")).toBe(true);
+  });
+
+  it("passes Mem0 semantic candidate events into memory plan context without using graph relations", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Semantic context candidate only.",
+        events: [buildEvent({ title: "老字号吃饭提醒", summary: "老人提到下午三点去老字号吃饭。" })],
+      }),
+    );
+    harness.eventStore.events.push(
+      memoryEvent({
+        id: "event-semantic",
+        sourceId: "source-semantic",
+        title: "老街面馆",
+        summary: "老人想去老街那家面馆吃本地特色面，时间还没定。",
+      }),
+      memoryEvent({
+        id: "event-other-elder",
+        elderId: "elder-2",
+        sourceId: "source-other",
+        title: "其他老人事件",
+        summary: "这条候选不属于当前老人。",
+      }),
+    );
+    harness.semanticMemory.searchResults = [
+      {
+        memory: "Graph-like result with relations ignored.",
+        score: 0.8,
+        metadata: { eventId: "event-semantic", sourceId: "source-semantic" },
+      },
+      {
+        memory: "Cross elder result must be ignored.",
+        score: 0.9,
+        metadata: { eventId: "event-other-elder", sourceId: "source-other" },
+      },
+    ];
+
+    await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下午三点提醒我去那家老字号吃饭。",
+    });
+
+    expect(harness.model.lastPlanContext?.semanticCandidateEvents).toEqual([
+      expect.objectContaining({
+        eventId: "event-semantic",
+        title: "老街面馆",
+      }),
+    ]);
+  });
+
+  it("allows context links to target semantic candidate events", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Semantic candidate link.",
+        events: [buildEvent({ title: "老字号吃饭提醒", summary: "老人提到下午三点去老字号吃饭。" })],
+        contextLinks: [
+          {
+            fromEventIndex: 0,
+            toEventId: "event-semantic",
+            type: "possibly_related",
+            confidence: 0.7,
+            status: "needs_confirmation",
+            reason: "老字号吃饭可能关联到之前老街面馆吃本地特色面的计划。",
+            evidence: [evidence()],
+          },
+        ],
+      }),
+    );
+    harness.eventStore.events.push(
+      memoryEvent({
+        id: "event-semantic",
+        sourceId: "source-semantic",
+        title: "老街面馆",
+        summary: "老人想去老街那家面馆吃本地特色面，时间还没定。",
+      }),
+    );
+    harness.semanticMemory.searchResults = [
+      {
+        memory: "老街面馆本地特色面",
+        score: 0.82,
+        metadata: { eventId: "event-semantic", sourceId: "source-semantic" },
+      },
+    ];
+
+    await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下午三点提醒我去那家老字号吃饭。",
+    });
+
+    expect(harness.contextLinkStore.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromEventId: "event-2",
+          toEventId: "event-semantic",
+          type: "possibly_related",
+          status: "needs_confirmation",
+        }),
+      ]),
+    );
+    expect(harness.familyTasks.tasks.some((task) => task.type === "general_review")).toBe(true);
   });
 
   it("validates parsed query and answer model outputs", async () => {
@@ -651,6 +751,7 @@ function evidence() {
 
 class FakeModelGateway implements ModelGateway {
   answerCalls = 0;
+  lastPlanContext?: PersonalContext;
 
   parsedQuery: ParsedMemoryQuery = {
     intent: "unknown",
@@ -673,7 +774,8 @@ class FakeModelGateway implements ModelGateway {
     return { text: "transcribed text", confidence: 0.9 };
   }
 
-  async generateMemoryPlan(): Promise<MemoryPlan> {
+  async generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan> {
+    this.lastPlanContext = input.context;
     return this.plan;
   }
 
@@ -698,6 +800,7 @@ class FakePersonalContextStore implements PersonalContextStore {
 function emptyContext(): PersonalContext {
   return {
     recentEvents: [],
+    semanticCandidateEvents: [],
     openReminders: [],
     semanticMemories: [],
     knownEntities: [],

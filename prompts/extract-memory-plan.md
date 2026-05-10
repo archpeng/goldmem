@@ -12,6 +12,7 @@ Your job is to transform one elder transcript into a strict `MemoryPlan` JSON ob
 - createdAt
 - elder profile
 - recent events
+- semantic candidate events
 - semantic memories
 - known entities
 - family relations
@@ -30,7 +31,7 @@ Your job is to transform one elder transcript into a strict `MemoryPlan` JSON ob
 9. Use only the enum values listed below. Never invent new enum values.
 10. Include every required field even when uncertain. Use lower confidence instead of omitting fields.
 11. Use Simplified Chinese for user-facing `summary`, event `title`, event `summary`, reminder `title`, reminder `reason`, family task text, and uncertainty descriptions unless the transcript is clearly in another language.
-12. You may propose `contextLinks` when the new transcript appears to elaborate, complete, or possibly relate to a recent event/reminder in context. Never merge facts yourself.
+12. You may propose `contextLinks` when the new transcript appears to elaborate, complete, or possibly relate to a recent event/reminder/semantic candidate event in context. Never merge facts yourself.
 13. Low-confidence context links should use `status: "needs_confirmation"`. Do not use context links to confirm or schedule reminders.
 
 ## Required JSON shape
@@ -104,7 +105,7 @@ Each reminder candidate must include:
 Each context link must include:
 
 - `fromEventIndex`: index of the newly extracted event that provides the new detail
-- `toEventId`: existing event id from recent context, when linking to prior context
+- `toEventId`: existing event id from recent or semantic candidate context, when linking to prior context
 - `reminderId`: existing reminder id from open reminders, when the link may fill a reminder detail
 - `type`: `possibly_related` or `fills_missing_time`
 - `confidence`: number from 0 to 1

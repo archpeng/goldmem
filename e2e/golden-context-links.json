@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "description": "Real-service golden E2E baseline for no-graph semantic context linking.",
+  "seedNotes": [
+    {
+      "id": "explicit-noodle-plan",
+      "transcript": "下周一我准备出门吃当地特色面条，可能需要到时提醒我一下，但是我还没想清楚具体几点。"
+    },
+    {
+      "id": "explicit-noodle-time",
+      "transcript": "大约下午三点提醒我一下，应该就是刚才说的那件出门吃面条的事。"
+    },
+    {
+      "id": "semantic-noodle-plan",
+      "transcript": "下周三我想去老街那家面馆吃本地特色面，时间还没定，到时候可能需要提醒。"
+    },
+    {
+      "id": "hospital-distractor",
+      "transcript": "下周三下午三点我要去社区医院复查血压，女儿小敏会陪我一起去。"
+    },
+    {
+      "id": "shopping-distractor",
+      "transcript": "周末我想去城里买生活用品，可能要买牙膏、电池和肥皂。"
+    },
+    {
+      "id": "semantic-noodle-time",
+      "transcript": "下午三点提醒我去那家老字号吃饭。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "explicit-recent-context-link",
+      "query": "我下周一出门吃面条有说几点吗？",
+      "expectedAnswerHints": ["下周一", "面条", "下午"],
+      "expectedEvidenceHints": ["特色面条", "下午三点"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "expectedEvidenceSources": ["context_link"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "semantic-noodle-context-link",
+      "query": "下午三点提醒我是要去吃什么？",
+      "expectedAnswerHints": ["面"],
+      "expectedEvidenceHints": ["老街", "特色面", "老字号", "下午三点"],
+      "forbiddenAnswerHints": ["是要去社区医院", "提醒是复查血压", "不是吃面"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "expectedEvidenceSources": ["mem0", "context_link"],
+      "requiresMem0": true,
+      "minConfidence": 0.45
+    },
+    {
+      "id": "semantic-disambiguation-link",
+      "query": "下周三下午三点那个吃饭提醒和医院复查是一回事吗？",
+      "expectedAnswerAnyHints": [["不确定", "不太确定", "不像是同一回事"]],
+      "expectedEvidenceHints": ["老街", "老字号", "社区医院", "血压"],
+      "forbiddenAnswerHints": ["就是同一件事", "确定是一回事"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "expectedEvidenceSources": ["context_link"],
+      "minConfidence": 0.4
+    }
+  ],
+  "riskExpectations": [],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "explicit-noodle-plan",
+      "titleHint": "面条",
+      "requiresConfirmation": true
+    },
+    {
+      "seedNoteId": "semantic-noodle-plan",
+      "titleHint": "面",
+      "requiresConfirmation": true
+    },
+    {
+      "seedNoteId": "hospital-distractor",
+      "titleHint": "社区医院",
+      "requiresConfirmation": true
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "reminder_confirm",
+      "hint": "下午三点"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["面条", "面馆", "老字号", "社区医院"]
+}

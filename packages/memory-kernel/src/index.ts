@@ -11,6 +11,7 @@ import {
   type Reminder,
 } from "@goldmem/memory-schema";
 import type { ModelGateway, RetrievedEvidence } from "@goldmem/model-gateway";
+import type { PersonalContext } from "@goldmem/model-gateway";
 import type {
   AuditLog,
   ContextLinkStore,
@@ -109,10 +110,11 @@ export class ElderMemoryKernel {
 
   private async ingestSource(source: MemorySource): Promise<IngestResult> {
     try {
-      const context = await this.deps.personalContextStore.buildContext({
+      const baseContext = await this.deps.personalContextStore.buildContext({
         elderId: source.elderId,
         queryText: source.transcript,
       });
+      const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext);
 
       const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
         elderId: source.elderId,
@@ -173,7 +175,7 @@ export class ElderMemoryKernel {
 
   private async applyMemoryPlan(
     plan: MemoryPlan,
-    context: Awaited<ReturnType<PersonalContextStore["buildContext"]>>,
+    context: PersonalContext,
   ): Promise<{ events: MemoryEvent[]; reminderCandidates: Reminder[]; contextLinks: MemoryContextLink[] }> {
     const events: MemoryEvent[] = [];
     const reminders: Reminder[] = [];
@@ -264,6 +266,7 @@ export class ElderMemoryKernel {
     const openReminders = context.openReminders ?? [];
     const allowedHistoricalEventIds = new Set([
       ...context.recentEvents.map((event) => event.eventId).filter(isString),
+      ...(context.semanticCandidateEvents ?? []).map((event) => event.eventId).filter(isString),
       ...openReminders.map((reminder) => reminder.eventId).filter(isString),
     ]);
     const allowedReminderIds = new Set(openReminders.map((reminder) => reminder.reminderId));
@@ -367,6 +370,53 @@ export class ElderMemoryKernel {
         metadata: update.metadata,
       });
     }
+  }
+
+  private async buildIngestContextWithSemanticCandidates(
+    source: MemorySource,
+    context: PersonalContext,
+  ): Promise<PersonalContext> {
+    const semanticResults = await this.deps.semanticMemory.searchMemory({
+      userId: source.elderId,
+      query: source.transcript,
+      limit: 8,
+    });
+    const candidateIds = [
+      ...new Set(
+        semanticResults
+          .map((result) => result.metadata?.eventId)
+          .filter(isString),
+      ),
+    ].slice(0, 8);
+    if (candidateIds.length === 0) return { ...context, semanticCandidateEvents: [] };
+
+    const eventsById = new Map((await this.deps.eventStore.getByIds(candidateIds)).map((event) => [event.id, event]));
+    const candidates = semanticResults.flatMap((result) => {
+      const eventId = result.metadata?.eventId;
+      if (!isString(eventId)) return [];
+      const event = eventsById.get(eventId);
+      if (!event || event.elderId !== source.elderId) return [];
+      return [
+        {
+          eventId: event.id,
+          sourceId: event.sourceId,
+          title: event.title,
+          summary: event.summary,
+          createdAt: event.createdAt,
+          score: result.score,
+        },
+      ];
+    });
+
+    const uniqueCandidates = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      if (!uniqueCandidates.has(candidate.eventId)) uniqueCandidates.set(candidate.eventId, candidate);
+    }
+
+    return {
+      ...context,
+      semanticCandidateEvents: [...uniqueCandidates.values()].slice(0, 5),
+    };
   }
 
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {

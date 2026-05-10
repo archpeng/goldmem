@@ -18,7 +18,10 @@ const GoldenCaseSchema = z.object({
       id: z.string(),
       query: z.string().min(1),
       expectedAnswerHints: z.array(z.string().min(1)).default([]),
+      expectedAnswerAnyHints: z.array(z.array(z.string().min(1)).min(1)).default([]),
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
+      forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
+      forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
       allowedSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default(["postgres", "mem0", "context_link"]),
       expectedEvidenceSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default([]),
       requiresMem0: z.boolean().default(false),
@@ -140,8 +143,20 @@ for (const queryCase of fixture.queries) {
   for (const hint of queryCase.expectedAnswerHints) {
     assert(textIncludes(answerText, hint), `${queryCase.id} answer missing hint: ${hint}`);
   }
+  for (const hints of queryCase.expectedAnswerAnyHints) {
+    assert(
+      hints.some((hint) => textIncludes(answerText, hint)),
+      `${queryCase.id} answer missing any hint: ${hints.join(" | ")}`,
+    );
+  }
   for (const hint of queryCase.expectedEvidenceHints) {
     assert(textIncludes(evidenceText, hint), `${queryCase.id} evidence missing hint: ${hint}`);
+  }
+  for (const hint of queryCase.forbiddenAnswerHints) {
+    assert(!textIncludes(answerText, hint), `${queryCase.id} answer contained forbidden hint: ${hint}`);
+  }
+  for (const hint of queryCase.forbiddenEvidenceHints) {
+    assert(!textIncludes(evidenceText, hint), `${queryCase.id} evidence contained forbidden hint: ${hint}`);
   }
   for (const source of queryCase.expectedEvidenceSources) {
     assert(evidenceSources.has(source), `${queryCase.id} expected evidence source: ${source}`);

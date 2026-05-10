@@ -28,7 +28,10 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 8. **Context links are relationships, not facts.**
    Context links may connect related events or missing reminder details, but they must not merge records, auto-confirm reminders, or overwrite event truth.
 
-9. **Chinese is the default product language.**
+9. **Mem0 relation output is not a contract.**
+   Mem0 semantic results may propose candidate event IDs through metadata. Do not depend on Mem0 Neo4j, graph `relations`, or any provider-owned graph as GoldMem relationship truth.
+
+10. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.
 
 ## Forbidden

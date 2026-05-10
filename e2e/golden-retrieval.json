@@ -35,7 +35,7 @@
     {
       "id": "cross-language-object-recall",
       "query": "Where did I put the blue notebook and health insurance card?",
-      "expectedAnswerHints": ["电视柜", "抽屉"],
+      "expectedAnswerAnyHints": [["电视柜", "TV cabinet"], ["抽屉", "drawer"]],
       "expectedEvidenceHints": ["医保卡", "蓝色小本子"],
       "allowedSources": ["mem0", "postgres", "context_link"],
       "requiresMem0": true,

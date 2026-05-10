@@ -53,6 +53,14 @@ export type RetrievedEvidence = {
 export type PersonalContext = {
   elderProfile?: Record<string, unknown>;
   recentEvents: Array<{ eventId?: string; sourceId?: string; title: string; summary: string; createdAt: string }>;
+  semanticCandidateEvents?: Array<{
+    eventId: string;
+    sourceId: string;
+    title: string;
+    summary: string;
+    createdAt: string;
+    score?: number;
+  }>;
   openReminders?: Array<{
     reminderId: string;
     eventId?: string;

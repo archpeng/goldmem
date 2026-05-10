@@ -18,6 +18,7 @@
     "mvp:verify": "pnpm typecheck && pnpm test && pnpm build && pnpm lint && pnpm eval && pnpm architecture:check",
     "mvp:smoke": "tsx scripts/mvp-smoke.ts",
     "e2e:golden": "tsx scripts/golden-e2e.ts",
+    "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json tsx scripts/golden-e2e.ts",
     "mem0:smoke": "tsx scripts/mem0-smoke.ts",
     "semantic:rebuild": "tsx scripts/rebuild-semantic-memory.ts",
     "eval": "tsx scripts/eval-runner.ts"
