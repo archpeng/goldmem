@@ -10,7 +10,7 @@ Added package:
 packages/temporal-memory
 ```
 
-The package defines the future Graphiti-compatible interface:
+The package defines the future Graphiti-targeted interface:
 
 ```text
 TemporalMemoryStore
@@ -27,7 +27,21 @@ NullTemporalMemoryStore
 buildTemporalGroupId()
 ```
 
-The null store is intentionally a no-op. It keeps the MVP runtime independent from Graphiti.
+The null store is intentionally a no-op. It exists only to keep the MVP runtime independent from Graphiti while the Graphiti adapter is not implemented. It should not grow behavior.
+
+## Direct target decisions
+
+The temporal memory layer is intentionally strict:
+
+```text
+tenantId is required
+groupId is always tenantId:elderId
+retrievalSource is graphiti
+content is structured object data
+TemporalEpisodeType is closed for now
+```
+
+This avoids a compatibility-style abstraction that pretends to support many backends. The current long-term target is Graphiti.
 
 ## Added Kernel-side episode builder
 
@@ -76,7 +90,7 @@ Benefits:
 ```text
 MVP stays stable
 Graphiti can be tested through nightly/shadow jobs
-Temporal memory interface is framework-neutral
+Temporal memory API is small and target-oriented
 Future Graphiti adapter can be implemented without touching product logic
 ```
 
