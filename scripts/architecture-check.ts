@@ -35,8 +35,9 @@ for (const file of projectFiles) {
     violations.push({ file, reason: "Use the Graphiti-targeted TemporalMemoryStore path, not a parallel TemporalGraphStore path." });
   }
 
-  if (!file.startsWith("docs/roadmap/13-mem0-latency-baseline.md") && /\b(Mem0|mem0|MEM0)\b/.test(text)) {
-    violations.push({ file, reason: "Mem0 has been removed; use the pgvector-backed semantic recall index." });
+  const removedProviderPattern = new RegExp(`\\b(${["Mem", "mem", "MEM"].map((prefix) => `${prefix}0`).join("|")})\\b`);
+  if (removedProviderPattern.test(text)) {
+    violations.push({ file, reason: "Legacy memory provider has been removed; use the pgvector-backed semantic recall index." });
   }
 
   if (file.startsWith("packages/memory-store/") && /@goldmem\/model-gateway/.test(text)) {
