@@ -123,17 +123,17 @@ nightly consolidation scheduling
 audit logging
 ```
 
-## 7. Real-time path should remain reliable
+## 7. Real-time path should make Graphiti visible but bounded
 
-Do not put every component on the critical path.
+Do not make every component a hard dependency for business truth, but do make the long-term memory path visible in production from the start.
 
-MVP and early production should keep real-time processing stable:
+Early production write order:
 
 ```text
-source -> MemoryPlan -> PostgreSQL -> Mem0 -> response
+source -> MemoryPlan -> PostgreSQL -> Mem0 -> Graphiti episode -> audit -> response
 ```
 
-Graphiti should first enter as async/shadow infrastructure, then gradually become authoritative for long-term relational memory queries.
+PostgreSQL write success remains the business hard dependency. Graphiti write failure must be surfaced in response metadata and audit, then retried by a later queue/job; it must not rollback PostgreSQL truth or silently disappear.
 
 ## 8. Nightly consolidation is a core mechanism
 

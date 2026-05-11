@@ -113,11 +113,11 @@ occurredAt
 
 All user-facing answers that use Mem0 must align results back to PostgreSQL source/event evidence.
 
-## Decision 4: Graphiti becomes the candidate long-term relational memory truth
+## Decision 4: Graphiti becomes the long-term relational memory truth target
 
 ### Decision
 
-Graphiti should be evaluated and then potentially promoted as the source of truth for long-term relational memory.
+Graphiti should be the production target and source of truth for long-term relational memory.
 
 ### Why
 
@@ -145,7 +145,7 @@ fraud-risk chain evolved across several records
 
 ### Consequence
 
-Graphiti should not be treated as an optional visualization layer. It should be treated as the future long-term relational memory authority, but introduced through shadow write/query first.
+Graphiti should not be treated as an optional visualization layer or long-running shadow experiment. It should enter the production memory path directly, with PostgreSQL remaining the hard dependency for business writes and evidence.
 
 ## Decision 5: Kernel becomes an orchestrator, not a full memory engine
 
@@ -180,11 +180,11 @@ multi-hop graph retrieval implementation
 
 This follows the Bitter Lesson more closely: avoid encoding a growing set of handcrafted memory rules when a general temporal context graph engine can absorb more data and improve through better models and retrieval.
 
-## Decision 6: Graphiti should not block the real-time MVP path
+## Decision 6: Graphiti enters production without owning business writes
 
 ### Decision
 
-Introduce Graphiti asynchronously and behind feature flags.
+Introduce Graphiti as part of the production long-term memory path after PostgreSQL truth is persisted.
 
 ### Why
 
@@ -199,24 +199,27 @@ retry handling
 tenant group management
 ```
 
-GoldMem's elder-facing product must remain fast and stable.
+GoldMem's elder-facing product must remain fast and stable, so Graphiti failure must be surfaced, audited, and retried rather than allowed to corrupt PostgreSQL truth.
 
 ### Consequence
 
-Initial runtime path:
+Production write path:
 
 ```text
-PostgreSQL + Mem0
+PostgreSQL truth write
+-> Mem0 recall write
+-> Graphiti temporal episode write
+-> audit
+-> response
 ```
 
-Graphiti path:
+When Graphiti write fails:
 
 ```text
-nightly consolidation
-shadow write
-shadow query
-golden case validation
-selective answer integration
+PostgreSQL stays committed
+response records temporal write failure in internal metadata
+audit records graphiti_write_failed
+retry queue/job can replay from PostgreSQL records
 ```
 
 ## Decision 7: Nightly consolidation is required
@@ -292,11 +295,11 @@ Kernel checks PostgreSQL family confirmation state.
 Only confirmed reminder state can schedule notification.
 ```
 
-## Decision 9: Use Graphiti as benchmark before promotion
+## Decision 9: Validate every Graphiti production capability with golden cases
 
 ### Decision
 
-Graphiti should become authoritative only after evidence from golden cases.
+Graphiti is the long-term relational memory truth target, but each user-facing capability must be covered by golden cases before merge.
 
 ### Why
 
@@ -315,13 +318,13 @@ Graphiti cost/latency is acceptable.
 
 ### Consequence
 
-Before promotion:
+Before each capability is considered complete:
 
 ```text
-shadow write
-shadow query
-side-by-side comparison
-long-term memory golden cases
+Graphiti write/read fixture
+PostgreSQL source/event alignment check
+answer uncertainty check for high-risk domains
+conflict check where PostgreSQL business state overrides Graphiti
 ```
 
 ## Decision 10: Data flywheel must be anonymized and evaluation-driven

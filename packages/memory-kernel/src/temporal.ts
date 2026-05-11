@@ -22,8 +22,8 @@ export type WriteTemporalEpisodeInput = BuildTemporalEpisodeInput & {
 /**
  * Builds a curated Graphiti episode from already-persisted GoldMem truth records.
  *
- * This stays outside the real-time ingest path. Early Graphiti integration should
- * call it from nightly or shadow jobs after PostgreSQL writes are complete.
+ * This is used after PostgreSQL writes are complete so Graphiti receives stable
+ * source/event identifiers and never becomes the business write authority.
  */
 export function buildMemorySourceTemporalEpisode(input: BuildTemporalEpisodeInput): AddTemporalEpisodeInput {
   const riskFlags = input.riskFlags ?? [];
@@ -82,7 +82,7 @@ export function buildMemorySourceTemporalEpisode(input: BuildTemporalEpisodeInpu
     },
     metadata: {
       ...input.metadata,
-      writeMode: "shadow_or_nightly",
+      writeMode: "production_ingest",
       sourceType: input.source.type,
       eventTypes: [...new Set(input.events.map((event) => event.type))],
       riskLevels: [...new Set(input.events.map((event) => event.riskLevel))],

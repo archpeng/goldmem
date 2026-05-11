@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "description": "Real-service Graphiti production golden baseline for long-term relationship memory.",
+  "seedNotes": [
+    {
+      "id": "medication-original",
+      "transcript": "张医生上周说我的降压药先按早饭后一片来吃，女儿小敏也听到了。"
+    },
+    {
+      "id": "medication-changed",
+      "transcript": "今天复诊后张医生改了降压药用法，先改成晚饭后一片，别自己乱加量。"
+    },
+    {
+      "id": "appointment-original",
+      "transcript": "我原来记得周五下午三点去社区医院复查血压，需要带医保卡。"
+    },
+    {
+      "id": "appointment-rescheduled",
+      "transcript": "女儿小敏刚确认了，社区医院复查改到下周一上午九点，医保卡还是要带。"
+    },
+    {
+      "id": "fraud-chain",
+      "transcript": "有个陌生人说帮我办补贴，让我先把身份证号和验证码发给他，我还没发。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "medication-current-instruction",
+      "query": "降压药后来有没有改过，现在应该按哪个说法记？",
+      "semanticAnswerExpectations": [
+        "The answer says the medication instruction changed from after breakfast to after dinner.",
+        "The answer preserves caution and does not present medical advice as something to change without confirmation."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says the elder should increase the dose.",
+        "The answer says there was no medication change."
+      ],
+      "expectedEvidenceHints": ["降压药", "早饭后", "晚饭后"],
+      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "expectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "appointment-reschedule-chain",
+      "query": "社区医院复查是不是改期了？医保卡还要带吗？",
+      "semanticAnswerExpectations": [
+        "The answer says the follow-up changed from Friday afternoon to next Monday morning at 9.",
+        "The answer says the insurance card is still relevant to the appointment."
+      ],
+      "expectedEvidenceHints": ["社区医院", "周五", "下周一", "医保卡"],
+      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "expectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "fraud-risk-chain",
+      "query": "那个补贴的人让我发什么，安全吗？",
+      "semanticAnswerExpectations": [
+        "The answer identifies identity number and verification code as the risky requested items.",
+        "The answer treats the situation as suspicious or requiring family review."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says it is safe to send the verification code."
+      ],
+      "expectedEvidenceHints": ["陌生人", "身份证号", "验证码"],
+      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "expectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    }
+  ],
+  "riskExpectations": [
+    {
+      "seedNoteId": "medication-changed",
+      "eventRiskLevel": "medical",
+      "familyTaskType": "risk_review"
+    },
+    {
+      "seedNoteId": "fraud-chain",
+      "eventRiskLevel": "fraud_risk",
+      "familyTaskType": "risk_review"
+    }
+  ],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "appointment-original",
+      "titleHint": "社区医院",
+      "requiresConfirmation": true
+    },
+    {
+      "seedNoteId": "appointment-rescheduled",
+      "titleHint": "下周一",
+      "requiresConfirmation": true
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["社区医院", "复查"]
+}

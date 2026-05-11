@@ -11,12 +11,16 @@ type Violation = {
 
 const trackedFiles = (await execFileAsync("git", ["ls-files"], { maxBuffer: 10 * 1024 * 1024 })).stdout
   .split("\n")
-  .filter(Boolean)
+  .filter(Boolean);
+const untrackedFiles = (await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], { maxBuffer: 10 * 1024 * 1024 })).stdout
+  .split("\n")
+  .filter(Boolean);
+const projectFiles = [...new Set([...trackedFiles, ...untrackedFiles])]
   .filter((file) => !file.startsWith("node_modules/") && !file.startsWith("dist/"));
 
 const violations: Violation[] = [];
 
-for (const file of trackedFiles) {
+for (const file of projectFiles) {
   if (file === "scripts/architecture-check.ts") continue;
   if (!/\.(ts|tsx|js|md|json|yml|yaml|Dockerfile)$/.test(file) && !file.endsWith("Dockerfile")) continue;
   const text = await readFile(file, "utf8");
@@ -25,8 +29,8 @@ for (const file of trackedFiles) {
     violations.push({ file, reason: "Canonical Mem0 memory writes must not enable infer=true." });
   }
 
-  if (/GRAPHITI_BASE_URL|TemporalGraphStore|HttpTemporalGraphStore|NullTemporalGraphStore/.test(text)) {
-    violations.push({ file, reason: "MVP must not reintroduce a parallel Graphiti/TemporalGraph path." });
+  if (/TemporalGraphStore|HttpTemporalGraphStore|NullTemporalGraphStore/.test(text)) {
+    violations.push({ file, reason: "Use the Graphiti-targeted TemporalMemoryStore path, not a parallel TemporalGraphStore path." });
   }
 
   if (
@@ -40,6 +44,39 @@ for (const file of trackedFiles) {
   if (/Mem0\s+(is|as|=)?\s*semantic-only/i.test(text) || /Mem0\s+semantic-only/i.test(text)) {
     violations.push({ file, reason: "Mem0 should be described as a multilingual recall engine, not semantic-only." });
   }
+
+  if (file.startsWith("packages/memory-store/") && /@goldmem\/model-gateway/.test(text)) {
+    violations.push({ file, reason: "memory-store must not depend on model-gateway; shared context contracts belong in memory-schema." });
+  }
+
+  if (isProductionSource(file) && /as\s+unknown\s+as|as\s+never|as\s+Partial\s*</.test(text)) {
+    violations.push({ file, reason: "Production code must not hide boundary uncertainty with broad casts." });
+  }
+}
+
+for (const file of [
+  "packages/memory-schema/package.json",
+  "packages/memory-kernel/package.json",
+  "packages/memory-store/package.json",
+  "packages/risk-engine/package.json",
+  "packages/permission-engine/package.json",
+  "packages/reminder-engine/package.json",
+]) {
+  const text = await readFile(file, "utf8");
+  if (/--passWithNoTests/.test(text)) {
+    violations.push({ file, reason: "Safety-owner packages must not pass tests when no tests exist." });
+  }
+}
+
+for (const [file, maxLines] of [
+  ["packages/memory-kernel/src/index.ts", 350],
+  ["packages/memory-store/src/postgres.ts", 250],
+] as const) {
+  const text = await readFile(file, "utf8");
+  const lineCount = text.split("\n").length;
+  if (lineCount > maxLines) {
+    violations.push({ file, reason: `Core entry file has ${lineCount} lines; expected ${maxLines} or fewer.` });
+  }
 }
 
 const adapter = await readFile("packages/memory-store/src/http-adapters.ts", "utf8");
@@ -50,10 +87,31 @@ if (!/\binfer\s*:\s*false\b/.test(adapter)) {
   });
 }
 
-const kernel = await readFile("packages/memory-kernel/src/index.ts", "utf8");
-if (!/metadata\.summary/.test(kernel)) {
+const packageJson = await readFile("package.json", "utf8");
+if (!/"test:graphiti"\s*:/.test(packageJson) || !/"mvp:verify"\s*:\s*"[^"]*pnpm test:graphiti/.test(packageJson)) {
   violations.push({
-    file: "packages/memory-kernel/src/index.ts",
+    file: "package.json",
+    reason: "Graphiti is core long-term memory; mvp:verify must include pnpm test:graphiti.",
+  });
+}
+
+for (const file of [
+  "packages/memory-kernel/src/ingest-temporal-writer.ts",
+  "packages/memory-kernel/src/query-orchestrator.ts",
+]) {
+  const text = await readFile(file, "utf8");
+  if (/NullTemporalMemoryStore/.test(text)) {
+    violations.push({
+      file,
+      reason: "Kernel must not silently branch on NullTemporalMemoryStore; temporal failures must be surfaced and audited.",
+    });
+  }
+}
+
+const retrieval = await readFile("packages/memory-kernel/src/retrieval.ts", "utf8");
+if (!/metadata\.summary/.test(retrieval)) {
+  violations.push({
+    file: "packages/memory-kernel/src/retrieval.ts",
     reason: "Mem0 evidence must prefer PostgreSQL-derived metadata.summary.",
   });
 }
@@ -67,3 +125,7 @@ if (violations.length > 0) {
 }
 
 console.log("architecture check ok");
+
+function isProductionSource(file: string): boolean {
+  return /\.(ts|tsx)$/.test(file) && !/(\.test|\.spec)\.(ts|tsx)$/.test(file) && !file.includes("/test/");
+}

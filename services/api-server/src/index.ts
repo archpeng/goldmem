@@ -20,9 +20,9 @@ import {
   type ContextLinkStore,
   type EventStore,
   type ReminderStore,
-  type SourceStore,
 } from "@goldmem/memory-store";
 import { NotImplementedModelGateway, OpenAIModelGateway, type ModelGateway } from "@goldmem/model-gateway";
+import { GraphitiTemporalMemoryStore, NullTemporalMemoryStore, type TemporalMemoryStore } from "@goldmem/temporal-memory";
 
 export const apiRouteContract = {
   elder: {
@@ -47,7 +47,6 @@ export type ApiRouteContract = typeof apiRouteContract;
 
 export type ApiServerDeps = {
   kernel: ElderMemoryKernel;
-  sourceStore: SourceStore;
   eventStore: EventStore;
   contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
@@ -76,8 +75,10 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     if (!file) throw new Error("Missing voice note file");
     const fields = file.fields as Record<string, { value?: unknown }>;
     const elderId = String(fields.elderId?.value ?? "");
+    const tenantId = String(fields.tenantId?.value ?? "tenant-mvp");
     const buffer = await file.toBuffer();
     return deps.kernel.ingestVoice({
+      tenantId,
       elderId,
       audio: new Uint8Array(buffer),
     });
@@ -89,28 +90,34 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
   });
 
   server.get("/elder/events", async (request) => {
-    const elderId = String((request.query as Record<string, unknown>).elderId ?? "");
+    const query = request.query as Record<string, unknown>;
+    const elderId = String(query.elderId ?? "");
+    const tenantId = String(query.tenantId ?? "tenant-mvp");
     if (!elderId) throw new Error("elderId is required");
-    return deps.eventStore.search({ elderId, limit: 20 });
+    return deps.eventStore.search({ tenantId, elderId, limit: 20 });
   });
 
   server.get("/elder/reminders", async (request) => {
-    const elderId = String((request.query as Record<string, unknown>).elderId ?? "");
+    const query = request.query as Record<string, unknown>;
+    const elderId = String(query.elderId ?? "");
+    const tenantId = String(query.tenantId ?? "tenant-mvp");
     if (!elderId) throw new Error("elderId is required");
-    return deps.reminderStore.listByElder(elderId);
+    return deps.reminderStore.listByElder({ tenantId, elderId });
   });
 
   server.post("/elder/reminders/:id/confirm", async (request) => {
     const params = request.params as { id: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const before = await deps.reminderStore.get(params.id);
+    const before = await deps.reminderStore.get({ tenantId: input.tenantId, reminderId: params.id });
     const reminder = await deps.reminderEngine.confirmReminder({
+      tenantId: input.tenantId,
       reminderId: params.id,
       actorUserId: input.actorUserId,
       remindAt: input.remindAt,
     });
     await deps.auditLog.record({
       type: "reminder_confirmed",
+      tenantId: reminder.tenantId,
       elderId: reminder.elderId,
       sourceId: reminder.sourceId,
       payload: {
@@ -126,15 +133,17 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
 
   server.get("/family/elders/:elderId/pending-tasks", async (request) => {
     const params = request.params as { elderId: string };
-    return deps.familyTaskStore.listPending(params.elderId);
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    return deps.familyTaskStore.listPending({ tenantId, elderId: params.elderId });
   });
 
   server.post("/family/tasks/:taskId/confirm", async (request) => {
     const params = request.params as { taskId: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const task = await deps.familyTaskStore.confirm(params.taskId, input.actorUserId);
+    const task = await deps.familyTaskStore.confirm({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
     await deps.auditLog.record({
       type: "family_task_confirmed",
+      tenantId: task.tenantId,
       elderId: task.elderId,
       payload: {
         taskId: task.id,
@@ -148,25 +157,7 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
 
   server.post("/family/reminders", async (request) => {
     const input = CreateFamilyReminderRequestSchema.parse(request.body);
-    const source = await deps.sourceStore.create({
-      elderId: input.elderId,
-      type: "family_input",
-      transcript: input.title,
-      createdAt: new Date().toISOString(),
-    });
-
-    return deps.reminderEngine.createCandidate({
-      elderId: input.elderId,
-      sourceId: source.id,
-      title: input.title,
-      description: input.description,
-      remindAt: input.remindAt,
-      timeConfidence: input.remindAt ? 1 : 0,
-      confirmationRequired: true,
-      suggestedConfirmers: [{ role: "elder" }],
-      confidence: 1,
-      reason: input.reason,
-    });
+    return deps.kernel.createFamilyReminder(input);
   });
 
   return server;
@@ -182,12 +173,14 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
   const reminderEngine = new DefaultReminderEngine(postgres.reminderStore);
   const modelGateway = buildModelGatewayFromEnv();
   const mem0BaseUrl = requiredEnv("MEM0_BASE_URL");
+  const temporalMemory = buildTemporalMemoryFromEnv();
 
   const kernelDeps: ElderMemoryKernelDeps = {
     sourceStore: postgres.sourceStore,
     eventStore: postgres.eventStore,
     contextLinkStore: postgres.contextLinkStore,
     reminderEngine,
+    familyReminderCommandStore: postgres.familyReminderCommandStore,
     familyTaskStore: postgres.familyTaskStore,
     riskFlagStore: postgres.riskFlagStore,
     semanticMemory: new HttpSemanticMemoryStore({ baseUrl: mem0BaseUrl, apiKey: process.env.MEM0_API_KEY }),
@@ -196,12 +189,13 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     riskEngine: new DefaultRiskEngine(),
     permissionEngine: new DefaultPermissionEngine(),
     auditLog: postgres.auditLog,
+    temporalMemory,
+    temporalMemoryJobStore: postgres.temporalMemoryJobStore,
   };
 
   return {
     deps: {
       kernel: new ElderMemoryKernel(kernelDeps),
-      sourceStore: postgres.sourceStore,
       eventStore: postgres.eventStore,
       contextLinkStore: postgres.contextLinkStore,
       reminderStore: postgres.reminderStore,
@@ -210,11 +204,59 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       auditLog: postgres.auditLog,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
-        return { postgres: "ok", mem0: "configured", mem0BaseUrl };
+        const graphiti = await checkGraphitiHealth(temporalMemory);
+        const graphitiRetryJobs = await postgres.temporalMemoryJobStore.stats();
+        const graphitiRequired = isGraphitiRequired();
+        return {
+          ok: graphitiRequired ? graphiti === "ok" : true,
+          postgres: "ok",
+          mem0: "configured",
+          mem0BaseUrl,
+          graphiti,
+          graphitiRequired,
+          graphitiRetryJobs,
+        };
       },
     },
     close: postgres.close,
   };
+}
+
+export function buildTemporalMemoryFromEnv(): TemporalMemoryStore {
+  const graphitiBaseUrl = process.env.GRAPHITI_BASE_URL;
+  const required = isGraphitiRequired();
+  if (!graphitiBaseUrl) {
+    if (required) throw new Error("GRAPHITI_BASE_URL is required when Graphiti is required in production");
+    return new NullTemporalMemoryStore();
+  }
+  return new GraphitiTemporalMemoryStore({
+    baseUrl: graphitiBaseUrl,
+    apiKey: process.env.GRAPHITI_API_KEY,
+  });
+}
+
+function isGraphitiRequired(): boolean {
+  return (
+    process.env.GRAPHITI_REQUIRED_IN_PRODUCTION === "true" ||
+    process.env.GOLDMEM_REQUIRE_GRAPHITI === "true" ||
+    process.env.NODE_ENV === "production"
+  );
+}
+
+async function checkGraphitiHealth(temporalMemory: TemporalMemoryStore): Promise<"ok" | "missing_config" | "unhealthy"> {
+  const baseUrl = process.env.GRAPHITI_BASE_URL;
+  if (temporalMemory instanceof NullTemporalMemoryStore || !baseUrl) return "missing_config";
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
+      signal: AbortSignal.timeout(5_000),
+      headers: process.env.GRAPHITI_API_KEY ? { "x-api-key": process.env.GRAPHITI_API_KEY } : undefined,
+    });
+    if (!response.ok) return "unhealthy";
+    const body = await response.json() as { ok?: unknown };
+    return body.ok === true ? "ok" : "unhealthy";
+  } catch {
+    return "unhealthy";
+  }
 }
 
 function buildModelGatewayFromEnv(): ModelGateway {

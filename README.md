@@ -23,7 +23,7 @@ Elder voice/text
 1. **LLM understands; Kernel constrains.** Models produce a `MemoryPlan`; deterministic code validates, guards, and applies it.
 2. **PostgreSQL is the truth source.** Original source, event state, reminders, permissions, risk records, and audit logs are not delegated to memory frameworks.
 3. **Mem0 is the recall engine, not truth.** It can use semantic search, keyword/BM25, entity linking, rerank, and context lookup to find candidate memories.
-4. **Mem0 includes the MVP recall index.** Its local pgvector/Neo4j backing services are Mem0 internals; GoldMem does not run a separate Graphiti path in the MVP.
+4. **Graphiti is the long-term relational memory path.** Its local Neo4j backing service is Graphiti infrastructure; GoldMem still gates every answer and business action through the Kernel.
 5. **Failures become eval data, not ad-hoc rules.** Case-by-case mistakes are collected into evaluation cases and prompt/model improvements.
 
 ## Repository layout
@@ -67,7 +67,7 @@ input transcript
   -> return elder-facing cards
 ```
 
-Then add ASR/audio, reminder scheduling, fuzzy recall hardening, family confirmation, and later a separate temporal graph only if evals prove Mem0 is insufficient.
+Then add ASR/audio, reminder scheduling, fuzzy recall hardening, family confirmation, Graphiti-backed long-term relationship evidence, and eval-driven consolidation.
 
 ## Development
 
@@ -187,6 +187,41 @@ pnpm semantic:rebuild
 
 Restart the API server after changing `MEM0_BASE_URL`.
 
+## Local Graphiti
+
+Graphiti is exposed to GoldMem through a small local sidecar that wraps `graphiti-core` with the REST contract used by `@goldmem/temporal-memory`. The default local backend is Neo4j 5.26+, separate from Mem0's internal Neo4j service.
+
+1. Set `OPENAI_API_KEY` and keep `GRAPHITI_BASE_URL=http://localhost:8890` in `.env`.
+
+2. Start Graphiti with the existing local stack.
+
+```bash
+set -a
+source .env
+set +a
+docker compose -f infra/docker-compose.yml --profile graphiti up -d graphiti-neo4j graphiti-sidecar
+```
+
+The sidecar is available at `http://localhost:8890/health`; Graphiti Neo4j Browser is exposed at `http://localhost:7475` and Bolt at `localhost:7688`. Mem0 keeps using its own Neo4j on `7474/7687`. In `.env`, `GRAPHITI_NEO4J_URI` is the host-facing Bolt URL and `GRAPHITI_SIDECAR_NEO4J_URI` is the container-internal URL.
+
+3. Verify direct Graphiti write/search.
+
+```bash
+set -a
+source .env
+set +a
+pnpm graphiti:smoke
+```
+
+4. For production-style Graphiti E2E, start PostgreSQL, Mem0, Graphiti, run migrations, start the API server, then run:
+
+```bash
+set -a
+source .env
+set +a
+pnpm e2e:graphiti
+```
+
 ## MVP Verification
 
 Run the local non-network verification suite:
@@ -195,7 +230,7 @@ Run the local non-network verification suite:
 pnpm mvp:verify
 ```
 
-This runs typecheck, tests, build, lint, and eval fixtures. It does not require OpenAI, Mem0, or a running database.
+This runs typecheck, unit tests, real PostgreSQL readback, Graphiti readback, build, lint, eval fixtures, and architecture checks. The Graphiti readback gate requires a healthy local Graphiti sidecar and its provenance PostgreSQL path; the helper will start the local compose Graphiti profile when `GRAPHITI_BASE_URL` is not already set.
 
 Architecture constraints can also be checked directly:
 

@@ -11,6 +11,11 @@ export type IngestResult = {
     needsConfirmation: boolean;
     riskLevel: string;
   }>;
+  temporalMemory?: {
+    status: "written" | "failed";
+    errorCode?: "graphiti_not_configured" | "graphiti_write_failed" | "graphiti_retry_enqueue_failed";
+    errorMessage?: string;
+  };
 };
 
 export type MvpLists = {

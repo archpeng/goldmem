@@ -8,27 +8,32 @@ export type HttpAdapterOptions = {
 export class HttpMem0RecallStore implements SemanticMemoryStore {
   constructor(private readonly options: HttpAdapterOptions) {}
 
-  async addMemory(input: { userId: string; memory: string; metadata?: Record<string, unknown> }): Promise<void> {
+  async addMemory(input: { tenantId: string; elderId: string; memory: string; metadata?: Record<string, unknown> }): Promise<void> {
     await request(this.options, "/memories", {
       method: "POST",
       body: JSON.stringify({
-        user_id: input.userId,
+        user_id: buildTenantUserId(input),
         messages: [{ role: "user", content: input.memory }],
-        metadata: input.metadata,
+        metadata: {
+          ...input.metadata,
+          tenantId: input.tenantId,
+          elderId: input.elderId,
+        },
         infer: false,
       }),
     });
   }
 
   async searchMemory(input: {
-    userId: string;
+    tenantId: string;
+    elderId: string;
     query: string;
     limit?: number;
   }): Promise<MemoryRecallResult[]> {
     const result = await request(this.options, "/search", {
       method: "POST",
       body: JSON.stringify({
-        user_id: input.userId,
+        user_id: buildTenantUserId(input),
         query: input.query,
         limit: input.limit,
       }),
@@ -38,6 +43,10 @@ export class HttpMem0RecallStore implements SemanticMemoryStore {
 }
 
 export class HttpSemanticMemoryStore extends HttpMem0RecallStore {}
+
+export function buildTenantUserId(input: { tenantId: string; elderId: string }): string {
+  return `${input.tenantId}:${input.elderId}`;
+}
 
 async function request(options: HttpAdapterOptions, path: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}${path}`, {

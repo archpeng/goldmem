@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const ISODateTimeSchema = z.string().datetime();
+export const DEFAULT_TENANT_ID = "tenant-mvp";
+export const TenantIdSchema = z.string().min(1).default(DEFAULT_TENANT_ID);
 
 export const SourceTypeSchema = z.enum(["voice", "text", "family_input"]);
 export const EventTypeSchema = z.enum([
@@ -43,6 +45,7 @@ export type EvidenceRef = z.infer<typeof EvidenceRefSchema>;
 
 export const MemorySourceSchema = z.object({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   type: SourceTypeSchema,
   transcript: z.string().min(1),
@@ -129,6 +132,7 @@ export type RiskFlag = z.infer<typeof RiskFlagSchema>;
 
 export const RiskFlagRecordSchema = RiskFlagSchema.extend({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   sourceId: z.string().min(1),
   eventId: z.string().optional(),
@@ -148,6 +152,7 @@ export type FamilyConfirmationTaskDraft = z.infer<typeof FamilyConfirmationTaskD
 
 export const FamilyTaskSchema = FamilyConfirmationTaskDraftSchema.omit({ relatedEventIndex: true }).extend({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   familyUserId: z.string().optional(),
   relatedEventId: z.string().optional(),
@@ -160,6 +165,7 @@ export type FamilyTask = z.infer<typeof FamilyTaskSchema>;
 
 export const FeedbackSchema = z.object({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   sourceId: z.string().optional(),
   eventId: z.string().optional(),
@@ -200,6 +206,7 @@ export const UncertaintySchema = z.object({
 export type Uncertainty = z.infer<typeof UncertaintySchema>;
 
 export const MemoryPlanSchema = z.object({
+  tenantId: TenantIdSchema,
   sourceId: z.string().min(1),
   elderId: z.string().min(1),
   summary: z.string().min(1),
@@ -222,6 +229,7 @@ export type MemoryPlan = z.infer<typeof MemoryPlanSchema>;
 
 export const MemoryEventSchema = MemoryEventDraftSchema.extend({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   sourceId: z.string().min(1),
   status: z.enum(["active", "needs_review", "archived"]),
@@ -231,6 +239,7 @@ export type MemoryEvent = z.infer<typeof MemoryEventSchema>;
 
 export const MemoryContextLinkSchema = z.object({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   fromEventId: z.string().min(1),
   toEventId: z.string().min(1),
@@ -246,6 +255,7 @@ export type MemoryContextLink = z.infer<typeof MemoryContextLinkSchema>;
 
 export const ReminderSchema = z.object({
   id: z.string().min(1),
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   sourceId: z.string().min(1),
   eventId: z.string().optional(),
@@ -302,7 +312,7 @@ export const MemoryAnswerSchema = z.object({
         createdAt: ISODateTimeSchema,
         summary: z.string().min(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0", "context_link"]).optional(),
+        retrievalSource: z.enum(["postgres", "mem0", "context_link", "graphiti"]).optional(),
       }),
     )
     .default([]),
@@ -316,7 +326,7 @@ export const MemoryAnswerSchema = z.object({
         transcriptQuote: z.string().optional(),
         score: z.number().min(0).max(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0", "context_link"]),
+        retrievalSource: z.enum(["postgres", "mem0", "context_link", "graphiti"]),
       }),
     )
     .default([]),
@@ -333,7 +343,53 @@ export const MemoryAnswerSchema = z.object({
 });
 export type MemoryAnswer = z.infer<typeof MemoryAnswerSchema>;
 
+export const PersonalContextSchema = z.object({
+  elderProfile: z.record(z.unknown()).optional(),
+  recentEvents: z.array(z.object({
+    eventId: z.string().optional(),
+    sourceId: z.string().optional(),
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    createdAt: ISODateTimeSchema,
+  })),
+  semanticCandidateEvents: z.array(z.object({
+    eventId: z.string().min(1),
+    sourceId: z.string().min(1),
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    createdAt: ISODateTimeSchema,
+    score: z.number().min(0).max(1).optional(),
+  })).optional(),
+  openReminders: z.array(z.object({
+    reminderId: z.string().min(1),
+    eventId: z.string().optional(),
+    title: z.string().min(1),
+    reason: z.string().min(1),
+    timeText: z.string().optional(),
+    remindAt: ISODateTimeSchema.optional(),
+    timeConfidence: z.number().min(0).max(1).optional(),
+    status: z.string().min(1),
+  })).optional(),
+  semanticMemories: z.array(z.object({
+    memory: z.string().min(1),
+    score: z.number().min(0).max(1).optional(),
+  })),
+  knownEntities: z.array(z.object({
+    type: z.string().min(1),
+    name: z.string().min(1),
+    aliases: z.array(z.string()).optional(),
+  })),
+  familyRelations: z.array(z.object({
+    name: z.string().min(1),
+    relationship: z.string().min(1),
+    userId: z.string().optional(),
+  })),
+  safetyPolicy: z.array(z.string()),
+});
+export type PersonalContext = z.infer<typeof PersonalContextSchema>;
+
 export const CreateTextNoteRequestSchema = z.object({
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   transcript: z.string().min(1),
   localCreatedAt: ISODateTimeSchema.optional(),
@@ -342,6 +398,7 @@ export const CreateTextNoteRequestSchema = z.object({
 export type CreateTextNoteRequest = z.infer<typeof CreateTextNoteRequestSchema>;
 
 export const QueryMemoryRequestSchema = z.object({
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   query: z.string().min(1),
   now: ISODateTimeSchema.optional(),
@@ -349,17 +406,20 @@ export const QueryMemoryRequestSchema = z.object({
 export type QueryMemoryRequest = z.infer<typeof QueryMemoryRequestSchema>;
 
 export const ConfirmReminderRequestSchema = z.object({
+  tenantId: TenantIdSchema,
   actorUserId: z.string().min(1),
   remindAt: ISODateTimeSchema.optional(),
 });
 export type ConfirmReminderRequest = z.infer<typeof ConfirmReminderRequestSchema>;
 
 export const CreateFamilyReminderRequestSchema = z.object({
+  tenantId: TenantIdSchema,
   elderId: z.string().min(1),
   actorUserId: z.string().min(1),
   title: z.string().min(1),
   description: z.string().optional(),
   remindAt: ISODateTimeSchema.optional(),
   reason: z.string().default("Family-created reminder."),
+  idempotencyKey: z.string().min(1).optional(),
 });
 export type CreateFamilyReminderRequest = z.infer<typeof CreateFamilyReminderRequestSchema>;

@@ -25,8 +25,8 @@ const GoldenCaseSchema = z.object({
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
-      allowedSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default(["postgres", "mem0", "context_link"]),
-      expectedEvidenceSources: z.array(z.enum(["postgres", "mem0", "context_link"])).default([]),
+      allowedSources: z.array(z.enum(["postgres", "mem0", "context_link", "graphiti"])).default(["postgres", "mem0", "context_link"]),
+      expectedEvidenceSources: z.array(z.enum(["postgres", "mem0", "context_link", "graphiti"])).default([]),
       requiresMem0: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),
     }),
@@ -61,6 +61,7 @@ const SemanticJudgeResultSchema = z.object({
 });
 
 const baseUrl = (process.env.API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const tenantId = process.env.GOLDEN_E2E_TENANT_ID ?? "tenant-mvp";
 const elderId = process.env.GOLDEN_E2E_ELDER_ID ?? `golden-e2e-${Date.now()}`;
 const fixturePath = process.env.GOLDEN_E2E_FIXTURE ?? join(process.cwd(), "e2e", "golden-retrieval.json");
 const requestTimeoutMs = Number(process.env.GOLDEN_E2E_TIMEOUT_MS ?? 600_000);
@@ -70,6 +71,9 @@ const semanticJudge = createSemanticJudge();
 const health = await request<Json>("GET", "/health");
 assert(health.ok === true, "API health check failed");
 assert(health.mem0 === "configured", "Mem0 must be configured for golden E2E");
+if (fixturePath.includes("graphiti")) {
+  assert(health.graphiti === "ok", "Graphiti must be healthy for Graphiti golden E2E");
+}
 
 const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();
 for (const note of fixture.seedNotes) {
@@ -80,11 +84,15 @@ for (const note of fixture.seedNotes) {
   );
   ingests.set(note.id, result);
   assert(result.events.length > 0 || result.reminderCandidates.length > 0, `Seed note ${note.id} produced no records`);
+  if (fixturePath.includes("graphiti")) {
+    assert(result.temporalMemory?.status === "written", `Seed note ${note.id} did not write Graphiti temporal memory`);
+  }
 }
 
-const events = await request<MemoryEvent[]>("GET", `/elder/events?elderId=${encodeURIComponent(elderId)}`);
-const reminders = await request<Reminder[]>("GET", `/elder/reminders?elderId=${encodeURIComponent(elderId)}`);
-const familyTasks = await request<FamilyTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/pending-tasks`);
+const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
+const events = await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`);
+const reminders = await request<Reminder[]>("GET", `/elder/reminders?${tenantQuery}`);
+const familyTasks = await request<FamilyTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}`);
 
 for (const expectation of fixture.riskExpectations) {
   const ingest = requiredIngest(ingests, expectation.seedNoteId);
@@ -137,6 +145,7 @@ let mem0EvidenceQueries = 0;
 for (const queryCase of fixture.queries) {
   console.log(`golden query start: ${queryCase.id}`);
   const answer = MemoryAnswerSchema.parse(await request<unknown>("POST", "/elder/query", {
+    tenantId,
     elderId,
     query: queryCase.query,
   }));
@@ -209,7 +218,9 @@ async function ingestNote(transcript: string) {
     summary: string;
     events: MemoryEvent[];
     reminderCandidates: Reminder[];
+    temporalMemory?: { status: "written" | "failed"; errorMessage?: string };
   }>("POST", "/elder/text-notes", {
+    tenantId,
     elderId,
     transcript,
     metadata: {

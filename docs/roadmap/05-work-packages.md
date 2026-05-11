@@ -46,7 +46,7 @@ All audit logs include tenantId.
 
 ### Goal
 
-Create a Graphiti-compatible abstraction without binding the Kernel to Graphiti.
+Create a production Graphiti-targeted temporal memory boundary without binding business schemas to provider-specific graph objects.
 
 ### Package
 
@@ -104,6 +104,7 @@ GraphitiTemporalMemoryStore
 Kernel can depend on TemporalMemoryStore.
 NullTemporalMemoryStore keeps all existing tests green.
 GraphitiTemporalMemoryStore can be added without changing Memory Kernel API.
+Production configuration can require Graphiti while development and tests use NullTemporalMemoryStore.
 ```
 
 ## WP-3: Graphiti deployment stack
@@ -116,7 +117,7 @@ Run Graphiti as an isolated service.
 
 ```text
 Graphiti FastAPI service
-Graph backend: FalkorDB or Neo4j for first integration
+Graph backend: Neo4j 5.26+ for first integration
 LLM/embedding environment variables
 Docker compose profile
 health check
@@ -125,15 +126,16 @@ retryable client
 
 ### Suggested first backend
 
-Start with FalkorDB or Neo4j based on team comfort.
+Start with Neo4j as the primary local and production backend.
 
-FalkorDB is operationally lighter. Neo4j is more mature and easier to inspect visually.
+Neo4j is more mature, easier to inspect visually, and matches Graphiti's primary backend path.
 
 ### Acceptance
 
 ```text
 Graphiti can start independently.
-GoldMem can run without Graphiti.
+GoldMem development and tests can run without Graphiti.
+GoldMem production fails fast when Graphiti is required but not configured.
 Graphiti health check is visible from API/worker environment.
 ```
 
@@ -169,7 +171,7 @@ daily_consolidation
 ### Acceptance
 
 ```text
-Each episode has groupId = tenantId:elderId.
+Each episode has a Kernel-generated Graphiti-safe groupId derived from tenantId and elderId.
 Each episode references sourceId/eventId when possible.
 Each episode is deterministic from PostgreSQL records.
 High-risk episodes preserve risk and confirmation metadata.
@@ -205,7 +207,7 @@ Write audit log.
 ```text
 Job can run idempotently.
 Job can be retried.
-Graphiti failure does not fail the entire job.
+Graphiti failure is audited and retryable without corrupting PostgreSQL truth.
 Mem0 summary write can be rebuilt from PostgreSQL.
 ```
 
@@ -273,8 +275,8 @@ current effective fact
 ### Acceptance
 
 ```text
-At least 20 golden cases before enabling Graphiti in user-facing answers.
-At least 50 cases before treating Graphiti as long-term memory truth.
+At least one golden case for each Graphiti-backed user-facing capability before merge.
+Graphiti is treated as the long-term relational memory truth target from the start, but every production ability must prove source/event alignment and safe failure behavior.
 Failures become fixtures, not ad-hoc rules.
 ```
 

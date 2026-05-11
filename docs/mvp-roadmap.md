@@ -182,6 +182,6 @@ After MVP, expand in this order:
 4. voice ingestion and audio evidence offsets
 5. full authentication and permission management
 6. elder mobile client and family web/miniprogram client
-7. evaluate a separate temporal graph only after Mem0 recall evals expose a clear gap
+7. keep Graphiti on the production long-term relational memory path, with PostgreSQL remaining business/source/evidence truth
 
 This order keeps the MVP focused on proving the Kernel and truth-store loop before adding product surfaces.

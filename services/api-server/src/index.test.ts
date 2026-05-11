@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildServer, type ApiServerDeps } from "./index.js";
+import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
 import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 describe("api-server", () => {
@@ -73,6 +73,39 @@ describe("api-server", () => {
     });
     expect(reminderConfirmed.statusCode).toBe(200);
     expect(deps.auditRecords.some((record) => record.type === "reminder_confirmed")).toBe(true);
+
+    const familyReminder = await server.inject({
+      method: "POST",
+      url: "/family/reminders",
+      payload: {
+        elderId: "elder-1",
+        actorUserId: "family-1",
+        title: "提醒妈妈明天量血压",
+        remindAt: "2026-05-11T09:00:00.000Z",
+        reason: "Family-created reminder.",
+        idempotencyKey: "family-api-1",
+      },
+    });
+    expect(familyReminder.statusCode).toBe(200);
+    expect(familyReminder.json().id).toBe("family-reminder-1");
+    expect(deps.auditRecords.some((record) => record.type === "family_reminder_created")).toBe(true);
+  });
+
+  it("fails fast when production requires Graphiti config", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalRequired = process.env.GRAPHITI_REQUIRED_IN_PRODUCTION;
+    const originalBaseUrl = process.env.GRAPHITI_BASE_URL;
+    delete process.env.GRAPHITI_BASE_URL;
+    process.env.GRAPHITI_REQUIRED_IN_PRODUCTION = "true";
+
+    expect(() => buildTemporalMemoryFromEnv()).toThrow("GRAPHITI_BASE_URL is required");
+
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalRequired === undefined) delete process.env.GRAPHITI_REQUIRED_IN_PRODUCTION;
+    else process.env.GRAPHITI_REQUIRED_IN_PRODUCTION = originalRequired;
+    if (originalBaseUrl === undefined) delete process.env.GRAPHITI_BASE_URL;
+    else process.env.GRAPHITI_BASE_URL = originalBaseUrl;
   });
 });
 
@@ -143,12 +176,25 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         retrievedEvidence: [],
         suggestedActions: [],
       }),
+      createFamilyReminder: async (input) => {
+        auditRecords.push({ type: "family_reminder_created" });
+        return {
+          id: "family-reminder-1",
+          tenantId: input.tenantId,
+          elderId: input.elderId,
+          sourceId: "source-family-1",
+          title: input.title,
+          description: input.description,
+          remindAt: input.remindAt,
+          status: "pending_family_confirm",
+          confirmationRequired: true,
+          confidence: 1,
+          reason: input.reason,
+          idempotencyKey: input.idempotencyKey,
+          createdAt: "2026-05-09T12:00:00.000Z",
+        };
+      },
     } as ApiServerDeps["kernel"],
-    sourceStore: {
-      saveAudio: async () => "file://audio.wav",
-      create: async (input) => ({ ...input, id: "source-2" }),
-      get: async () => null,
-    },
     eventStore: {
       create: async (input) => ({ ...input, id: "event-2", createdAt: event.createdAt }),
       search: async () => [event],

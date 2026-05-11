@@ -10,6 +10,7 @@ export const users = pgTable("users", {
 
 export const elderProfiles = pgTable("elder_profiles", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   userId: text("user_id").notNull(),
   displayName: text("display_name").notNull(),
   timezone: text("timezone").notNull(),
@@ -18,6 +19,7 @@ export const elderProfiles = pgTable("elder_profiles", {
 
 export const familyLinks = pgTable("family_links", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   familyUserId: text("family_user_id").notNull(),
   relationship: text("relationship").notNull(),
@@ -27,6 +29,7 @@ export const familyLinks = pgTable("family_links", {
 
 export const memorySources = pgTable("memory_sources", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   type: text("type").notNull(),
   audioUrl: text("audio_url"),
@@ -40,6 +43,7 @@ export const memorySources = pgTable("memory_sources", {
 
 export const memoryEvents = pgTable("memory_events", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   sourceId: text("source_id").notNull(),
   type: text("type").notNull(),
@@ -62,6 +66,7 @@ export const memoryEvents = pgTable("memory_events", {
 
 export const memoryEntities = pgTable("memory_entities", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   type: text("type").notNull(),
   name: text("name").notNull(),
@@ -70,6 +75,7 @@ export const memoryEntities = pgTable("memory_entities", {
 });
 
 export const memoryEventEntities = pgTable("memory_event_entities", {
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   eventId: text("event_id").notNull(),
   entityId: text("entity_id").notNull(),
   relation: text("relation").notNull(),
@@ -77,6 +83,7 @@ export const memoryEventEntities = pgTable("memory_event_entities", {
 
 export const reminders = pgTable("reminders", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   sourceId: text("source_id").notNull(),
   eventId: text("event_id"),
@@ -94,6 +101,7 @@ export const reminders = pgTable("reminders", {
 
 export const riskFlags = pgTable("risk_flags", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   sourceId: text("source_id").notNull(),
   eventId: text("event_id"),
@@ -109,6 +117,7 @@ export const riskFlags = pgTable("risk_flags", {
 
 export const familyTasks = pgTable("family_tasks", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   familyUserId: text("family_user_id"),
   type: text("type").notNull(),
@@ -125,6 +134,7 @@ export const familyTasks = pgTable("family_tasks", {
 
 export const memoryContextLinks = pgTable("memory_context_links", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   fromEventId: text("from_event_id").notNull(),
   toEventId: text("to_event_id").notNull(),
@@ -139,6 +149,7 @@ export const memoryContextLinks = pgTable("memory_context_links", {
 
 export const feedback = pgTable("feedback", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   sourceId: text("source_id"),
   eventId: text("event_id"),
@@ -150,9 +161,37 @@ export const feedback = pgTable("feedback", {
 
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   elderId: text("elder_id").notNull(),
   sourceId: text("source_id"),
   type: text("type").notNull(),
   payload: jsonb("payload_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const temporalMemoryJobs = pgTable("temporal_memory_jobs", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  elderId: text("elder_id").notNull(),
+  sourceId: text("source_id").notNull(),
+  status: text("status").notNull(),
+  attempts: real("attempts").notNull().default(0),
+  maxAttempts: real("max_attempts").notNull().default(5),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull().defaultNow(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  episode: jsonb("episode_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const familyReminderCommands = pgTable("family_reminder_commands", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  elderId: text("elder_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  sourceId: text("source_id").notNull(),
+  reminderId: text("reminder_id").notNull(),
+  request: jsonb("request_json").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

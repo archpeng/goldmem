@@ -57,10 +57,9 @@ Graphiti introduces another service and graph backend.
 ### Mitigation
 
 ```text
-Run Graphiti behind feature flags.
-Use NullTemporalMemoryStore by default.
-Introduce Graphiti through nightly/shadow jobs first.
-Make product usable without Graphiti.
+Use NullTemporalMemoryStore only for development and tests.
+Require Graphiti config in production and fail fast when it is missing.
+Surface Graphiti write failures in response metadata and audit.
 Add retry queue for failed episode writes.
 ```
 
@@ -104,7 +103,7 @@ Graphiti and Mem0 have their own grouping/user concepts. Mistakes could leak mem
 ### Mitigation
 
 ```text
-GoldMem constructs groupId = tenantId:elderId.
+GoldMem constructs a Graphiti-safe groupId from tenantId and elderId.
 Frontend never calls Graphiti or Mem0 directly.
 All memory backend calls go through Kernel/API.
 All memory backend metadata includes tenantId and elderId.
@@ -126,18 +125,18 @@ Curated summaries carry source/event references.
 Regression evals include nightly-generated cases.
 ```
 
-## Risk 8: The project overfits to Graphiti too early
+## Risk 8: The project couples Graphiti to business actions
 
 ### Problem
 
-Graphiti may be powerful, but early coupling can delay MVP and create operational drag.
+Graphiti may be powerful, but coupling it to reminders, permissions, notifications, or risk state would weaken deterministic safety.
 
 ### Mitigation
 
 ```text
-Keep MVP on PostgreSQL + Mem0.
-Use Graphiti shadow write/query before user-facing use.
-Require golden case improvements before promotion.
+Keep PostgreSQL as business/action truth.
+Let Graphiti own long-term relation memory only.
+Require golden cases for each user-facing Graphiti capability.
 Avoid Graphiti-specific types in business schemas.
 ```
 
@@ -164,7 +163,7 @@ Mem0 recall returns metadata-aligned evidence
 no evidence means no answer
 ```
 
-## Stage 2: Graphiti shadow write validation
+## Stage 2: Graphiti production write validation
 
 Test cases:
 
@@ -182,11 +181,11 @@ Validation:
 
 ```text
 Graphiti receives episodes with groupId, sourceIds, eventIds.
-Failed writes are audited.
-PostgreSQL + Mem0 product path still works when Graphiti is off.
+Failed writes are audited and visible to the caller as internal temporal status.
+PostgreSQL + Mem0 product path stays committed when Graphiti write fails.
 ```
 
-## Stage 3: Graphiti shadow query validation
+## Stage 3: Graphiti query validation
 
 Create golden cases:
 
@@ -236,12 +235,11 @@ what did my daughter ask me to remember?
 what reminders are pending?
 ```
 
-## Stage 5: Long-term memory truth promotion
+## Stage 5: Long-term memory truth hardening
 
-Graphiti may be considered long-term relational memory truth when:
+Graphiti remains the long-term relational memory truth target and is hardened when:
 
 ```text
-at least 50 long-term golden cases pass
 Graphiti evidence alignment is stable
 nightly consolidation is reliable
 admin memory debugger can inspect graph facts

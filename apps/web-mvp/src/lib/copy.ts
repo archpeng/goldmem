@@ -22,6 +22,7 @@ export const copy = {
     postgresEvidence: "PostgreSQL 事实源",
     mem0Evidence: "Mem0 语义记忆",
     contextLinkEvidence: "上下文关联",
+    graphitiEvidence: "Graphiti 长期关系",
   },
   events: {
     title: "记忆记录",

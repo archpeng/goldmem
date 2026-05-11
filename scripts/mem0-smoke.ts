@@ -1,7 +1,8 @@
 import { HttpMem0RecallStore } from "../packages/memory-store/src/http-adapters.js";
 
 const baseUrl = requiredEnv("MEM0_BASE_URL");
-const userId = process.env.MEM0_SMOKE_USER_ID ?? "goldmem-mem0-smoke";
+const tenantId = process.env.MEM0_SMOKE_TENANT_ID ?? "goldmem-smoke";
+const elderId = process.env.MEM0_SMOKE_ELDER_ID ?? "goldmem-mem0-smoke";
 const marker = `goldmem-mem0-smoke-${Date.now()}`;
 
 const recallMemory = new HttpMem0RecallStore({
@@ -10,9 +11,12 @@ const recallMemory = new HttpMem0RecallStore({
 });
 
 await recallMemory.addMemory({
-  userId,
+  tenantId,
+  elderId,
   memory: `Title: Mem0 smoke test\nSummary: ${marker} confirms Mem0 recall writes and search.\nType: daily_life\nRisk: none\nSource: mem0-smoke`,
   metadata: {
+    tenantId,
+    elderId,
     sourceId: "mem0-smoke",
     eventId: marker,
     eventType: "daily_life",
@@ -22,7 +26,8 @@ await recallMemory.addMemory({
 });
 
 await recallMemory.addMemory({
-  userId,
+  tenantId,
+  elderId,
   memory: [
     "Title: 社区医院复查",
     `Summary: ${marker} 老人下周三下午三点去社区医院复查血压，女儿小敏提醒要带医保卡。`,
@@ -31,6 +36,8 @@ await recallMemory.addMemory({
     "Source: mem0-smoke-cn",
   ].join("\n"),
   metadata: {
+    tenantId,
+    elderId,
     sourceId: "mem0-smoke-cn",
     eventId: `${marker}-cn`,
     eventType: "health",
@@ -42,7 +49,8 @@ await recallMemory.addMemory({
 });
 
 const results = await recallMemory.searchMemory({
-  userId,
+  tenantId,
+  elderId,
   query: marker,
   limit: 5,
 });
@@ -52,7 +60,8 @@ if (!results.some((result) => result.memory.includes(marker) || result.metadata?
 }
 
 const chineseResults = await recallMemory.searchMemory({
-  userId,
+  tenantId,
+  elderId,
   query: "小敏提醒去社区医院复查血压要带什么？",
   limit: 5,
 });

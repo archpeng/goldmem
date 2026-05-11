@@ -1,308 +1,272 @@
-# 04. Migration Roadmap
+# 04. Production Roadmap
 
-This roadmap evolves the current MVP architecture into the target PostgreSQL + Mem0 + Graphiti architecture without destabilizing the real-time product path.
+This roadmap evolves the current MVP architecture into the target PostgreSQL + Mem0 + Graphiti architecture. Because GoldMem is new and has no historical production burden, Graphiti should enter the production long-term memory path directly rather than as a long-running shadow-only experiment.
 
-## Phase 0: Stabilize current MVP path
-
-Goal: finish the current PR baseline and keep the product demonstrable.
-
-Current path:
+The invariant is:
 
 ```text
-text note
-  -> MemoryPlan
-  -> Kernel guardrails
-  -> PostgreSQL truth store
-  -> Mem0 semantic recall
-  -> evidence-bound answer
+Graphiti = long-term relational memory truth
+PostgreSQL = business/source/evidence truth
+Mem0 = short-to-medium multilingual recall engine
+Kernel = orchestration, safety, evidence fusion, and action control
 ```
+
+## Phase 0: Repair Current Verification
+
+Goal: make the current baseline green before production Graphiti work.
 
 Deliverables:
 
 ```text
+pnpm install
 pnpm typecheck
 pnpm test
-pnpm eval
-pnpm e2e:golden
-POST /elder/text-notes
-POST /elder/query
-GET /elder/reminders
-POST /elder/reminders/:id/confirm
-Mem0 smoke test
+pnpm mvp:verify
 ```
 
-Do not introduce Graphiti into the critical path in this phase.
-
-## Phase 1: Reframe architecture docs and naming
-
-Goal: clarify truth-source boundaries.
-
-Changes:
+Acceptance:
 
 ```text
-PostgreSQL -> business/source truth
-Mem0 -> semantic recall memory
-Graphiti -> planned long-term relational memory truth
-Kernel -> care-memory orchestrator
+@goldmem/temporal-memory resolves from workspace links.
+temporal-memory typecheck passes.
+memory-kernel tests pass.
+MVP verification is green.
 ```
+
+## Phase 1: Reframe Documentation and Boundaries
+
+Goal: make `docs/roadmap/*` the authoritative direction and remove conflicting legacy guidance.
 
 Actions:
 
 ```text
-update README
-update architecture.md
-update docs/memory-kernel-design.md
-update docs/mvp-roadmap.md
-keep memory_context_links as MVP/debug/fallback
+update docs/road as Chinese overview
+remove self-built Long-Term Relation Layer as final target
+remove Graphiti optional/future-only/shadow-first language
+keep PostgreSQL as business/evidence truth
+keep Graphiti blocked from direct business actions
 ```
 
 Acceptance:
 
 ```text
-No doc claims PostgreSQL is the long-term memory engine.
-No doc claims Mem0 owns business truth.
-Graphiti is presented as async/shadow first.
+No active roadmap doc says PostgreSQL should become the complete long-term fact graph.
+No active roadmap doc says Graphiti is merely optional for long-term memory.
+Docs still say Graphiti cannot schedule, notify, confirm, share, or mutate business state directly.
 ```
 
-## Phase 2: Add TemporalMemoryStore abstraction
+## Phase 2: TenantId Full Path
 
-Goal: add a clean Graphiti slot without binding product code to Graphiti directly.
+Goal: make production Graphiti tenant-safe.
 
-Add package:
+Tasks:
 
 ```text
-packages/temporal-memory
+Add tenantId to MemoryPlan.
+Add tenantId to MemorySource, MemoryEvent, Reminder, RiskFlagRecord, FamilyTask, MemoryContextLink, Feedback, AuditLog.
+Add tenant_id NOT NULL to PostgreSQL schema/migrations.
+Make all store reads and writes tenant-scoped.
+Make API request schemas tenant-aware, with tenant-mvp only at an explicit MVP boundary.
+Write tenantId into Mem0 metadata.
+Build Graphiti-safe groupId only inside Kernel from tenantId and elderId.
 ```
 
-Core interface:
-
-```ts
-interface TemporalMemoryStore {
-  addEpisode(input: AddTemporalEpisodeInput): Promise<void>
-  searchFacts(input: SearchTemporalFactsInput): Promise<TemporalEvidence[]>
-  getEntityTimeline(input: EntityTimelineInput): Promise<TimelineItem[]>
-  getCurrentFacts(input: CurrentFactsInput): Promise<CurrentFact[]>
-}
-```
-
-Implementations:
+Acceptance:
 
 ```text
-NullTemporalMemoryStore
+No query path searches by elderId alone.
+No Mem0 or Graphiti backend call lacks tenantId.
+Frontend never supplies Graphiti groupId.
+Cross-tenant isolation tests pass.
+```
+
+## Phase 3: Graphiti Adapter
+
+Goal: implement the production temporal memory adapter behind `TemporalMemoryStore`.
+
+Deliverables:
+
+```text
 GraphitiTemporalMemoryStore
+Graphiti HTTP client
+GRAPHITI_BASE_URL
+GRAPHITI_API_KEY if required
+GRAPHITI_REQUIRED_IN_PRODUCTION
+production startup fail-fast when Graphiti is required but missing
+```
+
+Required methods:
+
+```text
+addEpisode
+searchFacts
+getEntityTimeline
+getCurrentFacts
 ```
 
 Acceptance:
 
 ```text
-Kernel can accept TemporalMemoryStore dependency.
-Default local MVP uses NullTemporalMemoryStore.
-No Graphiti service required for existing tests.
+Adapter tests use mocked HTTP.
+All requests include tenantId, elderId, groupId, sourceIds/eventIds metadata.
+Development and tests may use NullTemporalMemoryStore.
+Production fails fast without Graphiti config.
 ```
 
-## Phase 3: Build Graphiti episode builder
+## Phase 4: Graphiti Write Enters Ingest
 
-Goal: convert GoldMem business/evidence records into Graphiti episodes.
+Goal: make Graphiti part of the production write path after PostgreSQL truth is persisted.
 
-Episode sources:
+Write order:
 
 ```text
-voice/text memory source
-family confirmation
-reminder state change
-risk review
-nightly daily summary
+PostgreSQL truth write
+-> Mem0 recall write
+-> Graphiti temporal episode write
+-> audit
+-> response
 ```
 
-Episode shape:
+Failure behavior:
 
-```ts
-type GoldMemTemporalEpisode = {
-  groupId: string // tenantId:elderId
-  episodeType:
-    | "voice_memory"
-    | "family_confirmation"
-    | "reminder_state_change"
-    | "risk_review"
-    | "daily_consolidation"
-  occurredAt: string
-  sourceIds: string[]
-  eventIds: string[]
-  reminderIds?: string[]
-  riskFlagIds?: string[]
-  content: string | Record<string, unknown>
-}
+```text
+Graphiti failure does not rollback PostgreSQL.
+Graphiti failure is included in response internal metadata.
+Graphiti failure writes audit event graphiti_write_failed.
+Retry queue/job can replay from PostgreSQL records later.
 ```
 
 Acceptance:
 
 ```text
-Episode builder produces deterministic output from PostgreSQL records.
-All episodes include source/event metadata.
-Medical/financial/risk episodes preserve confirmation status.
+Ingest tests cover Graphiti success and failure.
+No Graphiti write happens before source/event IDs exist.
+PostgreSQL remains the only hard dependency for business writes.
 ```
 
-## Phase 4: Graphiti shadow write
+## Phase 5: Graphiti Evidence Enters QueryMemory
 
-Goal: write Graphiti asynchronously without affecting product correctness.
+Goal: use Graphiti evidence for long-term relationship questions.
 
-Path:
+Flow:
 
 ```text
-PostgreSQL daily records
-  -> episode builder
-  -> GraphitiTemporalMemoryStore.addEpisode
-  -> audit log: graphiti_write_success / graphiti_write_failed
+parse query
+-> PostgreSQL business/evidence search
+-> Mem0 semantic recall
+-> Graphiti temporal fact search
+-> evidence alignment by sourceId/eventId/episodeId
+-> evidence merge/rank
+-> answer generation with safety guardrails
 ```
 
-Feature flag:
-
-```text
-GRAPHITI_ENABLED=false by default
-```
-
-Graphiti should first receive only high-value memory:
-
-```text
-health
-medication
-appointment
-family confirmation
-financial risk
-fraud risk
-repeated symptoms
-daily summaries
-```
-
-Acceptance:
-
-```text
-Graphiti can be unavailable without breaking MVP.
-Failed writes are queued or audited.
-No frontend uses Graphiti output yet.
-```
-
-## Phase 5: Graphiti shadow query
-
-Goal: compare Graphiti with existing PostgreSQL + Mem0 recall.
-
-Build internal-only endpoint or script:
-
-```text
-pnpm graphiti:shadow-query
-```
-
-Query categories:
+Graphiti should help with:
 
 ```text
 medication changes
 appointment reschedules
-family confirmations
-repeated symptoms
-fraud/risk chains
+family confirmation chains
+symptom trends
+fraud and financial risk chains
 current effective facts
-historical facts
+historical fact questions
+```
+
+PostgreSQL still overrides Graphiti for:
+
+```text
+reminder status
+family task status
+risk review status
+permission decisions
+action execution
 ```
 
 Acceptance:
 
 ```text
-Graphiti evidence can be inspected side-by-side with PostgreSQL/Mem0 evidence.
-Golden cases show whether Graphiti adds value.
-No user-facing behavior depends on Graphiti yet.
+retrievedEvidence can include retrievalSource=graphiti.
+Graphiti evidence only enters answers when source/event/episode alignment exists.
+No-evidence queries still return no invented answer.
+Conflict tests preserve PostgreSQL business state.
 ```
 
-## Phase 6: Graphiti as evidence source for long-term questions
+## Phase 6: Production Golden Cases
 
-Goal: include Graphiti evidence in `queryMemory` for long-term relation queries.
+Goal: validate each Graphiti-backed capability as it is introduced.
 
-Update `retrievalSource` enum:
-
-```text
-postgres
-mem0
-context_link
-graphiti
-```
-
-Fusion rules:
+First case set:
 
 ```text
-PostgreSQL wins for business/action state.
-Graphiti wins for long-term relationship/fact history.
-Mem0 provides semantic candidates and alias context.
-All answers must remain source-evidence-bound.
+medication instruction changed over time
+appointment or follow-up time rescheduled
+family confirmed a medical item
+symptom repeated after medication changed
+insurance card or object linked to an appointment
+fraud or financial risk chain evolved across records
 ```
 
 Acceptance:
 
 ```text
-Questions about medication changes use Graphiti evidence.
-Questions about appointment reschedules use Graphiti evidence.
-No evidence still means no invented answer.
+pnpm e2e:graphiti exists before query integration is considered complete.
+Every new user-facing Graphiti capability adds at least one golden case.
+Failures become fixtures, prompts, model updates, or policy changes, not keyword special cases.
 ```
 
-## Phase 7: Graphiti as long-term relational memory truth
+## Phase 7: Nightly Consolidation
 
-Goal: stop expanding PostgreSQL context links into a custom memory engine.
+Goal: strengthen Graphiti with curated daily episodes and generate eval data.
 
-PostgreSQL remains:
+Job:
 
 ```text
-business/source truth
-fallback/debug indexes
-MVP context links
+NightlyConsolidationJob(tenantId, elderId, date)
 ```
 
-Graphiti becomes authoritative for:
+Steps:
 
 ```text
-current long-term facts
-superseded facts
-relationship chains
-entity timelines
-historical memory queries
-```
-
-Acceptance:
-
-```text
-Long-term memory decisions no longer rely on PostgreSQL context_links.
-GoldMem docs and code treat Graphiti as long-term memory truth.
-Kernel still validates permissions, risks, and business actions.
-```
-
-## Phase 8: Data flywheel integration
-
-Goal: turn multi-tenant scale into care intelligence without mixing private raw data.
-
-Inputs:
-
-```text
-feedback
-family corrections
-reminder confirmations
-risk misses
-risk false positives
-query no-hit cases
-Graphiti/answer disagreement cases
-```
-
-Outputs:
-
-```text
-eval cases
-prompt updates
-policy updates
-care pattern analytics
-model routing improvements
-anonymized learning patterns
+Load daily PostgreSQL records.
+Generate daily care summary.
+Detect duplicates, conflicts, low-confidence items.
+Build curated Graphiti episodes.
+Write curated summaries to Mem0.
+Create family digest.
+Generate eval cases.
+Write audit log.
 ```
 
 Acceptance:
 
 ```text
-New model/prompt releases run against evals before deployment.
-Failures add eval cases instead of ad-hoc rules.
-Tenant raw data remains isolated.
+Job is idempotent and retryable.
+Curated episodes carry source/event references.
+High-risk findings create review tasks, not silent business truth changes.
+```
+
+## Phase 8: Admin Debugger and Eval Flywheel
+
+Goal: make memory behavior explainable and convert failures into learning assets.
+
+Debugger shows:
+
+```text
+source transcript
+MemoryPlan
+risk/permission guardrail changes
+PostgreSQL writes
+Mem0 writes/results
+Graphiti episodes/facts
+evidence merge
+final answer
+audit trail
+```
+
+Acceptance:
+
+```text
+A developer can replay one source end to end.
+A developer can inspect why Graphiti evidence was used or ignored.
+Every real failure can become an eval case.
 ```

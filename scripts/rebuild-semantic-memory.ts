@@ -16,7 +16,8 @@ try {
   const events = await db.select().from(schema.memoryEvents);
   for (const event of events) {
     await recallMemory.addMemory({
-      userId: event.elderId,
+      tenantId: event.tenantId,
+      elderId: event.elderId,
       memory: [
         `Title: ${event.title}`,
         `Summary: ${event.summary}`,
@@ -25,6 +26,8 @@ try {
         `Source: ${event.sourceId}`,
       ].join("\n"),
       metadata: {
+        tenantId: event.tenantId,
+        elderId: event.elderId,
         sourceId: event.sourceId,
         eventId: event.id,
         eventType: event.type,

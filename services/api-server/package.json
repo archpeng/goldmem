@@ -8,7 +8,7 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "@goldmem/memory-schema": "workspace:*",
     "@goldmem/memory-store": "workspace:*",
     "@goldmem/model-gateway": "workspace:*",
+    "@goldmem/temporal-memory": "workspace:*",
     "@goldmem/permission-engine": "workspace:*",
     "@goldmem/reminder-engine": "workspace:*",
     "@goldmem/risk-engine": "workspace:*",

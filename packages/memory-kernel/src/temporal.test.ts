@@ -31,7 +31,7 @@ const event = {
 };
 
 describe("buildMemorySourceTemporalEpisode", () => {
-  it("builds a tenant-scoped episode for future Graphiti shadow writes", () => {
+  it("builds a tenant-scoped episode for production Graphiti writes", () => {
     const episode = buildMemorySourceTemporalEpisode({
       tenantId: "tenant-1",
       elderId: "elder-1",
@@ -39,19 +39,19 @@ describe("buildMemorySourceTemporalEpisode", () => {
       events: [event],
     });
 
-    expect(episode.groupId).toBe("tenant-1:elder-1");
+    expect(episode.groupId).toBe("tenant_tenant-1__elder_elder-1");
     expect(episode.tenantId).toBe("tenant-1");
     expect(episode.episodeType).toBe("text_memory");
     expect(episode.sourceIds).toEqual(["source-1"]);
     expect(episode.eventIds).toEqual(["event-1"]);
-    expect(episode.metadata?.writeMode).toBe("shadow_or_nightly");
+    expect(episode.metadata?.writeMode).toBe("production_ingest");
     expect(episode.content).toMatchObject({
       source: { id: "source-1" },
       events: [{ id: "event-1", type: "appointment", riskLevel: "medical" }],
     });
   });
 
-  it("can write through NullTemporalMemoryStore without entering the realtime path", async () => {
+  it("surfaces NullTemporalMemoryStore as a missing Graphiti dependency", async () => {
     await expect(
       writeMemorySourceTemporalEpisode({
         temporalMemory: new NullTemporalMemoryStore(),
@@ -60,6 +60,6 @@ describe("buildMemorySourceTemporalEpisode", () => {
         source,
         events: [event],
       }),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("Graphiti temporal memory is not configured");
   });
 });

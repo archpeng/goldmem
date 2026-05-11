@@ -33,7 +33,7 @@ GoldMem Kernel
 
 ## Runtime write path
 
-Early runtime path:
+Current MVP path:
 
 ```text
 source/audio/text
@@ -47,15 +47,20 @@ source/audio/text
   -> response to elder/family
 ```
 
-Graphiti should not block this path at first.
-
-Mature runtime path:
+Production Graphiti path:
 
 ```text
-high-value MemoryPlan event
+source/audio/text
+  -> ASR if needed
+  -> MemoryPlan generation
+  -> schema validation
+  -> risk guardrails
+  -> permission guardrails
   -> PostgreSQL business write
   -> Mem0 semantic write
-  -> async Graphiti episode enqueue
+  -> Graphiti temporal episode write
+  -> audit
+  -> response to elder/family with temporal write status
 ```
 
 High-value events include:
@@ -172,7 +177,7 @@ Graphiti group identifiers should be created by GoldMem, not by the client.
 Recommended group ID:
 
 ```text
-groupId = tenantId + ":" + elderId
+groupId = Graphiti-safe encoding of tenantId + elderId
 ```
 
 PostgreSQL remains the tenant authority. Graphiti queries must go through GoldMem Kernel, never directly from frontend clients.
@@ -184,9 +189,9 @@ If Graphiti is unavailable:
 ```text
 record source/event/reminder in PostgreSQL
 write semantic memory to Mem0
-return normal elder-facing response
-queue Graphiti episode for retry
-mark audit with graphiti_deferred
+return elder-facing response with internal temporal write failure status
+record audit with graphiti_write_failed
+queue Graphiti episode for retry when retry queue exists
 ```
 
 If Mem0 is unavailable:

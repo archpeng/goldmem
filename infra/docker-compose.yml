@@ -80,7 +80,72 @@ services:
       timeout: 10s
       retries: 30
 
+  graphiti-neo4j:
+    image: neo4j:5.26.4
+    profiles: ["graphiti"]
+    environment:
+      NEO4J_AUTH: neo4j/graphitimem
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - graphiti-neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p graphitimem 'RETURN 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  graphiti-sidecar:
+    build:
+      context: ..
+      dockerfile: services/graphiti-sidecar/Dockerfile
+    image: goldmem-graphiti-sidecar:local
+    profiles: ["graphiti"]
+    depends_on:
+      postgres:
+        condition: service_started
+      graphiti-neo4j:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      DATABASE_URL: postgres://goldmem:goldmem@postgres:5432/goldmem
+      MODEL_NAME: ${GRAPHITI_MODEL:-${OPENAI_MODEL:-gpt-4.1-mini}}
+      GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
+      GRAPHITI_NEO4J_URI: ${GRAPHITI_SIDECAR_NEO4J_URI:-bolt://graphiti-neo4j:7687}
+      GRAPHITI_NEO4J_USER: ${GRAPHITI_NEO4J_USER:-neo4j}
+      GRAPHITI_NEO4J_PASSWORD: ${GRAPHITI_NEO4J_PASSWORD:-graphitimem}
+      GRAPHITI_NEO4J_DATABASE: ${GRAPHITI_NEO4J_DATABASE:-neo4j}
+      GRAPHITI_TELEMETRY_ENABLED: ${GRAPHITI_TELEMETRY_ENABLED:-false}
+      SEMAPHORE_LIMIT: ${GRAPHITI_SEMAPHORE_LIMIT:-2}
+    ports:
+      - "8890:8000"
+
+  graphiti-worker:
+    image: node:25-alpine
+    profiles: ["graphiti"]
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_started
+      graphiti-sidecar:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://goldmem:goldmem@postgres:5432/goldmem
+      GRAPHITI_BASE_URL: http://graphiti-sidecar:8000
+      GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
+      GRAPHITI_WORKER_BATCH_SIZE: ${GRAPHITI_WORKER_BATCH_SIZE:-10}
+      GRAPHITI_WORKER_POLL_MS: ${GRAPHITI_WORKER_POLL_MS:-5000}
+    volumes:
+      - ..:/app
+    command: ["sh", "-lc", "corepack enable && pnpm graphiti:worker"]
+
 volumes:
   mem0-postgres-data:
   mem0-history-data:
   mem0-neo4j-data:
+  graphiti-neo4j-data:

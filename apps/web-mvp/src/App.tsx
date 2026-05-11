@@ -291,12 +291,21 @@ function AnswerCard({ answer }: { answer: MemoryAnswer }) {
   );
 }
 
-function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" | "context_link" }) {
+function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" | "context_link" | "graphiti" }) {
   if (source === "context_link") {
     return (
       <Badge className="gap-1" variant="warning">
         <GitBranch className="h-3.5 w-3.5" />
         {copy.recall.contextLinkEvidence}
+      </Badge>
+    );
+  }
+
+  if (source === "graphiti") {
+    return (
+      <Badge className="gap-1" variant="warning">
+        <Brain className="h-3.5 w-3.5" />
+        {copy.recall.graphitiEvidence}
       </Badge>
     );
   }

@@ -6,17 +6,18 @@ import type {
   MemoryEvent,
   MemoryPlan,
   MemorySource,
+  PersonalContext,
   Reminder,
   RiskFlag,
   RiskFlagRecord,
 } from "@goldmem/memory-schema";
-import type { PersonalContext } from "@goldmem/model-gateway";
 
 export type CreateSourceInput = Omit<MemorySource, "id">;
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
 export type CreateReminderInput = Omit<Reminder, "id" | "createdAt">;
 export type CreateContextLinkInput = Omit<MemoryContextLink, "id" | "createdAt">;
 export type CreateRiskFlagInput = RiskFlag & {
+  tenantId: string;
   elderId: string;
   sourceId: string;
   eventId?: string;
@@ -25,13 +26,14 @@ export type CreateRiskFlagInput = RiskFlag & {
 export interface SourceStore {
   saveAudio(audio: Uint8Array): Promise<string>;
   create(input: CreateSourceInput): Promise<MemorySource>;
-  get(sourceId: string): Promise<MemorySource | null>;
+  get(input: { tenantId: string; sourceId: string }): Promise<MemorySource | null>;
 }
 
 export interface EventStore {
   create(input: CreateEventInput): Promise<MemoryEvent>;
-  getByIds(eventIds: string[]): Promise<MemoryEvent[]>;
+  getByIds(input: { tenantId: string; eventIds: string[] }): Promise<MemoryEvent[]>;
   search(input: {
+    tenantId: string;
     elderId: string;
     query?: string;
     types?: string[];
@@ -43,19 +45,20 @@ export interface EventStore {
 
 export interface ContextLinkStore {
   create(input: CreateContextLinkInput): Promise<MemoryContextLink>;
-  listByEventIds(input: { elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]>;
-  listByElder(elderId: string): Promise<MemoryContextLink[]>;
+  listByEventIds(input: { tenantId: string; elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]>;
+  listByElder(input: { tenantId: string; elderId: string }): Promise<MemoryContextLink[]>;
 }
 
 export interface ReminderStore {
   create(input: CreateReminderInput): Promise<Reminder>;
-  get(reminderId: string): Promise<Reminder | null>;
-  listByElder(elderId: string): Promise<Reminder[]>;
-  update(reminderId: string, patch: Partial<Reminder>): Promise<Reminder>;
+  get(input: { tenantId: string; reminderId: string }): Promise<Reminder | null>;
+  listByElder(input: { tenantId: string; elderId: string }): Promise<Reminder[]>;
+  update(input: { tenantId: string; reminderId: string; patch: Partial<Reminder> }): Promise<Reminder>;
 }
 
 export interface FamilyTaskStore {
   create(input: {
+    tenantId: string;
     elderId: string;
     title: string;
     summary: string;
@@ -64,8 +67,8 @@ export interface FamilyTaskStore {
     visibility: string;
     relatedEventId?: string;
   }): Promise<FamilyTask>;
-  listPending(elderId: string): Promise<FamilyTask[]>;
-  confirm(taskId: string, actorUserId: string): Promise<FamilyTask>;
+  listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]>;
+  confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
 }
 
 export interface RiskFlagStore {
@@ -73,7 +76,26 @@ export interface RiskFlagStore {
 }
 
 export interface AuditLog {
-  record(input: { type: string; elderId: string; sourceId?: string; payload: Record<string, unknown> }): Promise<void>;
+  record(input: { type: string; tenantId: string; elderId: string; sourceId?: string; payload: Record<string, unknown> }): Promise<void>;
+}
+
+export type CreateFamilyReminderCommandInput = {
+  idempotencyKey?: string;
+  actorUserId: string;
+  source: CreateSourceInput;
+  reminder: CreateReminderInput;
+  audit: Parameters<AuditLog["record"]>[0];
+  request: Record<string, unknown>;
+};
+
+export type CreateFamilyReminderCommandResult = {
+  source: MemorySource;
+  reminder: Reminder;
+  reused: boolean;
+};
+
+export interface FamilyReminderCommandStore {
+  create(input: CreateFamilyReminderCommandInput): Promise<CreateFamilyReminderCommandResult>;
 }
 
 export interface FeedbackStore {
@@ -99,13 +121,15 @@ export type MemoryRecallResult = {
 
 export interface SemanticMemoryStore {
   addMemory(input: {
-    userId: string;
+    tenantId: string;
+    elderId: string;
     memory: string;
     metadata?: Record<string, unknown>;
   }): Promise<void>;
 
   searchMemory(input: {
-    userId: string;
+    tenantId: string;
+    elderId: string;
     query: string;
     limit?: number;
   }): Promise<MemoryRecallResult[]>;
@@ -114,7 +138,40 @@ export interface SemanticMemoryStore {
 export type MemoryRecallStore = SemanticMemoryStore;
 
 export interface PersonalContextStore {
-  buildContext(input: { elderId: string; queryText: string }): Promise<PersonalContext>;
+  buildContext(input: { tenantId: string; elderId: string; queryText: string }): Promise<PersonalContext>;
+}
+
+export type TemporalMemoryJobStatus = "pending" | "running" | "succeeded" | "failed" | "dead";
+
+export type TemporalMemoryJob = {
+  id: string;
+  tenantId: string;
+  elderId: string;
+  sourceId: string;
+  status: TemporalMemoryJobStatus;
+  attempts: number;
+  maxAttempts: number;
+  nextRunAt: string;
+  lockedAt?: string;
+  lastError?: string;
+  episode: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface TemporalMemoryJobStore {
+  enqueue(input: {
+    tenantId: string;
+    elderId: string;
+    sourceId: string;
+    episode: Record<string, unknown>;
+    nextRunAt?: string;
+    maxAttempts?: number;
+  }): Promise<TemporalMemoryJob>;
+  claimDue(input: { now: string; limit: number }): Promise<TemporalMemoryJob[]>;
+  markSucceeded(input: { jobId: string }): Promise<TemporalMemoryJob>;
+  markFailed(input: { jobId: string; errorMessage: string; nextRunAt: string; dead: boolean }): Promise<TemporalMemoryJob>;
+  stats(input?: { tenantId?: string; elderId?: string }): Promise<Record<TemporalMemoryJobStatus, number>>;
 }
 
 export class NullRiskFlagStore implements RiskFlagStore {
