@@ -8,11 +8,14 @@ export class MemoryPlanApplier {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
 
   async apply(plan: MemoryPlan, context: PersonalContext, traceId: string): Promise<AppliedMemoryPlan> {
+    const startedAt = Date.now();
+    const timings: Record<string, number> = {};
     const events: MemoryEvent[] = [];
     const reminders: Reminder[] = [];
     const contextLinks: MemoryContextLink[] = [];
     const riskFlags: RiskFlagRecord[] = [];
 
+    const eventWritesStartedAt = Date.now();
     for (const draft of plan.events) {
       const event = await this.deps.eventStore.create({
         ...draft,
@@ -23,7 +26,9 @@ export class MemoryPlanApplier {
       });
       events.push(event);
     }
+    timings.eventWritesMs = Date.now() - eventWritesStartedAt;
 
+    const reminderWritesStartedAt = Date.now();
     for (const draft of plan.reminderCandidates) {
       const relatedEvent = typeof draft.relatedEventIndex === "number" ? events[draft.relatedEventIndex] : undefined;
       const reminder = await this.deps.reminderEngine.createCandidate({
@@ -59,7 +64,9 @@ export class MemoryPlanApplier {
         });
       }
     }
+    timings.reminderWritesMs = Date.now() - reminderWritesStartedAt;
 
+    const riskFlagWritesStartedAt = Date.now();
     for (const risk of plan.riskFlags) {
       const riskFlag = await this.deps.riskFlagStore.create({
         ...risk,
@@ -69,7 +76,9 @@ export class MemoryPlanApplier {
       });
       riskFlags.push(riskFlag);
     }
+    timings.riskFlagWritesMs = Date.now() - riskFlagWritesStartedAt;
 
+    const familyTaskWritesStartedAt = Date.now();
     for (const task of plan.familyTasks) {
       const relatedEvent = typeof task.relatedEventIndex === "number" ? events[task.relatedEventIndex] : undefined;
       await this.deps.familyTaskStore.create({
@@ -83,14 +92,20 @@ export class MemoryPlanApplier {
         relatedEventId: relatedEvent?.id,
       });
     }
+    timings.familyTaskWritesMs = Date.now() - familyTaskWritesStartedAt;
 
+    const contextLinkWritesStartedAt = Date.now();
     for (const draft of plan.contextLinks) {
       const link = await this.applyContextLinkDraft(plan, draft, events, context, traceId);
       if (link) contextLinks.push(link);
     }
+    timings.contextLinkWritesMs = Date.now() - contextLinkWritesStartedAt;
 
+    const semanticWritesStartedAt = Date.now();
     await this.writeSemanticMemories(plan, events, traceId);
-    return { events, reminderCandidates: reminders, contextLinks, riskFlags };
+    timings.semanticWritesMs = Date.now() - semanticWritesStartedAt;
+    timings.totalMs = Date.now() - startedAt;
+    return { events, reminderCandidates: reminders, contextLinks, riskFlags, timings };
   }
 
   private async applyContextLinkDraft(
@@ -188,38 +203,64 @@ export class MemoryPlanApplier {
 
   private async writeSemanticMemories(plan: MemoryPlan, events: MemoryEvent[], traceId: string): Promise<void> {
     for (const event of events) {
-      await this.deps.semanticMemory.addMemory({
+      await this.addSemanticMemory(plan, traceId, [
+        `Title: ${event.title}`,
+        `Summary: ${event.summary}`,
+        `Type: ${event.type}`,
+        `Risk: ${event.riskLevel}`,
+        `Source: ${event.sourceId}`,
+      ].join("\n"), {
         tenantId: event.tenantId,
         elderId: event.elderId,
-        memory: [
-          `Title: ${event.title}`,
-          `Summary: ${event.summary}`,
-          `Type: ${event.type}`,
-          `Risk: ${event.riskLevel}`,
-          `Source: ${event.sourceId}`,
-        ].join("\n"),
-        metadata: {
-          tenantId: event.tenantId,
-          elderId: event.elderId,
-          sourceId: event.sourceId,
-          eventId: event.id,
-          eventType: event.type,
-          title: event.title,
-          summary: event.summary,
-          createdAt: event.createdAt,
-          riskLevel: event.riskLevel,
-          visibility: event.visibility,
-          traceId,
-        },
+        sourceId: event.sourceId,
+        eventId: event.id,
+        eventType: event.type,
+        title: event.title,
+        summary: event.summary,
+        createdAt: event.createdAt,
+        riskLevel: event.riskLevel,
+        visibility: event.visibility,
+        traceId,
       });
     }
 
     for (const update of plan.memoryUpdates.filter((item) => item.target === "semantic_memory")) {
+      await this.addSemanticMemory(plan, traceId, update.content, {
+        ...update.metadata,
+        tenantId: plan.tenantId,
+        elderId: plan.elderId,
+        sourceId: plan.sourceId,
+        traceId,
+      });
+    }
+  }
+
+  private async addSemanticMemory(
+    plan: MemoryPlan,
+    traceId: string,
+    memory: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
       await this.deps.semanticMemory.addMemory({
         tenantId: plan.tenantId,
         elderId: plan.elderId,
-        memory: update.content,
-        metadata: { ...update.metadata, tenantId: plan.tenantId, elderId: plan.elderId, sourceId: plan.sourceId, traceId },
+        memory,
+        metadata,
+      });
+    } catch (error) {
+      await this.deps.auditLog.record({
+        type: "semantic_memory_write_failed",
+        tenantId: plan.tenantId,
+        elderId: plan.elderId,
+        sourceId: plan.sourceId,
+        traceId,
+        payload: {
+          traceId,
+          metadata,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
       });
     }
   }

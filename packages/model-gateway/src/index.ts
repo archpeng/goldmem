@@ -14,11 +14,11 @@ import {
   type ParsedMemoryQuery,
 } from "@goldmem/memory-schema";
 import {
-  normalizeElderTurnPlanResult,
-  normalizeMemoryAnswerResult,
   normalizeMemoryPlanResult,
-  normalizeParsedMemoryQueryResult,
-} from "./normalization.js";
+} from "./normalizers/memory-plan.js";
+import { normalizeElderTurnPlanResult } from "./normalizers/turn-plan.js";
+import { normalizeParsedMemoryQueryResult } from "./normalizers/query.js";
+import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
 
 export type TranscriptionResult = {
   text: string;
@@ -123,6 +123,7 @@ export type OpenAIModelGatewayOptions = {
   transcriptionModel?: string;
   promptsDir?: string;
   promptVersion?: string;
+  timeoutMs?: number;
 };
 
 export class OpenAIModelGateway implements ModelGateway {
@@ -130,7 +131,12 @@ export class OpenAIModelGateway implements ModelGateway {
   private readonly promptVersion: string;
 
   constructor(private readonly options: OpenAIModelGatewayOptions) {
-    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
+    this.client = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+      timeout: options.timeoutMs ?? 15_000,
+      maxRetries: 0,
+    });
     this.promptVersion = options.promptVersion ?? "v1";
   }
 

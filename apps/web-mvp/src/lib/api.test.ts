@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  confirmFamilyTask,
   confirmReminder,
   getDebugTrace,
   listMvpData,
-  rejectFamilyTask,
-  requestFamilyTaskInfo,
   sendElderTurn,
   sendFeedback,
 } from "./api.js";
@@ -58,29 +55,14 @@ describe("web MVP api adapter", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/elders/elder%201/tasks", expect.any(Object));
   });
 
-  it("confirms reminders and family tasks through thin route calls", async () => {
+  it("confirms reminders through the elder route", async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ id: "reminder-1", status: "confirmed" }))
-      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "confirmed" }))
-      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "rejected" }))
-      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "needs_more_info" }));
+      .mockResolvedValueOnce(jsonResponse({ id: "reminder-1", status: "confirmed" }));
 
     await confirmReminder({ reminderId: "reminder-1", actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" });
-    await confirmFamilyTask({ taskId: "task-1", actorUserId: "family-1" });
-    await rejectFamilyTask({ taskId: "task-1", actorUserId: "family-1" });
-    await requestFamilyTaskInfo({ taskId: "task-1", actorUserId: "family-1" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/reminders/reminder-1/confirm", expect.objectContaining({
       body: JSON.stringify({ actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" }),
-    }));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/family/tasks/task-1/confirm", expect.objectContaining({
-      body: JSON.stringify({ actorUserId: "family-1" }),
-    }));
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/family/tasks/task-1/reject", expect.objectContaining({
-      body: JSON.stringify({ actorUserId: "family-1" }),
-    }));
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/tasks/task-1/needs-more-info", expect.objectContaining({
-      body: JSON.stringify({ actorUserId: "family-1" }),
     }));
   });
 

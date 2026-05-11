@@ -36,7 +36,6 @@ export const apiRouteContract = {
     sendFeedback: "POST /elder/feedback",
   },
   family: {
-    todaySummary: "GET /family/elders/:elderId/today-summary",
     pendingTasks: "GET /family/elders/:elderId/pending-tasks",
     tasks: "GET /family/elders/:elderId/tasks",
     confirmTask: "POST /family/tasks/:taskId/confirm",
@@ -44,7 +43,6 @@ export const apiRouteContract = {
     needsMoreInfoTask: "POST /family/tasks/:taskId/needs-more-info",
     notificationIntents: "GET /family/elders/:elderId/notification-intents",
     createRemoteReminder: "POST /family/reminders",
-    sendFeedback: "POST /family/feedback",
   },
   debug: {
     getTrace: "GET /debug/traces/:traceId",
@@ -281,7 +279,11 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       familyReminderCommandStore: postgres.familyReminderCommandStore,
       familyTaskStore: postgres.familyTaskStore,
       riskFlagStore: postgres.riskFlagStore,
-    semanticMemory: new HttpSemanticMemoryStore({ baseUrl: mem0BaseUrl, apiKey: process.env.MEM0_API_KEY }),
+    semanticMemory: new HttpSemanticMemoryStore({
+      baseUrl: mem0BaseUrl,
+      apiKey: process.env.MEM0_API_KEY,
+      timeoutMs: parsePositiveInt(process.env.MEM0_TIMEOUT_MS, 5_000),
+    }),
     personalContextStore: postgres.personalContextStore,
     modelGateway,
     riskEngine: new DefaultRiskEngine(),
@@ -333,6 +335,7 @@ export function buildTemporalMemoryFromEnv(): TemporalMemoryStore {
   return new GraphitiTemporalMemoryStore({
     baseUrl: graphitiBaseUrl,
     apiKey: process.env.GRAPHITI_API_KEY,
+    timeoutMs: parsePositiveInt(process.env.GRAPHITI_TIMEOUT_MS, 5_000),
   });
 }
 
@@ -369,7 +372,17 @@ function buildModelGatewayFromEnv(): ModelGateway {
     transcriptionModel: process.env.OPENAI_TRANSCRIBE_MODEL,
     promptsDir: process.env.GOLDMEM_PROMPTS_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "prompts"),
     promptVersion: process.env.GOLDMEM_PROMPT_VERSION ?? "v1",
+    timeoutMs: parseOpenAITimeoutMs(),
   });
+}
+
+function parseOpenAITimeoutMs(): number {
+  return parsePositiveInt(process.env.OPENAI_TIMEOUT_MS, 15_000);
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw ?? fallback);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function requiredEnv(name: string): string {

@@ -7,6 +7,7 @@ export type MvpLists = {
 };
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
+const requestTimeoutMs = 60_000;
 
 export async function sendElderTurn(input: { elderId: string; text: string }): Promise<ElderTurnResult> {
   return request<ElderTurnResult>("/elder/turn", {
@@ -61,43 +62,26 @@ export async function confirmReminder(input: {
   });
 }
 
-export async function confirmFamilyTask(input: { taskId: string; actorUserId: string }): Promise<FamilyTask> {
-  return request<FamilyTask>(`/family/tasks/${encodeURIComponent(input.taskId)}/confirm`, {
-    method: "POST",
-    body: {
-      actorUserId: input.actorUserId,
-    },
-  });
-}
-
-export async function rejectFamilyTask(input: { taskId: string; actorUserId: string }): Promise<FamilyTask> {
-  return request<FamilyTask>(`/family/tasks/${encodeURIComponent(input.taskId)}/reject`, {
-    method: "POST",
-    body: {
-      actorUserId: input.actorUserId,
-    },
-  });
-}
-
-export async function requestFamilyTaskInfo(input: { taskId: string; actorUserId: string }): Promise<FamilyTask> {
-  return request<FamilyTask>(`/family/tasks/${encodeURIComponent(input.taskId)}/needs-more-info`, {
-    method: "POST",
-    body: {
-      actorUserId: input.actorUserId,
-    },
-  });
-}
-
 export async function getDebugTrace(traceId: string): Promise<DebugTrace> {
   return request<DebugTrace>(`/debug/traces/${encodeURIComponent(traceId)}`);
 }
 
 async function request<T>(path: string, options: { method?: string; body?: Record<string, unknown> } = {}): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: options.method ?? "GET",
-    headers: options.body ? { "content-type": "application/json" } : undefined,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers: options.body ? { "content-type": "application/json" } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new Error(toUserMessage(error instanceof Error ? error.message : String(error)));
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
   const text = await response.text();
   const parsed = text ? JSON.parse(text) as unknown : {};
   if (!response.ok) {
@@ -111,6 +95,9 @@ function toUserMessage(message: string): string {
   if (message.includes("Cannot confirm reminder without remindAt")) return "请先补充提醒时间。";
   if (message.includes("elderId is required")) return "请填写老人 ID。";
   if (message.includes("schema_validation_error")) return "模型输出格式校验失败，请稍后重试。";
+  if (message.includes("aborted") || message.includes("timeout") || message.includes("OpenAI JSON completion failed")) {
+    return "模型服务响应较慢，请稍后再试。";
+  }
   if (message.includes("fetch") || /^GET\s+\/.+failed$/.test(message) || /^POST\s+\/.+failed$/.test(message)) {
     return "暂时连不上记忆服务，请稍后再试。";
   }

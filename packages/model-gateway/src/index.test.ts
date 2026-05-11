@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@goldmem/memory-schema";
 import type { GenerateMemoryAnswerInput, GenerateMemoryPlanInput, PlanElderTurnInput } from "./index.js";
-import { normalizeElderTurnPlanResult, normalizeMemoryAnswerResult, normalizeMemoryPlanResult } from "./normalization.js";
+import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
+import { normalizeMemoryPlanResult } from "./normalizers/memory-plan.js";
+import { normalizeElderTurnPlanResult } from "./normalizers/turn-plan.js";
 
 describe("model-gateway normalization", () => {
   it("fails schema validation when answer text is missing", () => {

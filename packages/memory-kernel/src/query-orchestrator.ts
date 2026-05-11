@@ -26,14 +26,19 @@ export class QueryOrchestrator {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
 
   async queryMemory(input: QueryMemoryInput, traceId: string): Promise<MemoryAnswer> {
+    const startedAt = Date.now();
+    const timings: Record<string, number> = {};
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const now = input.now ?? new Date().toISOString();
+    const contextStartedAt = Date.now();
     const context = await this.deps.personalContextStore.buildContext({
       tenantId,
       elderId: input.elderId,
       queryText: input.query,
     });
+    timings.buildContextMs = Date.now() - contextStartedAt;
 
+    const parseQueryStartedAt = Date.now();
     const parsedQuery = ParsedMemoryQuerySchema.parse(await this.deps.modelGateway.parseMemoryQuery({
       tenantId,
       elderId: input.elderId,
@@ -41,7 +46,9 @@ export class QueryOrchestrator {
       now,
       context,
     }));
+    timings.parseQueryMs = Date.now() - parseQueryStartedAt;
 
+    const postgresSearchStartedAt = Date.now();
     const structuredEvents = await this.deps.eventStore.search({
       tenantId,
       elderId: input.elderId,
@@ -51,13 +58,18 @@ export class QueryOrchestrator {
       entityNames: parsedQuery.entities.map((entity) => entity.name),
       limit: 10,
     });
+    timings.postgresSearchMs = Date.now() - postgresSearchStartedAt;
 
-    const semanticResults = await this.deps.semanticMemory.searchMemory({
+    const mem0SearchStartedAt = Date.now();
+    const semanticResults = await this.searchSemanticMemorySafely({
       tenantId,
       elderId: input.elderId,
       query: input.query,
-      limit: 10,
+      traceId,
     });
+    timings.mem0SearchMs = Date.now() - mem0SearchStartedAt;
+
+    const temporalSearchStartedAt = Date.now();
     const temporalResults = await this.searchTemporalFactsSafely({
       tenantId,
       elderId: input.elderId,
@@ -65,14 +77,23 @@ export class QueryOrchestrator {
       parsedQuery,
       traceId,
     });
+    timings.temporalSearchMs = Date.now() - temporalSearchStartedAt;
+
+    const temporalAlignStartedAt = Date.now();
     const alignedTemporalResults = await this.alignTemporalEvidence({
       tenantId,
       elderId: input.elderId,
       temporalResults,
     });
+    timings.temporalAlignMs = Date.now() - temporalAlignStartedAt;
 
+    const mergeEvidenceStartedAt = Date.now();
     const initialEvidence = mergeEvidence(structuredEvents, semanticResults, alignedTemporalResults, parsedQuery, input.query, now);
+    timings.mergeEvidenceMs = Date.now() - mergeEvidenceStartedAt;
+
+    const contextLinksStartedAt = Date.now();
     const evidence = await this.expandEvidenceWithContextLinks(tenantId, input.elderId, initialEvidence);
+    timings.contextLinksMs = Date.now() - contextLinksStartedAt;
     const retrieval = {
       postgresCount: structuredEvents.length,
       mem0Count: semanticResults.length,
@@ -100,12 +121,13 @@ export class QueryOrchestrator {
         tenantId,
         elderId: input.elderId,
         traceId,
-        payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true, failureType: "no_evidence" },
+        payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true, failureType: "no_evidence", timings: { ...timings, totalMs: Date.now() - startedAt } },
       });
 
       return answer;
     }
 
+    const answerGenerationStartedAt = Date.now();
     const generatedAnswer = await this.generateAnswerWithFallback({
       tenantId,
       elderId: input.elderId,
@@ -114,6 +136,8 @@ export class QueryOrchestrator {
       evidence,
       traceId,
     });
+    timings.answerGenerationMs = Date.now() - answerGenerationStartedAt;
+    timings.totalMs = Date.now() - startedAt;
     const answer: MemoryAnswer = {
       ...generatedAnswer,
       traceId,
@@ -126,7 +150,7 @@ export class QueryOrchestrator {
       tenantId,
       elderId: input.elderId,
       traceId,
-      payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer },
+      payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer, timings },
     });
 
     return answer;
@@ -199,6 +223,36 @@ export class QueryOrchestrator {
           errorCode: error instanceof Error && error.name === "TemporalMemoryNotConfiguredError"
             ? "graphiti_not_configured"
             : "graphiti_search_failed",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return [];
+    }
+  }
+
+  private async searchSemanticMemorySafely(input: {
+    tenantId: string;
+    elderId: string;
+    query: string;
+    traceId: string;
+  }) {
+    try {
+      return await this.deps.semanticMemory.searchMemory({
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        query: input.query,
+        limit: 10,
+      });
+    } catch (error) {
+      await this.deps.auditLog.record({
+        type: "semantic_memory_search_failed",
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        traceId: input.traceId,
+        payload: {
+          traceId: input.traceId,
+          query: input.query,
+          errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
         },
       });

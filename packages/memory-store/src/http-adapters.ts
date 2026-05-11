@@ -3,6 +3,7 @@ import type { MemoryRecallResult, SemanticMemoryStore } from "./index.js";
 export type HttpAdapterOptions = {
   baseUrl: string;
   apiKey?: string;
+  timeoutMs?: number;
 };
 
 export class HttpMem0RecallStore implements SemanticMemoryStore {
@@ -51,6 +52,7 @@ export function buildTenantUserId(input: { tenantId: string; elderId: string }):
 async function request(options: HttpAdapterOptions, path: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(options.timeoutMs ?? 5_000),
     headers: {
       "content-type": "application/json",
       ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}`, "x-api-key": options.apiKey } : {}),

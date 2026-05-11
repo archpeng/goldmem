@@ -23,7 +23,13 @@ const violations: Violation[] = [];
 for (const file of projectFiles) {
   if (file === "scripts/architecture-check.ts") continue;
   if (!/\.(ts|tsx|js|md|json|yml|yaml|Dockerfile)$/.test(file) && !file.endsWith("Dockerfile")) continue;
-  const text = await readFile(file, "utf8");
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") continue;
+    throw error;
+  }
 
   if (/\binfer\s*:\s*true\b/.test(text)) {
     violations.push({ file, reason: "Canonical Mem0 memory writes must not enable infer=true." });

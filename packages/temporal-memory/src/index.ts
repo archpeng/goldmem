@@ -155,6 +155,7 @@ export function parseAddTemporalEpisodeInput(value: unknown): AddTemporalEpisode
 export type GraphitiTemporalMemoryStoreOptions = {
   baseUrl: string;
   apiKey?: string;
+  timeoutMs?: number;
 };
 
 export class TemporalMemoryNotConfiguredError extends Error {
@@ -332,6 +333,7 @@ async function requestGraphiti(
 ): Promise<unknown> {
   const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(options.timeoutMs ?? 5_000),
     headers: {
       "content-type": "application/json",
       ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}`, "x-api-key": options.apiKey } : {}),

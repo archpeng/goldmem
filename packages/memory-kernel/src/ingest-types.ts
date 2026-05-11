@@ -5,4 +5,5 @@ export type AppliedMemoryPlan = {
   reminderCandidates: Reminder[];
   contextLinks: MemoryContextLink[];
   riskFlags: RiskFlagRecord[];
+  timings: Record<string, number>;
 };

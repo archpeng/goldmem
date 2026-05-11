@@ -14,14 +14,22 @@ export class IngestOrchestrator {
   }
 
   async ingestSource(source: MemorySource, traceId: string): Promise<IngestResult> {
+    const startedAt = Date.now();
+    const timings: Record<string, unknown> = {};
     try {
+      const baseContextStartedAt = Date.now();
       const baseContext = await this.deps.personalContextStore.buildContext({
         elderId: source.elderId,
         tenantId: source.tenantId,
         queryText: source.transcript,
       });
-      const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext);
+      timings.baseContextMs = Date.now() - baseContextStartedAt;
 
+      const semanticCandidatesStartedAt = Date.now();
+      const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext, traceId);
+      timings.semanticCandidatesMs = Date.now() - semanticCandidatesStartedAt;
+
+      const generateMemoryPlanStartedAt = Date.now();
       const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
         tenantId: source.tenantId,
         elderId: source.elderId,
@@ -30,21 +38,37 @@ export class IngestOrchestrator {
         createdAt: source.createdAt,
         context,
       });
+      timings.generateMemoryPlanMs = Date.now() - generateMemoryPlanStartedAt;
 
+      const schemaValidationStartedAt = Date.now();
       const validatedPlan = MemoryPlanSchema.parse({
         ...rawPlan,
         tenantId: source.tenantId,
         elderId: source.elderId,
         sourceId: source.id,
       });
+      timings.schemaValidationMs = Date.now() - schemaValidationStartedAt;
+
+      const riskGuardStartedAt = Date.now();
       const riskGuardedPlan = await this.deps.riskEngine.enforce(validatedPlan);
+      timings.riskGuardMs = Date.now() - riskGuardStartedAt;
+
+      const permissionStartedAt = Date.now();
       const permissionedPlan = await this.deps.permissionEngine.applyDefaultVisibility(
         riskGuardedPlan,
         source.elderId,
       );
+      timings.permissionMs = Date.now() - permissionStartedAt;
 
+      const applyPlanStartedAt = Date.now();
       const applied = await this.planApplier.apply(permissionedPlan, context, traceId);
+      timings.applyPlanMs = Date.now() - applyPlanStartedAt;
+      timings.applyPlan = applied.timings;
+
+      const temporalWriteStartedAt = Date.now();
       const temporalMemory = await this.temporalWriter.write(source, applied, traceId);
+      timings.temporalWriteMs = Date.now() - temporalWriteStartedAt;
+      timings.totalMs = Date.now() - startedAt;
 
       await this.deps.auditLog.record({
         type: "memory_ingest",
@@ -62,6 +86,7 @@ export class IngestOrchestrator {
             riskFlagIds: applied.riskFlags.map((riskFlag) => riskFlag.id),
             temporalMemory,
           },
+          timings,
         },
       });
 
@@ -80,6 +105,7 @@ export class IngestOrchestrator {
         temporalMemory,
       };
     } catch (error) {
+      timings.totalMs = Date.now() - startedAt;
       await this.deps.auditLog.record({
         type: "memory_ingest_failed",
         tenantId: source.tenantId,
@@ -88,6 +114,7 @@ export class IngestOrchestrator {
         traceId,
         payload: {
           traceId,
+          timings,
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
         },
@@ -96,13 +123,8 @@ export class IngestOrchestrator {
     }
   }
 
-  private async buildIngestContextWithSemanticCandidates(source: MemorySource, context: PersonalContext): Promise<PersonalContext> {
-    const semanticResults = await this.deps.semanticMemory.searchMemory({
-      tenantId: source.tenantId,
-      elderId: source.elderId,
-      query: source.transcript,
-      limit: 8,
-    });
+  private async buildIngestContextWithSemanticCandidates(source: MemorySource, context: PersonalContext, traceId: string): Promise<PersonalContext> {
+    const semanticResults = await this.searchSemanticCandidates(source, traceId);
     const candidateIds = [
       ...new Set(
         semanticResults
@@ -142,5 +164,29 @@ export class IngestOrchestrator {
       ...context,
       semanticCandidateEvents: [...uniqueCandidates.values()].slice(0, 5),
     };
+  }
+
+  private async searchSemanticCandidates(source: MemorySource, traceId: string) {
+    try {
+      return await this.deps.semanticMemory.searchMemory({
+        tenantId: source.tenantId,
+        elderId: source.elderId,
+        query: source.transcript,
+        limit: 8,
+      });
+    } catch (error) {
+      await this.deps.auditLog.record({
+        type: "semantic_candidate_search_failed",
+        tenantId: source.tenantId,
+        elderId: source.elderId,
+        sourceId: source.id,
+        traceId,
+        payload: {
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return [];
+    }
   }
 }

@@ -13,7 +13,7 @@ export class PostgresPersonalContextStore implements PersonalContextStore {
       .from(schema.memoryEvents)
       .where(and(eq(schema.memoryEvents.tenantId, input.tenantId), eq(schema.memoryEvents.elderId, input.elderId)))
       .orderBy(desc(schema.memoryEvents.createdAt))
-      .limit(10);
+      .limit(5);
 
     const openReminders = await this.db
       .select()
@@ -30,7 +30,7 @@ export class PostgresPersonalContextStore implements PersonalContextStore {
         ),
       )
       .orderBy(desc(schema.reminders.createdAt))
-      .limit(10);
+      .limit(5);
 
     const family = await this.db
       .select()

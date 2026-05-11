@@ -159,14 +159,20 @@ export class ElderMemoryKernel {
   }
 
   async elderTurn(input: ElderTurnInput): Promise<ElderTurnResult> {
+    const startedAt = Date.now();
+    const timings: Record<string, number> = {};
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const traceId = input.traceId ?? randomUUID();
     const now = input.now ?? new Date().toISOString();
+    const contextStartedAt = Date.now();
     const context = await this.deps.personalContextStore.buildContext({
       tenantId,
       elderId: input.elderId,
       queryText: input.text,
     });
+    timings.buildContextMs = Date.now() - contextStartedAt;
+
+    const turnPlanStartedAt = Date.now();
     const plan = await this.planElderTurnSafely({
       tenantId,
       elderId: input.elderId,
@@ -175,15 +181,18 @@ export class ElderMemoryKernel {
       traceId,
       context,
     });
+    timings.planElderTurnMs = Date.now() - turnPlanStartedAt;
 
     let result: ElderTurnResult;
     if (plan.intent === "record") {
+      const ingestStartedAt = Date.now();
       const ingestResult = await this.ingestText({
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
         traceId,
       });
+      timings.ingestTextMs = Date.now() - ingestStartedAt;
       result = {
         traceId,
         turnType: "record",
@@ -191,6 +200,7 @@ export class ElderMemoryKernel {
         ingestResult,
       };
     } else if (plan.intent === "recall") {
+      const queryStartedAt = Date.now();
       const answer = await this.queryMemory({
         tenantId,
         elderId: input.elderId,
@@ -198,6 +208,7 @@ export class ElderMemoryKernel {
         now,
         traceId,
       });
+      timings.queryMemoryMs = Date.now() - queryStartedAt;
       result = {
         traceId,
         turnType: "recall",
@@ -205,12 +216,16 @@ export class ElderMemoryKernel {
         answer,
       };
     } else if (plan.intent === "record_and_recall") {
+      const ingestStartedAt = Date.now();
       const ingestResult = await this.ingestText({
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
         traceId,
       });
+      timings.ingestTextMs = Date.now() - ingestStartedAt;
+
+      const queryStartedAt = Date.now();
       const answer = await this.queryMemory({
         tenantId,
         elderId: input.elderId,
@@ -218,6 +233,7 @@ export class ElderMemoryKernel {
         now,
         traceId,
       });
+      timings.queryMemoryMs = Date.now() - queryStartedAt;
       result = {
         traceId,
         turnType: "record_and_recall",
@@ -232,6 +248,7 @@ export class ElderMemoryKernel {
         message: plan.clarifyingQuestion ?? "您想让我记住这件事，还是帮您查以前的记忆？",
       };
     }
+    timings.totalMs = Date.now() - startedAt;
 
     await this.deps.auditLog.record({
       type: "elder_turn",
@@ -245,6 +262,7 @@ export class ElderMemoryKernel {
         turnType: result.turnType,
         wroteMemory: Boolean(result.ingestResult),
         queriedMemory: Boolean(result.answer),
+        timings,
       },
     });
 
