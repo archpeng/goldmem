@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Real-service golden E2E baseline for PostgreSQL truth + Mem0 multilingual recall.",
+  "description": "Real-service golden E2E baseline for PostgreSQL truth + semantic multilingual recall.",
   "seedNotes": [
     {
       "id": "city-shopping",
@@ -29,7 +29,7 @@
       "query": "我说过去城里做什么吗",
       "expectedAnswerHints": ["城里", "牙膏"],
       "expectedEvidenceHints": ["牙膏", "肥皂"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "minConfidence": 0.45
     },
     {
@@ -37,8 +37,8 @@
       "query": "Where did I put the blue notebook and health insurance card?",
       "expectedAnswerAnyHints": [["电视柜", "TV cabinet"], ["抽屉", "drawer"]],
       "expectedEvidenceHints": ["医保卡", "蓝色小本子"],
-      "allowedSources": ["mem0", "postgres", "context_link", "graphiti"],
-      "requiresMem0": true,
+      "allowedSources": ["semantic", "postgres", "context_link", "graphiti"],
+      "requiresSemantic": true,
       "minConfidence": 0.4
     },
     {
@@ -46,15 +46,15 @@
       "query": "小敏要陪我去哪儿",
       "expectedAnswerHints": ["社区医院", "复查"],
       "expectedEvidenceHints": ["小敏", "血压"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "minConfidence": 0.45
     },
     {
       "id": "context-linked-noodle-reminder",
       "query": "我下周一出门吃面条有说几点吗？",
-      "expectedAnswerHints": ["下周一", "面条", "下午"],
-      "expectedEvidenceHints": ["特色面条", "下午三点"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "expectedAnswerHints": ["面条", "下午"],
+      "expectedEvidenceHints": ["下周一", "特色面条", "下午三点"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "expectedEvidenceSources": ["context_link"],
       "minConfidence": 0.45
     }

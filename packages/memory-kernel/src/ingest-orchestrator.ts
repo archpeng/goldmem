@@ -2,6 +2,7 @@ import { MemoryPlanSchema, type MemorySource, type PersonalContext } from "@gold
 import { isString } from "./guards.js";
 import { MemoryPlanApplier } from "./ingest-plan-applier.js";
 import { IngestTemporalWriter } from "./ingest-temporal-writer.js";
+import { appendProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import type { ElderMemoryKernelDeps, IngestResult } from "./index.js";
 
 export class IngestOrchestrator {
@@ -28,6 +29,7 @@ export class IngestOrchestrator {
       const semanticCandidatesStartedAt = Date.now();
       const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext, traceId);
       timings.semanticCandidatesMs = Date.now() - semanticCandidatesStartedAt;
+      appendProviderTimings(timings, this.deps.modelGateway);
 
       const generateMemoryPlanStartedAt = Date.now();
       const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
@@ -39,6 +41,7 @@ export class IngestOrchestrator {
         context,
       });
       timings.generateMemoryPlanMs = Date.now() - generateMemoryPlanStartedAt;
+      appendProviderTimings(timings, this.deps.modelGateway);
 
       const schemaValidationStartedAt = Date.now();
       const validatedPlan = MemoryPlanSchema.parse({
@@ -64,6 +67,7 @@ export class IngestOrchestrator {
       const applied = await this.planApplier.apply(permissionedPlan, context, traceId);
       timings.applyPlanMs = Date.now() - applyPlanStartedAt;
       timings.applyPlan = applied.timings;
+      appendProviderTimings(timings, this.deps.modelGateway);
 
       const temporalWriteStartedAt = Date.now();
       const temporalMemory = await this.temporalWriter.write(source, applied, traceId);
@@ -106,6 +110,7 @@ export class IngestOrchestrator {
       };
     } catch (error) {
       timings.totalMs = Date.now() - startedAt;
+      appendProviderTimings(timings, this.deps.modelGateway);
       await this.deps.auditLog.record({
         type: "memory_ingest_failed",
         tenantId: source.tenantId,
@@ -117,6 +122,7 @@ export class IngestOrchestrator {
           timings,
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
+          modelGateway: modelGatewayErrorPayload(error),
         },
       });
       throw error;
@@ -168,10 +174,12 @@ export class IngestOrchestrator {
 
   private async searchSemanticCandidates(source: MemorySource, traceId: string) {
     try {
+      const embedding = await this.deps.modelGateway.embedText({ text: source.transcript });
       return await this.deps.semanticMemory.searchMemory({
         tenantId: source.tenantId,
         elderId: source.elderId,
         query: source.transcript,
+        embedding,
         limit: 8,
       });
     } catch (error) {
@@ -184,9 +192,15 @@ export class IngestOrchestrator {
         payload: {
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
+          modelGateway: modelGatewayErrorPayload(error),
+          providerTimings: consumeProviderTimingsSafely(this.deps.modelGateway),
         },
       });
       return [];
     }
   }
+}
+
+function consumeProviderTimingsSafely(modelGateway: ElderMemoryKernelDeps["modelGateway"]) {
+  return modelGateway.consumeProviderTimings?.() ?? [];
 }

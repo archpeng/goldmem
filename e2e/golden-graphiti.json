@@ -36,7 +36,7 @@
         "The answer says there was no medication change."
       ],
       "expectedEvidenceHints": ["降压药", "早饭后", "晚饭后"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "expectedEvidenceSources": ["graphiti"],
       "minConfidence": 0.45
     },
@@ -48,7 +48,7 @@
         "The answer says the insurance card is still relevant to the appointment."
       ],
       "expectedEvidenceHints": ["社区医院", "周五", "下周一", "医保卡"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "expectedEvidenceSources": ["graphiti"],
       "minConfidence": 0.45
     },
@@ -63,7 +63,7 @@
         "The answer says it is safe to send the verification code."
       ],
       "expectedEvidenceHints": ["陌生人", "身份证号", "验证码"],
-      "allowedSources": ["postgres", "mem0", "context_link", "graphiti"],
+      "allowedSources": ["postgres", "semantic", "context_link", "graphiti"],
       "expectedEvidenceSources": ["graphiti"],
       "minConfidence": 0.45
     }

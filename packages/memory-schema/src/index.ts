@@ -207,7 +207,7 @@ export const DebugTraceSchema = z.object({
   memoryPlan: z.unknown().optional(),
   guardrails: z.unknown().optional(),
   postgresWrites: z.unknown().optional(),
-  mem0WritesOrCandidates: z.unknown().optional(),
+  semanticWritesOrCandidates: z.unknown().optional(),
   graphitiEpisodesOrFacts: z.unknown().optional(),
   evidenceMerge: z.unknown().optional(),
   finalAnswer: z.unknown().optional(),
@@ -352,7 +352,7 @@ export const MemoryAnswerSchema = z.object({
         createdAt: ISODateTimeSchema,
         summary: z.string().min(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0", "context_link", "graphiti"]).optional(),
+        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti"]).optional(),
       }),
     )
     .default([]),
@@ -366,7 +366,7 @@ export const MemoryAnswerSchema = z.object({
         transcriptQuote: z.string().optional(),
         score: z.number().min(0).max(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "mem0", "context_link", "graphiti"]),
+        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti"]),
       }),
     )
     .default([]),

@@ -17,7 +17,7 @@
       "query": "我今天上午买了什么？",
       "expectedAnswerHints": ["牙膏"],
       "expectedEvidenceHints": ["牙膏"],
-      "allowedSources": ["postgres", "mem0", "context_link"],
+      "allowedSources": ["postgres", "semantic", "context_link"],
       "minConfidence": 0.4
     }
   ],

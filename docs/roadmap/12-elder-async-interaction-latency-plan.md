@@ -47,9 +47,9 @@ Current fastest measured end-to-end preview model: `gpt-4.1-mini`.
 | Node | Time | Interpretation |
 | --- | ---: | --- |
 | `elderTurn.planElderTurn` | 2.4s | Task routing |
-| `ingest.semanticCandidates` | 5.0s | Mem0 search timeout/degrade |
+| `ingest.semanticCandidates` | 5.0s | semantic recall index search timeout/degrade |
 | `ingest.generateMemoryPlan` | 12.6s | Main bottleneck for DeepSeek record |
-| `applyPlan.semanticWrites` | 5.0s | Mem0 write timeout/degrade |
+| `applyPlan.semanticWrites` | 5.0s | semantic recall index write timeout/degrade |
 | `ingest.temporalWrite` | 5.0s | Graphiti write timeout/retry |
 | `ingest.total` | 27.8s | Blocking record chain |
 | `elderTurn.total` | 30.2s | User-facing latency |
@@ -61,7 +61,7 @@ Current fastest measured end-to-end preview model: `gpt-4.1-mini`.
 | `elderTurn.planElderTurn` | 2.7s | Task routing |
 | `query.parseQuery` | 3.8s | Query understanding |
 | `query.postgresSearch` | 16ms | Fast truth retrieval |
-| `query.mem0Search` | 5.0s | Mem0 search timeout/degrade |
+| `query.semanticSearch` | 5.0s | semantic recall index search timeout/degrade |
 | `query.answerGeneration` | 2.9s | Good answer speed |
 | `query.total` | 11.7s | Blocking recall chain |
 | `elderTurn.total` | 14.5s | User-facing latency |
@@ -75,16 +75,16 @@ User submits text
   -> planElderTurn model call
   -> record: ingestText
       -> build context
-      -> Mem0 candidate search
+      -> semantic recall index candidate search
       -> MemoryPlan model call
       -> PostgreSQL truth writes
-      -> Mem0 canonical write
+      -> semantic recall index canonical write
       -> Graphiti episode write
       -> audit
   -> recall: queryMemory
       -> parse query model call
       -> PostgreSQL search
-      -> Mem0 search
+      -> semantic recall index search
       -> optional Graphiti search
       -> evidence merge
       -> answer model call
@@ -130,7 +130,7 @@ When MemoryPlan is ready:
   Show reminder candidates and confirmation controls.
 
 Later:
-  Mem0 canonical write and Graphiti episode write run outside the user-visible blocking path.
+  semantic recall index canonical write and Graphiti episode write run outside the user-visible blocking path.
 ```
 
 Product effect:
@@ -138,7 +138,7 @@ Product effect:
 - The elder gets immediate reassurance.
 - Raw source is not lost.
 - Business truth is still Kernel-owned.
-- Mem0 and Graphiti remain rebuildable enrichments, not blockers.
+- semantic recall index and Graphiti remain rebuildable enrichments, not blockers.
 
 Engineering shape:
 
@@ -146,7 +146,7 @@ Engineering shape:
 POST /elder/turn
   -> for record intent:
       sync: source write + turn accepted
-      async: MemoryPlan + Kernel apply + Mem0 + Graphiti
+      async: MemoryPlan + Kernel apply + semantic recall index + Graphiti
 
 GET /elder/turns/:traceId
   -> returns pending / understood / needs_confirmation / failed
@@ -168,7 +168,7 @@ Target interaction:
 2-8s:
   Model answer generation returns final elder-friendly answer.
 
-If Mem0 or Graphiti is slow:
+If semantic recall index or Graphiti is slow:
   Do not block the first answer.
   Add "我还在查长期记忆，有新线索会补上。"
 ```
@@ -186,7 +186,7 @@ Engineering shape:
 POST /elder/turn
   -> for recall intent:
       sync: parseQuery + PostgreSQL search + answer if evidence exists
-      async: Mem0/Graphiti enrichment or second-pass answer refresh
+      async: semantic recall index/Graphiti enrichment or second-pass answer refresh
 
 GET /elder/turns/:traceId
   -> returns answer status and evidence status
@@ -222,15 +222,15 @@ This avoids making the user wait for a full write path before recall starts.
 | Reminder confirmation card | 3-10s | Reminder candidate from MemoryPlan |
 | Recall first signal | 1-3s | PostgreSQL evidence search |
 | Recall final answer | 3-8s | Evidence-bound answer model call |
-| Mem0 enrichment | background | Nonblocking write/search |
+| semantic recall index enrichment | background | Nonblocking write/search |
 | Graphiti enrichment | background | Nonblocking write/search + retry |
 
 ## Immediate Optimization Direction
 
 1. Add an async turn status resource.
 2. Split `/elder/turn` response into accepted/pending/final modes.
-3. Move Mem0 writes and Graphiti writes fully out of the critical user path.
-4. Let recall answer from PostgreSQL first, then refresh with Mem0/Graphiti enrichment.
+3. Move semantic recall index writes and Graphiti writes fully out of the critical user path.
+4. Let recall answer from PostgreSQL first, then refresh with semantic recall index/Graphiti enrichment.
 5. Keep model benchmarking per provider route before changing default models.
 
 ## Model Choice For Current Preview

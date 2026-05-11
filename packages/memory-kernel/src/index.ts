@@ -28,6 +28,7 @@ import type { ReminderEngine } from "@goldmem/reminder-engine";
 import type { RiskEngine } from "@goldmem/risk-engine";
 import type { PermissionEngine } from "@goldmem/permission-engine";
 import { createFamilyReminderCommand } from "./family-reminders.js";
+import { appendProviderTimings, consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { QueryOrchestrator } from "./query-orchestrator.js";
 
@@ -160,7 +161,7 @@ export class ElderMemoryKernel {
 
   async elderTurn(input: ElderTurnInput): Promise<ElderTurnResult> {
     const startedAt = Date.now();
-    const timings: Record<string, number> = {};
+    const timings: Record<string, unknown> = {};
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const traceId = input.traceId ?? randomUUID();
     const now = input.now ?? new Date().toISOString();
@@ -182,6 +183,7 @@ export class ElderMemoryKernel {
       context,
     });
     timings.planElderTurnMs = Date.now() - turnPlanStartedAt;
+    appendProviderTimings(timings, this.deps.modelGateway);
 
     let result: ElderTurnResult;
     if (plan.intent === "record") {
@@ -297,6 +299,8 @@ export class ElderMemoryKernel {
           text: input.text,
           failureType: "turn_schema_validation_error",
           errorMessage: error.message,
+          modelGateway: modelGatewayErrorPayload(error),
+          providerTimings: consumeProviderTimings(this.deps.modelGateway),
           fallbackUsed: true,
         },
       });

@@ -9,9 +9,9 @@ GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 - 老人或家属输入文本/语音来源，系统保存原始 source 证据。
 - 模型生成 `MemoryPlan`，Kernel 进行 schema 校验、风险约束、权限约束和确定性落库。
 - PostgreSQL 保存业务 truth：source、event、reminder、risk flag、family task、context link、feedback、audit、Graphiti retry job。
-- Mem0 作为短中期多语言 recall 引擎，写入 PostgreSQL 派生摘要，且 canonical write 使用 `infer=false`。
+- pgvector semantic recall index 作为低延迟召回索引，写入 PostgreSQL 派生摘要和 embedding。
 - Graphiti 作为长期关系/时间记忆核心路径，通过 sidecar 写入 curated temporal episode，并通过 Postgres provenance 对齐 source/event。
-- Query 通过 PostgreSQL、Mem0、Graphiti 合并证据后生成答案；无 evidence 时不编造答案。
+- Query 通过 PostgreSQL、pgvector semantic recall、Graphiti 合并证据后生成答案；无 evidence 时不编造答案。
 - 提醒确认、家属任务确认、风险 review 均由确定性 engine/store/API path 控制。
 - Graphiti 写失败会进入 retry job，并通过 audit 和 ingest result 暴露。
 - Web MVP 提供中文优先的单页控制台：保存记忆、询问回忆、查看事件/提醒/家属任务、确认提醒/任务。
@@ -20,11 +20,11 @@ GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 
 | 模块 | 当前职责 | 不能做的事 |
 |---|---|---|
-| `apps/web-mvp` | 中文单页 MVP UI，通过 `src/lib/api.ts` 调 API | 不能复制 Kernel 规则，不能直接调用 Mem0/Graphiti |
+| `apps/web-mvp` | 中文单页 MVP UI，通过 `src/lib/api.ts` 调 API | 不能复制 Kernel 规则，不能直接调用 semantic recall index/Graphiti |
 | `services/api-server` | Fastify HTTP adapter、请求解析、依赖装配、健康检查 | 不能直接写业务 truth，不能绕过 Kernel 生成回答 |
 | `packages/memory-kernel` | ingest/query orchestration、guardrails、evidence fusion、audit、Graphiti episode 构建 | 不能实现通用图引擎，不能让 provider 直接裁决业务 truth |
 | `packages/memory-schema` | Zod schema 与共享领域类型 | schema 变更不能只在 adapter 层私自处理 |
-| `packages/memory-store` | PostgreSQL truth adapter、Mem0 HTTP adapter、Graphiti retry job store | 不能依赖 model-gateway，不能暴露 provider 内部图为业务 truth |
+| `packages/memory-store` | PostgreSQL truth adapter、pgvector semantic recall store、Graphiti retry job store | 不能依赖 model-gateway，不能暴露 provider 内部图为业务 truth |
 | `packages/model-gateway` | OpenAI-compatible LLM/ASR 边界，规范化模型输出并做 schema validation | 不能写 truth，不能把 malformed answer 当成功输出 |
 | `packages/temporal-memory` | Graphiti-targeted temporal memory interface 与 adapter | 不能触发提醒/通知/权限/风险状态改变 |
 | `packages/risk-engine` | 医疗、金融、诈骗、身份、密码等确定性风险约束 | 不能依赖 prompt 作为唯一安全机制 |
@@ -47,7 +47,7 @@ flowchart TB
 
   Kernel --> Store[memory-store]
   Store --> PG[(PostgreSQL<br/>business/source/evidence truth)]
-  Store --> Mem0[Mem0<br/>short-to-medium multilingual recall]
+  Store --> Semantic[pgvector semantic recall<br/>rebuildable index]
 
   Kernel --> Temporal[temporal-memory]
   Temporal --> Sidecar[Graphiti Sidecar]
@@ -67,7 +67,7 @@ flowchart TB
 flowchart LR
   PG[(PostgreSQL)] -->|owns| Business[业务状态<br/>source/event/reminder/risk/task/feedback/audit]
   Graphiti[(Graphiti)] -->|owns| Relation[长期关系记忆<br/>entities/facts/validity/supersession/history]
-  Mem0[(Mem0)] -->|proposes| Recall[语义候选<br/>aliases/preferences/recent context]
+  Semantic[(pgvector semantic recall)] -->|proposes| Recall[语义候选<br/>source/event aligned]
   Kernel[Kernel] -->|decides| Answer[最终回答与业务动作]
 
   Recall -. must align .-> PG
@@ -84,7 +84,7 @@ sequenceDiagram
   participant Kernel as Memory Kernel
   participant Model as Model Gateway
   participant PG as PostgreSQL
-  participant Mem0 as Mem0
+  participant Semantic as pgvector semantic recall
   participant Graphiti as Graphiti Sidecar
 
   Client->>API: text / voice note
@@ -94,7 +94,7 @@ sequenceDiagram
   Model-->>Kernel: normalized MemoryPlan
   Kernel->>Kernel: schema + risk + permission guardrails
   Kernel->>PG: create events/reminders/risk/tasks/context links
-  Kernel->>Mem0: add canonical summary infer=false
+  Kernel->>Semantic: index canonical summary embedding
   Kernel->>Graphiti: add curated temporal episode
   alt Graphiti write succeeds
     Graphiti-->>Kernel: written
@@ -127,7 +127,7 @@ sequenceDiagram
   participant Kernel as Memory Kernel
   participant Model as Model Gateway
   participant PG as PostgreSQL
-  participant Mem0 as Mem0
+  participant semantic recall index as semantic recall index
   participant Graphiti as Graphiti Sidecar
 
   Client->>API: queryMemory
@@ -135,7 +135,7 @@ sequenceDiagram
   Kernel->>Model: parse query
   Model-->>Kernel: ParsedMemoryQuery
   Kernel->>PG: broad event recall + time/entity ranking
-  Kernel->>Mem0: semantic recall
+  Kernel->>semantic recall index: semantic recall
   opt long-term relation question
     Kernel->>Graphiti: search temporal facts
     Graphiti-->>Kernel: graphiti evidence candidates
@@ -158,7 +158,7 @@ sequenceDiagram
 ### Query 已具备的安全特性
 
 - `eventTypes` 是 ranking signal，不是硬过滤。
-- Mem0 result 必须通过 PostgreSQL-derived metadata/sourceId/eventId 对齐后才能进入 final evidence。
+- semantic recall index result 必须通过 PostgreSQL-derived metadata/sourceId/eventId 对齐后才能进入 final evidence。
 - Graphiti evidence 必须带 source/event/episode alignment，并通过 PostgreSQL tenant/elder/source 验证。
 - no evidence 时返回无匹配记忆，不生成虚构答案。
 - `matchedSources` 只允许映射到已有 evidence。
@@ -170,7 +170,7 @@ Graphiti 当前不是可选展示层，而是长期关系记忆核心路径：
 
 - `packages/temporal-memory` 定义 `TemporalMemoryStore` 和 `GraphitiTemporalMemoryStore`。
 - `services/graphiti-sidecar` 包装 `graphiti-core`，提供 REST contract。
-- sidecar 使用独立 Neo4j，不混用 Mem0 内部 Neo4j。
+- sidecar 使用独立 Neo4j，不混用 semantic recall index 内部 Neo4j。
 - sidecar 写 episode 时同时持久化 `graphiti_episode_provenance`。
 - Graphiti search 结果和 provenance readback 通过 `sourceId/eventId/episodeId` 合并去重。
 - `pnpm test:graphiti` 会读取 `.env`，启动本地 Graphiti profile，执行真实 write/search smoke。
@@ -224,7 +224,7 @@ architecture check
 
 - `pnpm test:postgres` 会验证 PostgreSQL truth readback 和 temporal retry job store。
 - `pnpm test:graphiti` 会验证 Graphiti sidecar 健康、episode write、search provenance readback。
-- `pnpm architecture:check` 会阻止 Mem0 `infer=true`、Mem0 truth 叙述、Kernel 对 Null temporal store 的静默分支、核心入口超大化、安全 owner `--passWithNoTests` 等问题。
+- `pnpm architecture:check` 会阻止 semantic recall index `infer=true`、semantic recall index truth 叙述、Kernel 对 Null temporal store 的静默分支、核心入口超大化、安全 owner `--passWithNoTests` 等问题。
 
 ## 8. 当前实现度评价
 
@@ -235,9 +235,9 @@ architecture check
 | Reminder candidate / confirmation | 高 | 状态机、API、audit、Web 控制已具备 |
 | Risk / permission guardrails | 高 | 有独立 engine 和 focused tests |
 | PostgreSQL truth store | 高 | 真实 readback gate 已纳入 MVP 验证 |
-| Mem0 recall | 中高 | canonical summary write 和 metadata-aligned recall 已具备 |
+| semantic recall index recall | 中高 | canonical summary write 和 metadata-aligned recall 已具备 |
 | Graphiti long-term memory | 中高 | write/search/readback gate 已具备，nightly consolidation 尚未实现 |
-| Query evidence fusion | 中高 | PostgreSQL + Mem0 + Graphiti evidence merge 已具备 |
+| Query evidence fusion | 中高 | PostgreSQL + semantic recall index + Graphiti evidence merge 已具备 |
 | Family workflow | 中 | pending task 与 confirm 已具备，完整通知/协作产品面仍待扩展 |
 | Eval flywheel | 中 | eval runner、golden e2e fixture 已有，自动 failure-to-eval 仍待建设 |
 | Admin/debugger | 低 | audit 已有，但尚无完整可视化 replay/debugger |
@@ -248,8 +248,8 @@ architecture check
 2. 收紧 API health：只要配置 Graphiti，顶层 `ok` 应反映 Graphiti 健康状态。
 3. 拆分 `model-gateway/src/normalization.ts`，避免 LLM boundary 文件继续膨胀。
 4. 抽出 Kernel 测试 harness，降低大型测试文件对 AI coder 的修改半径。
-5. 增加 nightly consolidation：从每日 PostgreSQL truth 生成 curated Graphiti episodes、Mem0 summaries、family digest 和 eval cases。
-6. 建设 admin memory debugger：展示 source、MemoryPlan、guardrail、PostgreSQL writes、Mem0/Graphiti evidence、answer、audit trail。
+5. 增加 nightly consolidation：从每日 PostgreSQL truth 生成 curated Graphiti episodes、semantic recall index summaries、family digest 和 eval cases。
+6. 建设 admin memory debugger：展示 source、MemoryPlan、guardrail、PostgreSQL writes、semantic recall index/Graphiti evidence、answer、audit trail。
 
 ## 10. AI Coder 修改指南
 

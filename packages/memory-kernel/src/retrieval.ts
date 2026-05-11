@@ -57,7 +57,7 @@ export function mergeEvidence(
         summary: typeof result.metadata.summary === "string" ? result.metadata.summary : result.memory,
         score: result.score ?? 0.5,
         canPlayAudio: true,
-        retrievalSource: "mem0" as const,
+        retrievalSource: "semantic" as const,
       },
     ];
   });

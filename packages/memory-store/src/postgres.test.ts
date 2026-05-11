@@ -228,6 +228,45 @@ describePostgres("PostgresStores integration", () => {
     expect(results.map((event) => event.id)).toContain(today.id);
     expect(results.map((event) => event.id)).not.toContain(yesterday.id);
   });
+
+  it("stores semantic memories in pgvector with tenant isolation", async () => {
+    const embedding = testEmbedding(0);
+    await stores.semanticMemoryStore.addMemory({
+      tenantId: "tenant-store",
+      elderId: "elder-semantic",
+      memory: "Title: 买青菜\nSummary: 老人上午买了青菜。",
+      embedding,
+      metadata: {
+        sourceId: "source-semantic",
+        eventId: "event-semantic",
+        summary: "老人上午买了青菜。",
+      },
+    });
+    await stores.semanticMemoryStore.addMemory({
+      tenantId: "tenant-other",
+      elderId: "elder-semantic",
+      memory: "Title: 隔离数据\nSummary: 其他租户的数据。",
+      embedding,
+      metadata: { sourceId: "source-other", eventId: "event-other" },
+    });
+
+    const results = await stores.semanticMemoryStore.searchMemory({
+      tenantId: "tenant-store",
+      elderId: "elder-semantic",
+      query: "青菜",
+      embedding,
+      limit: 3,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.provider).toBe("semantic");
+    expect(results[0]?.metadata).toMatchObject({
+      tenantId: "tenant-store",
+      elderId: "elder-semantic",
+      sourceId: "source-semantic",
+      eventId: "event-semantic",
+    });
+  });
 });
 
 async function createSchema(url: string, schemaName: string): Promise<void> {
@@ -259,6 +298,10 @@ async function runMigrations(url: string): Promise<void> {
   } finally {
     await pool.end();
   }
+}
+
+function testEmbedding(seed: number): number[] {
+  return Array.from({ length: 1536 }, (_, index) => (index === seed ? 1 : 0));
 }
 
 function withSearchPath(url: string, schemaName: string): string {

@@ -1,6 +1,6 @@
 # 06. Key Decisions
 
-This document records why GoldMem should evolve toward PostgreSQL + Mem0 + Graphiti instead of a single memory system or a fully custom memory graph.
+This document records why GoldMem should evolve toward PostgreSQL + semantic recall index + Graphiti instead of a single memory system or a fully custom memory graph.
 
 ## Decision 1: PostgreSQL remains business/source truth
 
@@ -66,15 +66,15 @@ Expanding context links into all of this would gradually recreate Graphiti insid
 
 `memory_context_links` can support early recall and debugging, but not the final long-term memory layer.
 
-## Decision 3: Mem0 remains semantic recall memory
+## Decision 3: semantic recall index remains semantic recall memory
 
 ### Decision
 
-Use Mem0 for short-to-medium-term semantic recall, not as the long-term relational memory truth source.
+Use semantic recall index for short-to-medium-term semantic recall, not as the long-term relational memory truth source.
 
 ### Why
 
-Mem0 is strong for:
+semantic recall index is strong for:
 
 ```text
 semantic search
@@ -98,7 +98,7 @@ permissions
 
 ### Consequence
 
-Mem0 write metadata must include:
+semantic recall index write metadata must include:
 
 ```text
 tenantId
@@ -111,7 +111,7 @@ visibility
 occurredAt
 ```
 
-All user-facing answers that use Mem0 must align results back to PostgreSQL source/event evidence.
+All user-facing answers that use semantic recall index must align results back to PostgreSQL source/event evidence.
 
 ## Decision 4: Graphiti becomes the long-term relational memory truth target
 
@@ -207,7 +207,7 @@ Production write path:
 
 ```text
 PostgreSQL truth write
--> Mem0 recall write
+-> semantic recall index recall write
 -> Graphiti temporal episode write
 -> audit
 -> response
@@ -247,7 +247,7 @@ Nighttime processing can use more context and more expensive models.
 
 ```text
 curated Graphiti episodes
-curated Mem0 summaries
+curated semantic recall index summaries
 family digest
 eval cases
 risk/fact conflict cases
@@ -342,7 +342,7 @@ ignored reminders
 query no-hit cases
 risk false positives
 risk misses
-Graphiti/PostgreSQL/Mem0 disagreement cases
+Graphiti/PostgreSQL/semantic recall index disagreement cases
 ```
 
 ### Outputs

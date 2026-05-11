@@ -14,7 +14,6 @@ import { DefaultReminderEngine } from "@goldmem/reminder-engine";
 import { DefaultRiskEngine } from "@goldmem/risk-engine";
 import {
   createPostgresStores,
-  HttpSemanticMemoryStore,
   type FamilyTaskStore,
   type AuditLog,
   type ContextLinkStore,
@@ -268,7 +267,10 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
   });
   const reminderEngine = new DefaultReminderEngine(postgres.reminderStore);
   const modelGateway = buildModelGatewayFromEnv();
-  const mem0BaseUrl = requiredEnv("MEM0_BASE_URL");
+  const semanticMemoryProvider = process.env.SEMANTIC_MEMORY_PROVIDER ?? "pgvector";
+  if (semanticMemoryProvider !== "pgvector") {
+    throw new Error("SEMANTIC_MEMORY_PROVIDER must be pgvector");
+  }
   const temporalMemory = buildTemporalMemoryFromEnv();
 
   const kernelDeps: ElderMemoryKernelDeps = {
@@ -279,11 +281,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       familyReminderCommandStore: postgres.familyReminderCommandStore,
       familyTaskStore: postgres.familyTaskStore,
       riskFlagStore: postgres.riskFlagStore,
-    semanticMemory: new HttpSemanticMemoryStore({
-      baseUrl: mem0BaseUrl,
-      apiKey: process.env.MEM0_API_KEY,
-      timeoutMs: parsePositiveInt(process.env.MEM0_TIMEOUT_MS, 5_000),
-    }),
+    semanticMemory: postgres.semanticMemoryStore,
     personalContextStore: postgres.personalContextStore,
     modelGateway,
     riskEngine: new DefaultRiskEngine(),
@@ -313,8 +311,10 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
         return {
           ok: graphitiRequired ? graphiti === "ok" : true,
           postgres: "ok",
-          mem0: "configured",
-          mem0BaseUrl,
+          semanticMemory: semanticMemoryProvider,
+          model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+          embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+          openaiTimeoutMs: parseOpenAITimeoutMs(),
           graphiti,
           graphitiRequired,
           graphitiRetryJobs,
@@ -368,6 +368,7 @@ function buildModelGatewayFromEnv(): ModelGateway {
   return new OpenAIModelGateway({
     apiKey: process.env.OPENAI_API_KEY,
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
     baseURL: process.env.OPENAI_BASE_URL,
     transcriptionModel: process.env.OPENAI_TRANSCRIBE_MODEL,
     promptsDir: process.env.GOLDMEM_PROMPTS_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "prompts"),

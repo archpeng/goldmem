@@ -129,7 +129,7 @@ export type MemoryRecallResult = {
   memory: string;
   score?: number;
   metadata?: Record<string, unknown>;
-  provider?: "mem0" | string;
+  provider?: "semantic" | string;
   providerId?: string;
   retrievalSignals?: {
     semanticScore?: number;
@@ -147,6 +147,7 @@ export interface SemanticMemoryStore {
     tenantId: string;
     elderId: string;
     memory: string;
+    embedding: number[];
     metadata?: Record<string, unknown>;
   }): Promise<void>;
 
@@ -154,6 +155,7 @@ export interface SemanticMemoryStore {
     tenantId: string;
     elderId: string;
     query: string;
+    embedding: number[];
     limit?: number;
   }): Promise<MemoryRecallResult[]>;
 }
@@ -216,6 +218,5 @@ export type MemoryPlanAuditPayload = {
   result: ApplyMemoryPlanResult;
 };
 
-export * from "./http-adapters.js";
 export * from "./postgres.js";
 export * from "./postgres-schema.js";

@@ -8,10 +8,10 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
    LLMs may produce transcripts, parsed queries, answers, and `MemoryPlan` objects. They must not write business truth directly.
 
 2. **PostgreSQL is truth.**
-   Sources, events, context links, reminders, risk flags, family tasks, feedback, and audit logs belong in PostgreSQL. Mem0 is the default multilingual recall engine and must be rebuildable from truth data.
+   Sources, events, context links, reminders, risk flags, family tasks, feedback, audit logs, and the rebuildable pgvector semantic recall index belong in PostgreSQL.
 
-3. **Mem0 recalls; Kernel decides.**
-   Mem0 may use semantic search, keyword/BM25, entity linking, rerank, and dedup/context lookup to propose recall candidates. It must not adjudicate business truth. Kernel-generated/PostgreSQL-derived canonical event summaries are written to Mem0 with `infer=false`; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records, not Mem0's rewritten facts.
+3. **Semantic recall proposes; Kernel decides.**
+   Pgvector semantic recall may propose candidate memories. It must not adjudicate business truth. Kernel-generated/PostgreSQL-derived canonical event summaries are indexed with embeddings; recall evidence text must come from PostgreSQL-derived metadata or PostgreSQL records.
 
 4. **The Kernel owns memory orchestration.**
    Ingest and recall behavior belongs in `packages/memory-kernel`. API routes and frontends must stay thin.
@@ -28,8 +28,8 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 8. **Context links are relationships, not facts.**
    Context links may connect related events or missing reminder details, but they must not merge records, auto-confirm reminders, or overwrite event truth.
 
-9. **Mem0 relation/entity output is not truth.**
-   Mem0 results may propose candidate event IDs, entities, relations, and ranking signals. Do not depend on Mem0 Neo4j, graph `relations`, entity linking, or any provider-owned graph as GoldMem relationship truth.
+9. **Provider output is not relationship truth.**
+   Semantic recall results may propose candidate event IDs and ranking signals. Graph relationships belong to GoldMem-owned PostgreSQL context links or the Graphiti temporal path, never to provider-owned recall output.
 
 10. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.
@@ -38,9 +38,8 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 
 - Do not bypass `memory-kernel` for memory writes or recall answers.
 - Do not let providers, prompts, frontends, or API routes mutate truth state directly.
-- Do not treat Mem0 as authoritative state.
-- Do not enable Mem0 `infer=true` for canonical event memory writes.
-- Do not use Mem0-generated memory text as final evidence when PostgreSQL-derived metadata is available.
+- Do not treat the semantic recall index as authoritative state.
+- Do not use provider-generated memory text as final evidence when PostgreSQL-derived metadata is available.
 - Do not share raw transcripts by default.
 - Do not auto-confirm ambiguous reminders.
 - Do not use context links to silently fill reminder times.
@@ -61,8 +60,8 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 - `apps/web-mvp`: React + Tailwind + shadcn-style components, Chinese-first single-page MVP.
 - `services/api-server`: Fastify adapter, request parsing, Kernel calls, minimal health/read routes.
 - `packages/memory-kernel`: source ingest, MemoryPlan validation, guardrails, persistence, recall, evidence merge, audit.
-- `packages/memory-store`: PostgreSQL truth adapter plus the Mem0 HTTP adapter.
-- `packages/model-gateway`: OpenAI-compatible LLM/ASR boundary with Zod-normalized outputs.
+- `packages/memory-store`: PostgreSQL truth adapter plus pgvector semantic recall storage.
+- `packages/model-gateway`: OpenAI-compatible LLM/ASR/embedding boundary with Zod-normalized outputs.
 
 ## Required Verification
 

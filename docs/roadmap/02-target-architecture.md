@@ -16,7 +16,7 @@ GoldMem Kernel
         | sources/events/reminders/risks/tasks/audit  |
         +---------------------------------------------+
         |
-        +------------------- Mem0 --------------------+
+        +------------------- semantic recall index --------------------+
         | semantic recall, aliases, preferences       |
         | short-to-medium-term context                |
         +---------------------------------------------+
@@ -43,7 +43,7 @@ source/audio/text
   -> risk guardrails
   -> permission guardrails
   -> PostgreSQL source/event/reminder/risk/family_task/audit
-  -> Mem0 semantic memory
+  -> semantic recall index semantic memory
   -> response to elder/family
 ```
 
@@ -57,7 +57,7 @@ source/audio/text
   -> risk guardrails
   -> permission guardrails
   -> PostgreSQL business write
-  -> Mem0 semantic write
+  -> semantic recall index semantic write
   -> Graphiti temporal episode write
   -> audit
   -> response to elder/family with temporal write status
@@ -93,13 +93,13 @@ run consolidation model
   -> daily care summary
   -> family digest
   -> high-value Graphiti episodes
-  -> curated Mem0 summary
+  -> curated semantic recall index summary
   -> eval cases
   -> anonymized learning patterns
 
 write outputs
   -> Graphiti episodes
-  -> Mem0 curated memory
+  -> semantic recall index curated memory
   -> PostgreSQL family digest/audit/eval references
 ```
 
@@ -111,7 +111,7 @@ Current query path:
 query
   -> parse query
   -> PostgreSQL event search
-  -> Mem0 semantic search
+  -> semantic recall index semantic search
   -> merge evidence
   -> answer generation
 ```
@@ -122,7 +122,7 @@ Target query path:
 query
   -> parse query
   -> PostgreSQL business/evidence search
-  -> Mem0 semantic recall
+  -> semantic recall index semantic recall
   -> Graphiti temporal fact search
   -> evidence alignment by sourceId/eventId/episodeId
   -> answer generation with safety guardrails
@@ -160,9 +160,9 @@ which episode supports a fact
 how entities relate over time
 ```
 
-### Mem0 truth
+### semantic recall index truth
 
-Mem0 should not be a truth source for actions. It is a recall memory source:
+semantic recall index should not be a truth source for actions. It is a recall memory source:
 
 ```text
 what context may be relevant
@@ -188,13 +188,13 @@ If Graphiti is unavailable:
 
 ```text
 record source/event/reminder in PostgreSQL
-write semantic memory to Mem0
+write semantic memory to semantic recall index
 return elder-facing response with internal temporal write failure status
 record audit with graphiti_write_failed
 queue Graphiti episode for retry when retry queue exists
 ```
 
-If Mem0 is unavailable:
+If semantic recall index is unavailable:
 
 ```text
 record truth in PostgreSQL

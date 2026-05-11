@@ -1,30 +1,33 @@
-import { Pool } from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { HttpMem0RecallStore } from "../packages/memory-store/src/http-adapters.js";
+import { createPostgresStores } from "../packages/memory-store/src/postgres.js";
 import * as schema from "../packages/memory-store/src/postgres-schema.js";
+import { OpenAIModelGateway } from "../packages/model-gateway/src/index.js";
 
 const databaseUrl = requiredEnv("DATABASE_URL");
-const mem0BaseUrl = requiredEnv("MEM0_BASE_URL");
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle(pool, { schema });
-const recallMemory = new HttpMem0RecallStore({
-  baseUrl: mem0BaseUrl,
-  apiKey: process.env.MEM0_API_KEY,
+const postgres = createPostgresStores({ databaseUrl });
+const modelGateway = new OpenAIModelGateway({
+  apiKey: requiredEnv("OPENAI_API_KEY"),
+  model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+  embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+  baseURL: process.env.OPENAI_BASE_URL,
 });
 
 try {
-  const events = await db.select().from(schema.memoryEvents);
+  const events = await postgres.db.select().from(schema.memoryEvents);
+  await postgres.pool.query("delete from semantic_memories");
   for (const event of events) {
-    await recallMemory.addMemory({
+    const memory = [
+      `Title: ${event.title}`,
+      `Summary: ${event.summary}`,
+      `Type: ${event.type}`,
+      `Risk: ${event.riskLevel}`,
+      `Source: ${event.sourceId}`,
+    ].join("\n");
+    const embedding = await modelGateway.embedText({ text: memory });
+    await postgres.semanticMemoryStore.addMemory({
       tenantId: event.tenantId,
       elderId: event.elderId,
-      memory: [
-        `Title: ${event.title}`,
-        `Summary: ${event.summary}`,
-        `Type: ${event.type}`,
-        `Risk: ${event.riskLevel}`,
-        `Source: ${event.sourceId}`,
-      ].join("\n"),
+      memory,
+      embedding,
       metadata: {
         tenantId: event.tenantId,
         elderId: event.elderId,
@@ -42,7 +45,7 @@ try {
 
   console.log(`Rebuilt ${events.length} semantic memories`);
 } finally {
-  await pool.end();
+  await postgres.close();
 }
 
 function requiredEnv(name: string): string {

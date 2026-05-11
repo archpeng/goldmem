@@ -47,18 +47,16 @@ source
 - audit logs
 - feedback/eval cases
 
-### Mem0 recall engine
+### Pgvector semantic recall index
 
 - elder facts
 - preferences
 - daily event summaries
 - common people/places/objects
 - recall context
-- keyword/entity/rerank signals when supported by the Mem0 backend
+- vector similarity over PostgreSQL-derived canonical summaries
 
-Mem0's self-hosted service may use its own pgvector and Neo4j services internally. GoldMem does not expose those internal services as business truth or as a separate temporal graph path in the MVP.
-
-GoldMem writes canonical event memory to Mem0 with `infer=false`. Mem0 provides multilingual recall candidates; Kernel and PostgreSQL remain responsible for fact adjudication and evidence text.
+GoldMem writes canonical event memory to the PostgreSQL `semantic_memories` index with embeddings. The index provides recall candidates; Kernel and PostgreSQL remain responsible for fact adjudication and evidence text.
 
 ## Rule philosophy
 
@@ -79,7 +77,7 @@ Everything else should become data: prompts, few-shot examples, eval cases, and 
 Text-only ingestion:
 
 ```text
-transcript -> MemoryPlan -> events + reminder candidates + Mem0 writes
+transcript -> MemoryPlan -> events + reminder candidates + semantic recall index writes
 ```
 
 No Android, no separate temporal graph, no scheduler required yet.

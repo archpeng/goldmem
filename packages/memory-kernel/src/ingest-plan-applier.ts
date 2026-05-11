@@ -3,6 +3,7 @@ import type { PersonalContextStore } from "@goldmem/memory-store";
 import { isString } from "./guards.js";
 import type { ElderMemoryKernelDeps } from "./index.js";
 import type { AppliedMemoryPlan } from "./ingest-types.js";
+import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 
 export class MemoryPlanApplier {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
@@ -242,10 +243,12 @@ export class MemoryPlanApplier {
     metadata: Record<string, unknown>,
   ): Promise<void> {
     try {
+      const embedding = await this.deps.modelGateway.embedText({ text: memory });
       await this.deps.semanticMemory.addMemory({
         tenantId: plan.tenantId,
         elderId: plan.elderId,
         memory,
+        embedding,
         metadata,
       });
     } catch (error) {
@@ -260,6 +263,8 @@ export class MemoryPlanApplier {
           metadata,
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
+          modelGateway: modelGatewayErrorPayload(error),
+          providerTimings: consumeProviderTimings(this.deps.modelGateway),
         },
       });
     }

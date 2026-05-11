@@ -53,7 +53,7 @@ text
 保持架构红线：
 
 - PostgreSQL 是 truth。
-- Mem0 只做 recall proposal。
+- semantic recall index 只做 recall proposal。
 - Graphiti 只作为 source-aligned temporal evidence。
 - 前端不判断任务类型。
 - API route 不写业务 truth。
@@ -74,7 +74,7 @@ Fixed bottom input: text area + mic state + send
 老人端普通界面不出现：
 
 - tenant / trace / schema
-- Mem0 / Graphiti / provider 名称
+- semantic recall index / Graphiti / provider 名称
 - 原始 event table
 - 家人端 dashboard
 - 开发调试字段
@@ -111,7 +111,7 @@ Fixed bottom input: text area + mic state + send
 后端：
 
 ```text
-/elder/turn -> intent record -> MemoryPlan -> PostgreSQL -> Mem0 infer=false -> Graphiti episode -> audit
+/elder/turn -> intent record -> MemoryPlan -> PostgreSQL -> pgvector semantic index -> Graphiti episode -> audit
 ```
 
 ### Recall
@@ -221,5 +221,5 @@ pnpm e2e:golden
 Acceptance:
 
 - smoke 覆盖 record、reminder confirm、recall。
-- golden 覆盖 PostgreSQL、Mem0、Graphiti、context link evidence。
+- golden 覆盖 PostgreSQL、semantic recall index、Graphiti、context link evidence。
 - Web tests 确认普通界面没有分页面“记一下 / 问一问”导航。

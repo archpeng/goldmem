@@ -33,7 +33,7 @@
       "query": "我下周一出门吃面条有说几点吗？",
       "expectedAnswerHints": ["下周一", "面条", "下午"],
       "expectedEvidenceHints": ["特色面条", "下午三点"],
-      "allowedSources": ["postgres", "mem0", "context_link"],
+      "allowedSources": ["postgres", "semantic", "context_link"],
       "expectedEvidenceSources": ["context_link"],
       "minConfidence": 0.45
     },
@@ -43,9 +43,9 @@
       "expectedAnswerHints": ["面"],
       "expectedEvidenceHints": ["老街", "特色面", "老字号", "下午三点"],
       "forbiddenAnswerHints": ["是要去社区医院", "提醒是复查血压", "不是吃面"],
-      "allowedSources": ["postgres", "mem0", "context_link"],
-      "expectedEvidenceSources": ["mem0", "context_link"],
-      "requiresMem0": true,
+      "allowedSources": ["postgres", "semantic", "context_link"],
+      "expectedEvidenceSources": ["semantic", "context_link"],
+      "requiresSemantic": true,
       "minConfidence": 0.45
     },
     {
@@ -61,7 +61,7 @@
         "The answer says the meal reminder is the hospital visit."
       ],
       "expectedEvidenceHints": ["老街", "老字号", "社区医院", "血压"],
-      "allowedSources": ["postgres", "mem0", "context_link"],
+      "allowedSources": ["postgres", "semantic", "context_link"],
       "expectedEvidenceSources": ["context_link"],
       "minConfidence": 0.4
     }

@@ -78,9 +78,9 @@ billing/auth/permissions
 
 PostgreSQL does not need to become the long-term relationship memory engine.
 
-## 5. Mem0 remains semantic recall memory
+## 5. semantic recall index remains semantic recall memory
 
-Mem0 is best used for:
+semantic recall index is best used for:
 
 ```text
 short-to-medium-term semantic recall
@@ -92,7 +92,7 @@ fast fuzzy lookup
 conversation context
 ```
 
-Mem0 should not be responsible for:
+semantic recall index should not be responsible for:
 
 ```text
 current effective medical facts
@@ -116,7 +116,7 @@ risk guardrails
 permission guardrails
 business state transitions
 Graphiti episode construction
-Mem0 summary construction
+semantic recall index summary construction
 query fusion
 evidence verification
 nightly consolidation scheduling
@@ -130,7 +130,7 @@ Do not make every component a hard dependency for business truth, but do make th
 Early production write order:
 
 ```text
-source -> MemoryPlan -> PostgreSQL -> Mem0 -> Graphiti episode -> audit -> response
+source -> MemoryPlan -> PostgreSQL -> semantic recall index -> Graphiti episode -> audit -> response
 ```
 
 PostgreSQL write success remains the business hard dependency. Graphiti write failure must be surfaced in response metadata and audit, then retried by a later queue/job; it must not rollback PostgreSQL truth or silently disappear.
@@ -148,7 +148,7 @@ Nightly consolidation is where high-quality curated episodes are written to Grap
 
 ## 9. Evidence-bound answers are non-negotiable
 
-Even when Graphiti or Mem0 retrieves a memory, final user-facing answers must be evidence-bound.
+Even when Graphiti or semantic recall index retrieves a memory, final user-facing answers must be evidence-bound.
 
 For high-risk domains:
 

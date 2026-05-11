@@ -1,6 +1,6 @@
 # 07. Risks and Validation
 
-This document lists the main risks of the PostgreSQL + Mem0 + Graphiti architecture and how to validate or mitigate them.
+This document lists the main risks of the PostgreSQL + semantic recall index + Graphiti architecture and how to validate or mitigate them.
 
 ## Risk 1: Dual truth confusion
 
@@ -63,18 +63,18 @@ Surface Graphiti write failures in response metadata and audit.
 Add retry queue for failed episode writes.
 ```
 
-## Risk 4: Mem0 and Graphiti duplicate recall
+## Risk 4: semantic recall index and Graphiti duplicate recall
 
 ### Problem
 
-The same memory may be returned by Mem0 and Graphiti.
+The same memory may be returned by semantic recall index and Graphiti.
 
 ### Mitigation
 
 ```text
 All writes include sourceId/eventId metadata.
 Query fusion deduplicates by sourceId/eventId/episodeId.
-Mem0 evidence is treated as semantic candidate.
+semantic recall index evidence is treated as semantic candidate.
 Graphiti evidence is treated as temporal fact candidate.
 PostgreSQL verifies source records.
 ```
@@ -98,13 +98,13 @@ No source evidence means no answer.
 
 ### Problem
 
-Graphiti and Mem0 have their own grouping/user concepts. Mistakes could leak memory across tenants.
+Graphiti and semantic recall index have their own grouping/user concepts. Mistakes could leak memory across tenants.
 
 ### Mitigation
 
 ```text
 GoldMem constructs a Graphiti-safe groupId from tenantId and elderId.
-Frontend never calls Graphiti or Mem0 directly.
+Frontend never calls Graphiti or semantic recall index directly.
 All memory backend calls go through Kernel/API.
 All memory backend metadata includes tenantId and elderId.
 PostgreSQL remains tenant authority.
@@ -151,7 +151,7 @@ pnpm typecheck
 pnpm test
 pnpm eval
 pnpm e2e:golden
-pnpm mem0:smoke
+pnpm test:postgres
 ```
 
 Required behavior:
@@ -159,7 +159,7 @@ Required behavior:
 ```text
 text note writes source/event/reminder/risk/audit to PostgreSQL
 query answer uses evidence only
-Mem0 recall returns metadata-aligned evidence
+semantic recall index recall returns metadata-aligned evidence
 no evidence means no answer
 ```
 
@@ -182,7 +182,7 @@ Validation:
 ```text
 Graphiti receives episodes with groupId, sourceIds, eventIds.
 Failed writes are audited and visible to the caller as internal temporal status.
-PostgreSQL + Mem0 product path stays committed when Graphiti write fails.
+PostgreSQL + semantic recall index product path stays committed when Graphiti write fails.
 ```
 
 ## Stage 3: Graphiti query validation
@@ -201,7 +201,7 @@ How did the fraud-risk chain evolve?
 Compare:
 
 ```text
-PostgreSQL + Mem0 answer
+PostgreSQL + semantic recall index answer
 Graphiti evidence
 human expected answer
 ```
@@ -261,7 +261,7 @@ no-evidence answer rate
 ### Memory metrics
 
 ```text
-Mem0 recall hit rate
+semantic recall index recall hit rate
 Graphiti evidence hit rate
 PostgreSQL fallback rate
 Graphiti/PostgreSQL disagreement rate

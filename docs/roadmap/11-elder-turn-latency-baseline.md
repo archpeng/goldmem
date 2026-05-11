@@ -29,11 +29,11 @@ This note records the first measured end-to-end latency baseline for the mobile 
 | Node | `gpt-4.1-mini` | `gpt-5.4-mini` | Note |
 | --- | ---: | ---: | --- |
 | `elderTurn.planElderTurn` | 1.7s | 5.3s | Model routing |
-| `ingest.semanticCandidates` | 5.0s | 4.9s | Mem0 search timeout/degrade |
+| `ingest.semanticCandidates` | 5.0s | 4.9s | semantic recall index search timeout/degrade |
 | `ingest.generateMemoryPlan` | 6.4s | 5.8s | Main model extraction |
-| `applyPlan.semanticWrites` | 5.0s | 5.0s | Mem0 write timeout/degrade |
+| `applyPlan.semanticWrites` | 5.0s | 5.0s | semantic recall index write timeout/degrade |
 | `ingest.temporalWrite` | 5.0s | 5.0s | Graphiti write timeout/retry |
-| `ingest.total` | 21.5s | 20.8s | Includes Mem0/Graphiti waits |
+| `ingest.total` | 21.5s | 20.8s | Includes semantic recall index/Graphiti waits |
 | `elderTurn.total` | 23.3s | 26.2s | User-facing API latency |
 
 ## Recall Chain Breakdown
@@ -43,14 +43,14 @@ This note records the first measured end-to-end latency baseline for the mobile 
 | `elderTurn.planElderTurn` | 2.1s | 3.7s | Model routing |
 | `query.parseQuery` | 1.9s | 3.8s | Model query parse |
 | `query.postgresSearch` | 15ms | 17ms | Fast |
-| `query.mem0Search` | 5.0s | 5.0s | Mem0 search timeout/degrade |
+| `query.semanticSearch` | 5.0s | 5.0s | semantic recall index search timeout/degrade |
 | `query.answerGeneration` | 3.6s | 3.9s | Model answer |
-| `query.total` | 10.6s | 12.8s | Includes Mem0 wait |
+| `query.total` | 10.6s | 12.8s | Includes semantic recall index wait |
 | `elderTurn.total` | 12.7s | 16.5s | User-facing API latency |
 
 ## Model-Only Result
 
-These numbers remove Mem0, PostgreSQL, Graphiti, and API routing from the path.
+These numbers remove semantic recall index, PostgreSQL, Graphiti, and API routing from the path.
 
 | Model | Turn plan | MemoryPlan | Query parse | Answer generation |
 | --- | ---: | ---: | ---: | ---: |
@@ -63,14 +63,14 @@ These numbers remove Mem0, PostgreSQL, Graphiti, and API routing from the path.
 
 Current bottlenecks:
 
-- Mem0 search/write repeatedly reaches the 5s timeout.
+- semantic recall index search/write repeatedly reaches the 5s timeout.
 - Graphiti write reaches the 5s timeout and then enters retry.
 - MemoryPlan generation is the largest model-only step.
 - `gpt-5.4-mini` is slower on turn planning and recall generation in the current Neko route.
 
 Near-term optimization priority:
 
-1. Keep external Mem0/Graphiti failures non-blocking for elder UX.
-2. Reduce or async offload Mem0 write/search from the critical record path.
+1. Keep external semantic recall index/Graphiti failures non-blocking for elder UX.
+2. Reduce or async offload semantic recall index write/search from the critical record path.
 3. Keep benchmarking Neko model candidates with the two latency scripts before changing defaults.
 4. Treat `gpt-4.1-mini` as the current faster preview model unless a later Neko route proves otherwise.

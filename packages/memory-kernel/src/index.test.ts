@@ -386,7 +386,7 @@ describe("ElderMemoryKernel", () => {
     expect(harness.audit.records.some((record) => record.type === "memory_context_link_skipped")).toBe(true);
   });
 
-  it("passes Mem0 semantic candidate events into memory plan context without using graph relations", async () => {
+  it("passes semantic semantic candidate events into memory plan context without using graph relations", async () => {
     const harness = createHarness(
       buildPlan({
         summary: "Semantic context candidate only.",
@@ -503,7 +503,7 @@ describe("ElderMemoryKernel", () => {
     };
     harness.semanticMemory.searchResults = [
       {
-        memory: "A compressed Mem0 fact.",
+        memory: "A compressed semantic fact.",
         score: 0.8,
         metadata: {
           sourceId: "source-1",
@@ -514,9 +514,9 @@ describe("ElderMemoryKernel", () => {
         retrievalSignals: { semanticScore: 0.8, keywordScore: 0.4 },
       },
       {
-        memory: "Provider-only Mem0 result without PostgreSQL metadata must not become final evidence.",
+        memory: "Provider-only semantic result without PostgreSQL metadata must not become final evidence.",
         score: 0.95,
-        provider: "mem0",
+        provider: "semantic",
         retrievalSignals: { entityScore: 0.9, rerankScore: 0.85 },
       },
     ];
@@ -528,16 +528,16 @@ describe("ElderMemoryKernel", () => {
     });
 
     expect(answer.answerText).toContain("vegetables");
-    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "mem0")).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "semantic")).toBe(true);
     expect(answer.retrievedEvidence.some((item) => item.summary === "The elder bought vegetables at the market.")).toBe(true);
-    expect(answer.retrievedEvidence.some((item) => item.summary.includes("Provider-only Mem0"))).toBe(false);
+    expect(answer.retrievedEvidence.some((item) => item.summary.includes("Provider-only semantic"))).toBe(false);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
     expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
       expect.objectContaining({
-        mem0Count: 2,
-        mem0MetadataCount: 1,
-        mem0UnlinkedCount: 1,
-        mem0SignalCount: 2,
+        semanticCount: 2,
+        semanticMetadataCount: 1,
+        semanticUnlinkedCount: 1,
+        semanticSignalCount: 2,
       }),
     );
 
@@ -925,7 +925,7 @@ describe("ElderMemoryKernel", () => {
     });
   });
 
-  it("keeps Mem0 recall isolated by tenant even when elder ids match", async () => {
+  it("keeps semantic recall isolated by tenant even when elder ids match", async () => {
     const harness = createHarness(buildPlan({
       summary: "Tenant scoped memory.",
       events: [buildEvent({ title: "租户A记录", summary: "租户A说周五去社区医院。" })],
@@ -1456,6 +1456,10 @@ class FakeModelGateway implements ModelGateway {
 
   async transcribe(): Promise<TranscriptionResult> {
     return { text: "transcribed text", confidence: 0.9 };
+  }
+
+  async embedText(): Promise<number[]> {
+    return Array.from({ length: 1536 }, (_, index) => (index === 0 ? 1 : 0));
   }
 
   async generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan> {

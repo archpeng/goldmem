@@ -9,7 +9,7 @@ GoldMem 的目标不是“老人语音备忘录”，而是一个多租户、证
 
 ```text
 PostgreSQL / Citus-ready = 业务、证据、权限、审计 truth
-Mem0 = 中短期 multilingual recall engine
+pgvector semantic recall index = 中短期低延迟候选召回
 Graphiti = 长期关系记忆 truth
 Memory Kernel = 编排、安全裁决、证据融合、业务动作控制
 Nightly Consolidation + Eval = 数据飞轮
@@ -20,19 +20,19 @@ Nightly Consolidation + Eval = 数据飞轮
 当前代码已经具备第一版 Memory Kernel MVP：
 
 - `packages/memory-schema` 定义 MemoryPlan、source、event、reminder、risk、family task、context link、answer 等 domain schema。
-- `packages/memory-kernel` 负责 ingest、MemoryPlan validation、risk/permission/reminder guardrails、PostgreSQL persistence、Mem0 write、recall evidence merge。
-- `packages/memory-store` 提供 PostgreSQL truth adapter 和 Mem0 HTTP adapter。
+- `packages/memory-kernel` 负责 ingest、MemoryPlan validation、risk/permission/reminder guardrails、PostgreSQL persistence、semantic recall index write、recall evidence merge。
+- `packages/memory-store` 提供 PostgreSQL truth adapter 和 pgvector semantic recall store。
 - `packages/model-gateway` 提供 OpenAI-compatible MemoryPlan/query/answer boundary。
 - `packages/temporal-memory` 已建立 Graphiti 目标接口和 Null store。
 - `services/api-server` 提供 thin Fastify API。
 - `apps/web-mvp` 是中文优先的单页 Web MVP。
-- `evals` 和 `e2e/*` 已覆盖 recall、risk、context link 和 Mem0 evidence boundary。
+- `evals` 和 `e2e/*` 已覆盖 recall、risk、context link 和 semantic recall index evidence boundary。
 
 已经成立的原则：
 
 - LLM 理解，Kernel 约束。
 - PostgreSQL 是业务和证据 truth。
-- Mem0 负责多信号召回候选，不做事实裁决。
+- pgvector semantic recall index 负责语义候选召回，不做事实裁决。
 - Graphiti 负责长期关系记忆，不触发业务动作。
 - Recall answer 必须 evidence-bound。
 - Context links 是 MVP 轻量关系线索，不是最终长期事实图。
@@ -56,25 +56,20 @@ PostgreSQL 持有确定性的业务和证据状态：
 
 PostgreSQL 不再承担“自建完整长期事实图”的终局职责。它仍然是所有业务动作、权限、安全和证据回查的硬依赖。
 
-### Mem0
+### Pgvector semantic recall index
 
-Mem0 是中短期多语言召回引擎。GoldMem 应尽量利用 Mem0 的：
+pgvector semantic recall index 是中短期多语言候选召回层。GoldMem 使用它的：
 
 - semantic search
-- BM25 / keyword recall
-- entity linking
-- rerank
-- dedup / context lookup
-- alias / preference / fuzzy context
+- source/event aligned candidate lookup
 
-但 Mem0 输出只能作为 candidate 和 ranking signal，不能成为 GoldMem truth。
+但 semantic recall index 输出只能作为 candidate 和 ranking signal，不能成为 GoldMem truth。
 
 中文策略：
 
 - OpenAI embedding 路径可以支持中文语义召回。
-- hybrid/BM25/entity NLP 对中文可能不稳定，所以应增强自托管 Mem0 的中文分词、领域词典、entity recall 和 rerank。
-- 不应把 Mem0 降级成纯向量搜索，也不应让 Mem0 直接裁决事实。
-- canonical event memory 写入保持 `infer=false`，metadata 必须带 `tenantId/sourceId/eventId`。
+- 不应让 semantic recall index 直接裁决事实。
+- canonical event memory 写入 metadata 必须带 `tenantId/sourceId/eventId`。
 - recall 结果必须回查 PostgreSQL，final evidence 优先来自 PostgreSQL 记录或 PostgreSQL-derived metadata。
 
 ### Graphiti
@@ -98,14 +93,14 @@ Kernel 是唯一编排层，负责：
 - MemoryPlan 校验
 - risk / permission / reminder guardrails
 - PostgreSQL writes
-- Mem0 recall write/search
+- semantic recall index write/search
 - Graphiti episode write/search
 - evidence alignment and ranking
 - no-evidence no-answer
 - high-risk uncertainty
 - audit
 
-API routes 和前端必须保持 thin，不能复制后端规则，也不能直接调用 Mem0 或 Graphiti。
+API routes 和前端必须保持 thin，不能复制后端规则，也不能直接调用 semantic recall index 或 Graphiti。
 
 ## 推进顺序
 

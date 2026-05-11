@@ -42,7 +42,7 @@ const AUDIT_FAILURE_TYPES = new Set([
   "no_evidence",
   "low_confidence",
   "graphiti_disagreement",
-  "mem0_unaligned",
+  "semantic_unaligned",
   "answer_validation_failed",
   "user_feedback_negative",
 ]);

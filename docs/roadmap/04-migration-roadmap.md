@@ -1,13 +1,13 @@
 # 04. Production Roadmap
 
-This roadmap evolves the current MVP architecture into the target PostgreSQL + Mem0 + Graphiti architecture. Because GoldMem is new and has no historical production burden, Graphiti should enter the production long-term memory path directly rather than as a long-running shadow-only experiment.
+This roadmap evolves the current MVP architecture into the target PostgreSQL + semantic recall index + Graphiti architecture. Because GoldMem is new and has no historical production burden, Graphiti should enter the production long-term memory path directly rather than as a long-running shadow-only experiment.
 
 The invariant is:
 
 ```text
 Graphiti = long-term relational memory truth
 PostgreSQL = business/source/evidence truth
-Mem0 = short-to-medium multilingual recall engine
+semantic recall index = short-to-medium multilingual recall engine
 Kernel = orchestration, safety, evidence fusion, and action control
 ```
 
@@ -67,7 +67,7 @@ Add tenantId to MemorySource, MemoryEvent, Reminder, RiskFlagRecord, FamilyTask,
 Add tenant_id NOT NULL to PostgreSQL schema/migrations.
 Make all store reads and writes tenant-scoped.
 Make API request schemas tenant-aware, with tenant-mvp only at an explicit MVP boundary.
-Write tenantId into Mem0 metadata.
+Write tenantId into semantic recall index metadata.
 Build Graphiti-safe groupId only inside Kernel from tenantId and elderId.
 ```
 
@@ -75,7 +75,7 @@ Acceptance:
 
 ```text
 No query path searches by elderId alone.
-No Mem0 or Graphiti backend call lacks tenantId.
+No semantic recall index or Graphiti backend call lacks tenantId.
 Frontend never supplies Graphiti groupId.
 Cross-tenant isolation tests pass.
 ```
@@ -121,7 +121,7 @@ Write order:
 
 ```text
 PostgreSQL truth write
--> Mem0 recall write
+-> semantic recall index recall write
 -> Graphiti temporal episode write
 -> audit
 -> response
@@ -153,7 +153,7 @@ Flow:
 ```text
 parse query
 -> PostgreSQL business/evidence search
--> Mem0 semantic recall
+-> semantic recall index semantic recall
 -> Graphiti temporal fact search
 -> evidence alignment by sourceId/eventId/episodeId
 -> evidence merge/rank
@@ -231,7 +231,7 @@ Load daily PostgreSQL records.
 Generate daily care summary.
 Detect duplicates, conflicts, low-confidence items.
 Build curated Graphiti episodes.
-Write curated summaries to Mem0.
+Write curated summaries to semantic recall index.
 Create family digest.
 Generate eval cases.
 Write audit log.
@@ -256,7 +256,7 @@ source transcript
 MemoryPlan
 risk/permission guardrail changes
 PostgreSQL writes
-Mem0 writes/results
+semantic recall index writes/results
 Graphiti episodes/facts
 evidence merge
 final answer

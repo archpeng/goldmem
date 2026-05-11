@@ -25,9 +25,9 @@ const GoldenCaseSchema = z.object({
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
-      allowedSources: z.array(z.enum(["postgres", "mem0", "context_link", "graphiti"])).default(["postgres", "mem0", "context_link"]),
-      expectedEvidenceSources: z.array(z.enum(["postgres", "mem0", "context_link", "graphiti"])).default([]),
-      requiresMem0: z.boolean().default(false),
+      allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti"])).default(["postgres", "semantic", "context_link"]),
+      expectedEvidenceSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti"])).default([]),
+      requiresSemantic: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),
     }),
   ),
@@ -76,7 +76,9 @@ const semanticJudge = createSemanticJudge();
 
 const health = await request<Json>("GET", "/health");
 assert(health.ok === true, "API health check failed");
-assert(health.mem0 === "configured", "Mem0 must be configured for golden E2E");
+assert(health.semanticMemory === "pgvector", "Semantic recall index must be pgvector for golden E2E");
+const expectedApiModel = process.env.GOLDEN_E2E_API_MODEL ?? "gpt-4.1-mini";
+assert(health.model === expectedApiModel, `Golden E2E requires API model ${expectedApiModel}; current API model is ${String(health.model)}`);
 if (fixturePath.includes("graphiti")) {
   assert(health.graphiti === "ok", "Graphiti must be healthy for Graphiti golden E2E");
 }
@@ -163,7 +165,7 @@ for (const hint of fixture.forbidAutoConfirmedReminderHints) {
   );
 }
 
-let mem0EvidenceQueries = 0;
+let semanticEvidenceQueries = 0;
 for (const queryCase of fixture.queries) {
   console.log(`golden query start: ${queryCase.id}`);
   const turn = await request<{ traceId: string; answer?: unknown }>("POST", "/elder/turn", {
@@ -223,9 +225,9 @@ for (const queryCase of fixture.queries) {
     assert(evidenceSources.has(source), `${queryCase.id} expected evidence source: ${source}`);
   }
 
-  if (evidenceSources.has("mem0")) mem0EvidenceQueries += 1;
-  if (queryCase.requiresMem0) {
-    assert(evidenceSources.has("mem0"), `${queryCase.id} expected Mem0 evidence`);
+  if (evidenceSources.has("semantic")) semanticEvidenceQueries += 1;
+  if (queryCase.requiresSemantic) {
+    assert(evidenceSources.has("semantic"), `${queryCase.id} expected Semantic evidence`);
   }
 
   console.log(
@@ -233,9 +235,9 @@ for (const queryCase of fixture.queries) {
   );
 }
 
-assert(mem0EvidenceQueries > 0, "Golden baseline did not exercise Mem0 evidence");
+assert(semanticEvidenceQueries > 0, "Golden baseline did not exercise Semantic evidence");
 console.log(
-  `golden e2e ok: elderId=${elderId} seeds=${fixture.seedNotes.length} events=${events.length} reminders=${reminders.length} familyTasks=${familyTasks.length} mem0Queries=${mem0EvidenceQueries}`,
+  `golden e2e ok: elderId=${elderId} seeds=${fixture.seedNotes.length} events=${events.length} reminders=${reminders.length} familyTasks=${familyTasks.length} semanticQueries=${semanticEvidenceQueries}`,
 );
 
 async function ingestNote(transcript: string) {

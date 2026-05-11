@@ -31,13 +31,13 @@ export function selectTrustEvidence(answer: MemoryAnswer) {
 }
 
 export function recallStateLabel(answer: MemoryAnswer): string {
-  if (answer.confidence >= 0.65 && answer.retrievedEvidence.some((item) => item.retrievalSource === "postgres" || item.retrievalSource === "mem0")) {
+  if (answer.confidence >= 0.65 && answer.retrievedEvidence.some((item) => item.retrievalSource === "postgres" || item.retrievalSource === "semantic")) {
     return copy.recall.certainTitle;
   }
   return copy.recall.possibleTitle;
 }
 
-export function trustEvidenceLabel(source: "postgres" | "mem0" | "context_link" | "graphiti" | undefined): string {
+export function trustEvidenceLabel(source: "postgres" | "semantic" | "context_link" | "graphiti" | undefined): string {
   if (source === "context_link") return copy.recall.contextLinkEvidence;
   if (source === "graphiti") return copy.recall.graphitiEvidence;
   return copy.recall.recordedEvidence;

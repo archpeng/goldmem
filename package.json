@@ -26,7 +26,6 @@
     "graphiti:consolidate": "tsx scripts/graphiti-consolidate.ts",
     "graphiti:replay": "tsx scripts/graphiti-replay.ts",
     "graphiti:worker": "tsx scripts/graphiti-worker.ts",
-    "mem0:smoke": "tsx scripts/mem0-smoke.ts",
     "semantic:rebuild": "tsx scripts/rebuild-semantic-memory.ts",
     "eval:candidates": "tsx scripts/export-eval-candidates.ts",
     "eval": "tsx scripts/eval-runner.ts"

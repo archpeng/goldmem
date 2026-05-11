@@ -45,7 +45,7 @@ Web/API text input
   -> risk-engine
   -> permission-engine
   -> PostgreSQL events/reminders/risk/family/audit
-  -> Mem0 recall-engine write
+  -> pgvector semantic recall index write
   -> elder-facing result
 ```
 
@@ -55,7 +55,7 @@ Web/API text input
 Web/API query
   -> model-gateway parseMemoryQuery
   -> PostgreSQL broad structured recall
-  -> Mem0 multilingual recall
+  -> pgvector semantic recall
   -> Kernel merge/rank evidence
   -> context link evidence expansion
   -> model-gateway generateMemoryAnswer
@@ -72,9 +72,9 @@ Recall uses broad candidate retrieval plus ranking.
 - `ParsedMemoryQuery.eventTypes` are hints, not hard filters.
 - PostgreSQL first recalls candidates from truth data using elder scope plus broad title/summary/entity matching.
 - Kernel ranking gives bonuses for event type match, entity match, query text match, event confidence, importance, and active status.
-- Mem0 may use semantic search, keyword/BM25, entity linking, rerank, and dedup/context lookup to return recall candidates. Its results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
+- Pgvector semantic recall returns low-latency candidate memories from PostgreSQL-derived summaries. Its results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
 - PostgreSQL context links can expand evidence from an initially matched event to related events, using `retrievalSource: context_link`.
-- During ingest, Mem0 results may supply candidate PostgreSQL event IDs for context-link proposal. Mem0 graph `relations`, linked entities, and provider-owned relation output are ranking/candidate signals only; they are ignored as GoldMem truth.
+- During ingest, semantic recall results may supply candidate PostgreSQL event IDs for context-link proposal. Provider-owned relation output is ignored as GoldMem truth.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.
@@ -96,17 +96,16 @@ Authoritative state:
 
 PostgreSQL must be sufficient to reconstruct business truth.
 
-### Mem0-Compatible Recall Engine
+### PgVector Semantic Recall Index
 
 Default recall index:
 
 - event summaries
 - stable preferences and facts
 - multilingual fuzzy recall
-- keyword/BM25 and entity-enhanced recall when the Mem0 backend supports it
-- reranked context candidates
+- vector similarity over PostgreSQL-derived canonical summaries
 
-Mem0 entries must carry source/event metadata when available and must be rebuildable from PostgreSQL. Mem0's local pgvector and Neo4j services are internal to Mem0; GoldMem does not expose them as business truth.
+Semantic index entries must carry source/event metadata when available and must be rebuildable from PostgreSQL. The index is not truth; it is a fast candidate source.
 
 ### Memory Context Links
 
@@ -145,7 +144,7 @@ Owns LLM/ASR provider access.
 Owns the domain pipeline.
 
 - Applies model outputs through schemas and deterministic engines.
-- Persists events, reminders, risk flags, family tasks, Mem0 recall-engine writes, and audit.
+- Persists events, reminders, risk flags, family tasks, semantic recall writes, and audit.
 - Merges and ranks recall evidence.
 - Depends on interfaces, not concrete providers.
 
@@ -154,7 +153,7 @@ Owns the domain pipeline.
 Owns persistence interfaces and adapters.
 
 - PostgreSQL truth store.
-- Mem0 HTTP recall adapter.
+- Pgvector-backed semantic recall store.
 
 ### `packages/risk-engine`
 
@@ -203,9 +202,9 @@ The MVP can run with:
 
 - local PostgreSQL via Docker
 - OpenAI-compatible model gateway using `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`
-- local Mem0 via Docker using `MEM0_BASE_URL`
+- local pgvector through the PostgreSQL container
 
-`MEM0_BASE_URL` is required for the real API server. Tests use in-memory fakes instead of a null production adapter.
+`SEMANTIC_MEMORY_PROVIDER=pgvector` is the only supported semantic recall provider. Tests use in-memory fakes instead of a null production adapter.
 
 ## Verification
 

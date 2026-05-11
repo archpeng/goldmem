@@ -62,7 +62,7 @@ export class PostgresDebugTraceStore implements DebugTraceStore {
         }
         : undefined,
       postgresWrites: ingest?.payload.result,
-      mem0WritesOrCandidates: {
+      semanticWritesOrCandidates: {
         semanticCandidateEvents: readRecord(ingest?.payload.plan).semanticCandidateEvents,
         retrieval: query?.payload.retrieval,
       },

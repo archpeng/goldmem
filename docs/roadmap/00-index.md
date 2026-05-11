@@ -2,7 +2,7 @@
 
 This roadmap series defines the medium-to-long-term technical direction for GoldMem after the initial MVP.
 
-The key architectural decision is to stop treating PostgreSQL as the long-term memory engine. PostgreSQL remains the source of truth for business state and raw evidence. Graphiti is the production target and source of truth for long-term relational memory. Mem0 remains the short-to-medium-term multilingual recall layer.
+The key architectural decision is to stop treating PostgreSQL as the long-term memory engine. PostgreSQL remains the source of truth for business state and raw evidence. Graphiti is the production target and source of truth for long-term relational memory. semantic recall index remains the short-to-medium-term multilingual recall layer.
 
 ## Document series
 
@@ -21,7 +21,7 @@ The key architectural decision is to stop treating PostgreSQL as the long-term m
 
 ```text
 PostgreSQL = business/source truth
-Mem0 = semantic recall / short-to-medium memory
+semantic recall index = semantic recall / short-to-medium memory
 Graphiti = long-term relational memory truth
 GoldMem Kernel = care orchestration, guardrails, policy, scheduling, and evidence fusion
 ```
@@ -49,7 +49,7 @@ Current code already has:
 
 - PostgreSQL truth-store migrations
 - `memory_sources`, `memory_events`, `reminders`, `risk_flags`, `family_tasks`, `feedback`, `audit_logs`
-- Mem0-compatible `SemanticMemoryStore`
+- pgvector-backed `SemanticMemoryStore`
 - `TemporalMemoryStore` interface, Graphiti adapter, sidecar, retry job, and deterministic Graphiti episode builder
 - `memory_context_links` as a lightweight event-to-event context link layer
 - React MVP shell

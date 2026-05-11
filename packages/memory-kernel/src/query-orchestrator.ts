@@ -20,6 +20,7 @@ import {
   shouldSearchTemporalMemory,
 } from "./retrieval.js";
 import { isString } from "./guards.js";
+import { appendProviderTimings, consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import type { ElderMemoryKernelDeps, QueryMemoryInput } from "./index.js";
 
 export class QueryOrchestrator {
@@ -27,9 +28,10 @@ export class QueryOrchestrator {
 
   async queryMemory(input: QueryMemoryInput, traceId: string): Promise<MemoryAnswer> {
     const startedAt = Date.now();
-    const timings: Record<string, number> = {};
+    const timings: Record<string, unknown> = {};
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const now = input.now ?? new Date().toISOString();
+    try {
     const contextStartedAt = Date.now();
     const context = await this.deps.personalContextStore.buildContext({
       tenantId,
@@ -47,6 +49,7 @@ export class QueryOrchestrator {
       context,
     }));
     timings.parseQueryMs = Date.now() - parseQueryStartedAt;
+    appendProviderTimings(timings, this.deps.modelGateway);
 
     const postgresSearchStartedAt = Date.now();
     const structuredEvents = await this.deps.eventStore.search({
@@ -60,14 +63,15 @@ export class QueryOrchestrator {
     });
     timings.postgresSearchMs = Date.now() - postgresSearchStartedAt;
 
-    const mem0SearchStartedAt = Date.now();
+    const semanticSearchStartedAt = Date.now();
     const semanticResults = await this.searchSemanticMemorySafely({
       tenantId,
       elderId: input.elderId,
       query: input.query,
       traceId,
     });
-    timings.mem0SearchMs = Date.now() - mem0SearchStartedAt;
+    timings.semanticSearchMs = Date.now() - semanticSearchStartedAt;
+    appendProviderTimings(timings, this.deps.modelGateway);
 
     const temporalSearchStartedAt = Date.now();
     const temporalResults = await this.searchTemporalFactsSafely({
@@ -96,10 +100,10 @@ export class QueryOrchestrator {
     timings.contextLinksMs = Date.now() - contextLinksStartedAt;
     const retrieval = {
       postgresCount: structuredEvents.length,
-      mem0Count: semanticResults.length,
-      mem0MetadataCount: semanticResults.filter((result) => typeof result.metadata?.sourceId === "string").length,
-      mem0UnlinkedCount: semanticResults.filter((result) => typeof result.metadata?.sourceId !== "string").length,
-      mem0SignalCount: semanticResults.filter((result) => result.retrievalSignals).length,
+      semanticCount: semanticResults.length,
+      semanticMetadataCount: semanticResults.filter((result) => typeof result.metadata?.sourceId === "string").length,
+      semanticUnlinkedCount: semanticResults.filter((result) => typeof result.metadata?.sourceId !== "string").length,
+      semanticSignalCount: semanticResults.filter((result) => result.retrievalSignals).length,
       graphitiCount: temporalResults.length,
       graphitiAlignedCount: alignedTemporalResults.length,
       contextLinkCount: evidence.filter((item) => item.retrievalSource === "context_link").length,
@@ -137,6 +141,7 @@ export class QueryOrchestrator {
       traceId,
     });
     timings.answerGenerationMs = Date.now() - answerGenerationStartedAt;
+    appendProviderTimings(timings, this.deps.modelGateway);
     timings.totalMs = Date.now() - startedAt;
     const answer: MemoryAnswer = {
       ...generatedAnswer,
@@ -154,6 +159,25 @@ export class QueryOrchestrator {
     });
 
     return answer;
+    } catch (error) {
+      timings.totalMs = Date.now() - startedAt;
+      appendProviderTimings(timings, this.deps.modelGateway);
+      await this.deps.auditLog.record({
+        type: "memory_query_failed",
+        tenantId,
+        elderId: input.elderId,
+        traceId,
+        payload: {
+          traceId,
+          query: input.query,
+          timings,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          modelGateway: modelGatewayErrorPayload(error),
+        },
+      });
+      throw error;
+    }
   }
 
   private async generateAnswerWithFallback(input: {
@@ -184,6 +208,8 @@ export class QueryOrchestrator {
           query: input.query,
           failureType: "answer_schema_validation_error",
           errorMessage: error.message,
+          modelGateway: modelGatewayErrorPayload(error),
+          providerTimings: consumeProviderTimings(this.deps.modelGateway),
           fallbackUsed: true,
           evidenceCount: input.evidence.length,
         },
@@ -237,10 +263,12 @@ export class QueryOrchestrator {
     traceId: string;
   }) {
     try {
+      const embedding = await this.deps.modelGateway.embedText({ text: input.query });
       return await this.deps.semanticMemory.searchMemory({
         tenantId: input.tenantId,
         elderId: input.elderId,
         query: input.query,
+        embedding,
         limit: 10,
       });
     } catch (error) {
@@ -254,6 +282,8 @@ export class QueryOrchestrator {
           query: input.query,
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
+          modelGateway: modelGatewayErrorPayload(error),
+          providerTimings: consumeProviderTimings(this.deps.modelGateway),
         },
       });
       return [];

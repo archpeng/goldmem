@@ -7,7 +7,7 @@ The direction is production-first:
 ```text
 Graphiti = long-term relational memory production path
 PostgreSQL = business/source/evidence truth
-Mem0 = short-to-medium multilingual recall engine
+semantic recall index = short-to-medium multilingual recall engine
 Kernel = orchestration, safety, evidence fusion, and business action control
 ```
 
@@ -17,7 +17,7 @@ Graphiti is not a shadow-only experiment in this plan. It enters the production 
 
 - PostgreSQL owns tenant membership, source records, reminders, risk flags, family tasks, feedback, and audit.
 - Graphiti owns long-term relational memory: entities, relationships, temporal facts, validity, supersession, and relationship history.
-- Mem0 owns short-to-medium recall candidates, aliases, preferences, and fuzzy context.
+- semantic recall index owns short-to-medium recall candidates, aliases, preferences, and fuzzy context.
 - Kernel is the only layer allowed to fuse evidence and decide whether an answer or business action is safe.
 - Graphiti may inform answers, but it must never directly schedule reminders, notify family, change permissions, or mutate PostgreSQL business state.
 - High-risk answers must preserve uncertainty and source evidence.
@@ -56,7 +56,7 @@ Tasks:
 - Use consistent terminology:
   - `Graphiti = long-term relational memory truth`
   - `PostgreSQL = business/source/evidence truth`
-  - `Mem0 = short-to-medium multilingual recall engine`
+  - `semantic recall index = short-to-medium multilingual recall engine`
   - `Kernel = orchestration, safety, evidence fusion`
 
 Acceptance:
@@ -84,7 +84,7 @@ Tasks:
 - Add `tenant_id NOT NULL` to PostgreSQL migrations and Drizzle schema.
 - Update API request schemas to include `tenantId`; MVP may default to `tenant-mvp` only at an explicit boundary.
 - Update stores so all reads and writes require tenant scope.
-- Update Mem0 metadata to include `tenantId`.
+- Update semantic recall index metadata to include `tenantId`.
 - Generate Graphiti group IDs only inside Kernel:
 
 ```text
@@ -140,7 +140,7 @@ Write order:
 
 ```text
 PostgreSQL truth write
--> Mem0 recall write
+-> semantic recall index recall write
 -> Graphiti temporal episode write
 -> audit
 -> response
@@ -177,7 +177,7 @@ Query flow:
 ```text
 parse query
 -> PostgreSQL business/evidence search
--> Mem0 recall
+-> semantic recall index recall
 -> Graphiti temporal fact search
 -> evidence alignment
 -> evidence merge/rank
@@ -248,14 +248,14 @@ Tasks:
 - Add nightly consolidation job after production ingest writes are working.
 - Load daily PostgreSQL records by tenant/elder/date.
 - Generate curated daily care episodes for Graphiti.
-- Write curated daily summaries to Mem0.
+- Write curated daily summaries to semantic recall index.
 - Generate family digest.
 - Generate eval cases from:
   - query no-hit audits
   - family corrections
   - reminder confirmations
   - risk misses
-  - Graphiti/PostgreSQL/Mem0 disagreement
+  - Graphiti/PostgreSQL/semantic recall index disagreement
 
 Acceptance:
 
@@ -274,7 +274,7 @@ Debugger should show:
 - MemoryPlan
 - risk/permission guardrail changes
 - PostgreSQL writes
-- Mem0 writes/results
+- semantic recall index writes/results
 - Graphiti episodes/facts
 - evidence merge
 - final answer

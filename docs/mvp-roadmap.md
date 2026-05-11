@@ -8,7 +8,7 @@ one elder utterance
   -> model turn plan
   -> Kernel schema gate
   -> record / recall / record_and_recall / clarify
-  -> PostgreSQL truth + Mem0 recall + Graphiti temporal evidence
+  -> PostgreSQL truth + semantic recall index recall + Graphiti temporal evidence
   -> auditable elder-facing result
 ```
 
@@ -22,7 +22,7 @@ one elder utterance
 - PostgreSQL persistence for sources, events, reminders, risk flags, family tasks, feedback, and audit logs
 - deterministic risk, permission, and reminder guardrails
 - evidence-bound recall with no invented answer when evidence is absent
-- smoke and golden e2e over real Postgres, Mem0, and Graphiti paths
+- smoke and golden e2e over real Postgres, semantic recall index, and Graphiti paths
 
 ## Defer
 
@@ -31,7 +31,7 @@ one elder utterance
 - full authentication
 - production scheduler UI
 - manual CRUD editor for memory truth
-- provider-specific Mem0 or Graphiti UI
+- provider-specific semantic recall index or Graphiti UI
 
 ## Milestones
 

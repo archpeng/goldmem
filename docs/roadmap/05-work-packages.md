@@ -29,7 +29,7 @@ Add tenantId to MemorySource, MemoryEvent, Reminder, RiskFlagRecord, FamilyTask,
 Add tenantId to MemoryPlan.
 Update PostgreSQL migrations and drizzle schema.
 Update stores to require tenantId in all writes and reads.
-Update Mem0 metadata to include tenantId.
+Update semantic recall index metadata to include tenantId.
 Update API request schemas.
 Update eval fixtures.
 ```
@@ -196,7 +196,7 @@ Load daily records from PostgreSQL.
 Generate daily care summary.
 Detect duplicates, conflicts, low-confidence items.
 Build curated Graphiti episodes.
-Write curated summaries to Mem0.
+Write curated summaries to semantic recall index.
 Create family digest.
 Generate eval cases.
 Write audit log.
@@ -208,21 +208,21 @@ Write audit log.
 Job can run idempotently.
 Job can be retried.
 Graphiti failure is audited and retryable without corrupting PostgreSQL truth.
-Mem0 summary write can be rebuilt from PostgreSQL.
+semantic recall index summary write can be rebuilt from PostgreSQL.
 ```
 
 ## WP-6: Query fusion v2
 
 ### Goal
 
-Use PostgreSQL, Mem0, and Graphiti together without confusing their responsibilities.
+Use PostgreSQL, semantic recall index, and Graphiti together without confusing their responsibilities.
 
 ### Flow
 
 ```text
 parse query
   -> PostgreSQL structured search
-  -> Mem0 semantic search
+  -> semantic recall index semantic search
   -> Graphiti temporal search when query suggests long-term relation
   -> merge and rank evidence
   -> verify source metadata
@@ -294,7 +294,7 @@ MemoryPlan
 risk guardrail changes
 permission guardrail changes
 PostgreSQL writes
-Mem0 writes
+semantic recall index writes
 Graphiti episodes
 Graphiti facts returned
 query fusion evidence
@@ -323,7 +323,7 @@ risk false positives
 risk misses
 family corrections
 reminder ignored/confirmed stats
-Graphiti/PostgreSQL/Mem0 disagreement cases
+Graphiti/PostgreSQL/semantic recall index disagreement cases
 ```
 
 ### Outputs

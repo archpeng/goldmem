@@ -12,6 +12,7 @@ import type {
   PersonalContextStore,
   ReminderStore,
   RiskFlagStore,
+  SemanticMemoryStore,
   SourceStore,
   TemporalMemoryJobStore,
 } from "./index.js";
@@ -26,6 +27,7 @@ import { PostgresNotificationIntentStore } from "./postgres-notification-intents
 import { PostgresPersonalContextStore } from "./postgres-read-models.js";
 import { PostgresReminderStore } from "./postgres-reminders.js";
 import { PostgresRiskFlagStore } from "./postgres-risk-flags.js";
+import { PostgresSemanticMemoryStore } from "./postgres-semantic-memory.js";
 import * as schema from "./postgres-schema.js";
 import { PostgresSourceStore } from "./postgres-sources.js";
 import { PostgresTemporalMemoryJobStore } from "./postgres-temporal-jobs.js";
@@ -49,6 +51,7 @@ export type PostgresStores = {
   personalContextStore: PersonalContextStore;
   auditLog: AuditLog;
   temporalMemoryJobStore: TemporalMemoryJobStore;
+  semanticMemoryStore: SemanticMemoryStore;
   close(): Promise<void>;
 };
 
@@ -72,6 +75,9 @@ export function createPostgresStores(options: PostgresStoreOptions): PostgresSto
     personalContextStore: new PostgresPersonalContextStore(db),
     auditLog: new PostgresAuditLog(db),
     temporalMemoryJobStore: new PostgresTemporalMemoryJobStore(db),
+    semanticMemoryStore: new PostgresSemanticMemoryStore(pool),
     close: () => pool.end(),
   };
 }
+
+export { PostgresSemanticMemoryStore } from "./postgres-semantic-memory.js";

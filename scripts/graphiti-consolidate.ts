@@ -3,8 +3,8 @@ import { and, eq, gte, lt } from "drizzle-orm";
 import { buildDailyConsolidationSummary, buildDailyConsolidationTemporalEpisode } from "../packages/memory-kernel/src/consolidation.js";
 import {
   createPostgresStores,
-  HttpSemanticMemoryStore,
 } from "../packages/memory-store/src/index.js";
+import { OpenAIModelGateway } from "../packages/model-gateway/src/index.js";
 import {
   mapEvent,
   mapFamilyTask,
@@ -42,9 +42,12 @@ try {
   });
   const summary = buildDailyConsolidationSummary({ tenantId, elderId, date, traceId, ...records });
 
-  const semanticMemory = new HttpSemanticMemoryStore({
-    baseUrl: requiredEnv("MEM0_BASE_URL"),
-    apiKey: process.env.MEM0_API_KEY,
+  const semanticMemory = postgres.semanticMemoryStore;
+  const modelGateway = new OpenAIModelGateway({
+    apiKey: requiredEnv("OPENAI_API_KEY"),
+    model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+    baseURL: process.env.OPENAI_BASE_URL,
   });
   const temporalMemory = new GraphitiTemporalMemoryStore({
     baseUrl: requiredEnv("GRAPHITI_BASE_URL"),
@@ -53,10 +56,12 @@ try {
 
   try {
     await temporalMemory.addEpisode(episode);
+    const embedding = await modelGateway.embedText({ text: summary });
     await semanticMemory.addMemory({
       tenantId,
       elderId,
       memory: summary,
+      embedding,
       metadata: {
         traceId,
         writeMode: "daily_consolidation",

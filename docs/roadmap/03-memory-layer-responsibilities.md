@@ -6,7 +6,7 @@ GoldMem should not have multiple competing memory truth sources. It should have 
 
 ```text
 PostgreSQL = business/source truth
-Mem0 = semantic recall memory
+semantic recall index = semantic recall memory
 Graphiti = long-term temporal relationship memory
 Kernel = orchestration and guardrails
 ```
@@ -61,9 +61,9 @@ general relationship ontology learning
 
 The current `memory_context_links` table should remain an MVP/fallback/debug structure, not the final long-term memory engine.
 
-## Mem0 responsibilities
+## semantic recall index responsibilities
 
-Mem0 is the semantic recall layer.
+semantic recall index is the semantic recall layer.
 
 ### It stores
 
@@ -151,10 +151,10 @@ validate model outputs
 apply risk guardrails
 apply permission guardrails
 write business truth to PostgreSQL
-construct Mem0 memory summaries
+construct semantic recall index memory summaries
 construct Graphiti episodes
 schedule async memory jobs
-fuse query evidence from PostgreSQL, Mem0, Graphiti
+fuse query evidence from PostgreSQL, semantic recall index, Graphiti
 verify source evidence
 avoid unsafe answers
 record audit logs
@@ -185,7 +185,7 @@ risk_flag: medical_advice
 family_task if confirmation required
 ```
 
-Mem0:
+semantic recall index:
 
 ```text
 老人记录：张医生建议降压药早饭后吃一片。
@@ -212,7 +212,7 @@ PostgreSQL:
 new source/event/risk/family_task
 ```
 
-Mem0:
+semantic recall index:
 
 ```text
 semantic summary of possible medication change
@@ -231,7 +231,7 @@ Final answer should combine:
 
 ```text
 business state from PostgreSQL
-semantic candidates from Mem0
+semantic candidates from semantic recall index
 temporal fact chain from Graphiti
 source evidence from PostgreSQL/Graphiti episode metadata
 ```

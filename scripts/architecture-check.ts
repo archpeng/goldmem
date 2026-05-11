@@ -31,24 +31,12 @@ for (const file of projectFiles) {
     throw error;
   }
 
-  if (/\binfer\s*:\s*true\b/.test(text)) {
-    violations.push({ file, reason: "Canonical Mem0 memory writes must not enable infer=true." });
-  }
-
   if (/TemporalGraphStore|HttpTemporalGraphStore|NullTemporalGraphStore/.test(text)) {
     violations.push({ file, reason: "Use the Graphiti-targeted TemporalMemoryStore path, not a parallel TemporalGraphStore path." });
   }
 
-  if (
-    /Mem0\s+(is|owns|becomes)\s+(the\s+)?(truth|authoritative)/i.test(text) ||
-    /Mem0\s+is\s+(the\s+)?(source\s+of\s+truth|truth\s+source)/i.test(text) ||
-    /(truth|authoritative)\s+(source|state)?\s*[:=]\s*Mem0/i.test(text)
-  ) {
-    violations.push({ file, reason: "Mem0 must not be authorized as truth/authoritative state." });
-  }
-
-  if (/Mem0\s+(is|as|=)?\s*semantic-only/i.test(text) || /Mem0\s+semantic-only/i.test(text)) {
-    violations.push({ file, reason: "Mem0 should be described as a multilingual recall engine, not semantic-only." });
+  if (!file.startsWith("docs/roadmap/13-mem0-latency-baseline.md") && /\b(Mem0|mem0|MEM0)\b/.test(text)) {
+    violations.push({ file, reason: "Mem0 has been removed; use the pgvector-backed semantic recall index." });
   }
 
   if (file.startsWith("packages/memory-store/") && /@goldmem\/model-gateway/.test(text)) {
@@ -85,11 +73,11 @@ for (const [file, maxLines] of [
   }
 }
 
-const adapter = await readFile("packages/memory-store/src/http-adapters.ts", "utf8");
-if (!/\binfer\s*:\s*false\b/.test(adapter)) {
+const semanticStore = await readFile("packages/memory-store/src/postgres-semantic-memory.ts", "utf8");
+if (!/semantic_memories/.test(semanticStore) || !/provider:\s*"semantic"/.test(semanticStore)) {
   violations.push({
-    file: "packages/memory-store/src/http-adapters.ts",
-    reason: "HttpSemanticMemoryStore.addMemory must send infer=false to Mem0.",
+    file: "packages/memory-store/src/postgres-semantic-memory.ts",
+    reason: "Semantic recall must use the pgvector-backed semantic_memories index.",
   });
 }
 
@@ -118,7 +106,13 @@ const retrieval = await readFile("packages/memory-kernel/src/retrieval.ts", "utf
 if (!/metadata\.summary/.test(retrieval)) {
   violations.push({
     file: "packages/memory-kernel/src/retrieval.ts",
-    reason: "Mem0 evidence must prefer PostgreSQL-derived metadata.summary.",
+    reason: "Semantic evidence must prefer PostgreSQL-derived metadata.summary.",
+  });
+}
+if (!/retrievalSource:\s*"semantic"/.test(retrieval)) {
+  violations.push({
+    file: "packages/memory-kernel/src/retrieval.ts",
+    reason: "Semantic recall evidence must use retrievalSource=semantic.",
   });
 }
 
