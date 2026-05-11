@@ -7,7 +7,7 @@ import type { AppliedMemoryPlan } from "./ingest-types.js";
 export class MemoryPlanApplier {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
 
-  async apply(plan: MemoryPlan, context: PersonalContext): Promise<AppliedMemoryPlan> {
+  async apply(plan: MemoryPlan, context: PersonalContext, traceId: string): Promise<AppliedMemoryPlan> {
     const events: MemoryEvent[] = [];
     const reminders: Reminder[] = [];
     const contextLinks: MemoryContextLink[] = [];
@@ -54,7 +54,8 @@ export class MemoryPlanApplier {
           tenantId: plan.tenantId,
           elderId: plan.elderId,
           sourceId: plan.sourceId,
-          payload: { warning: "Reminder relatedEventIndex out of range", reminder: draft },
+          traceId,
+          payload: { traceId, warning: "Reminder relatedEventIndex out of range", reminder: draft },
         });
       }
     }
@@ -84,11 +85,11 @@ export class MemoryPlanApplier {
     }
 
     for (const draft of plan.contextLinks) {
-      const link = await this.applyContextLinkDraft(plan, draft, events, context);
+      const link = await this.applyContextLinkDraft(plan, draft, events, context, traceId);
       if (link) contextLinks.push(link);
     }
 
-    await this.writeSemanticMemories(plan, events);
+    await this.writeSemanticMemories(plan, events, traceId);
     return { events, reminderCandidates: reminders, contextLinks, riskFlags };
   }
 
@@ -97,6 +98,7 @@ export class MemoryPlanApplier {
     draft: MemoryPlan["contextLinks"][number],
     events: MemoryEvent[],
     context: Awaited<ReturnType<PersonalContextStore["buildContext"]>>,
+    traceId: string,
   ): Promise<MemoryContextLink | undefined> {
     const fromEvent = events[draft.fromEventIndex];
     const toEvent = typeof draft.toEventIndex === "number" ? events[draft.toEventIndex] : undefined;
@@ -110,22 +112,22 @@ export class MemoryPlanApplier {
     const allowedReminderIds = new Set(openReminders.map((reminder) => reminder.reminderId));
 
     if (!fromEvent || !toEventId || fromEvent.id === toEventId) {
-      await this.auditSkippedContextLink(plan, draft, "missing_or_self_event_reference");
+      await this.auditSkippedContextLink(plan, draft, "missing_or_self_event_reference", traceId);
       return undefined;
     }
 
     if (!events.some((event) => event.id === toEventId) && !allowedHistoricalEventIds.has(toEventId)) {
-      await this.auditSkippedContextLink(plan, draft, "to_event_not_in_context");
+      await this.auditSkippedContextLink(plan, draft, "to_event_not_in_context", traceId);
       return undefined;
     }
 
     if (draft.reminderId && !allowedReminderIds.has(draft.reminderId)) {
-      await this.auditSkippedContextLink(plan, draft, "reminder_not_in_context");
+      await this.auditSkippedContextLink(plan, draft, "reminder_not_in_context", traceId);
       return undefined;
     }
 
     if (draft.confidence < 0.5) {
-      await this.auditSkippedContextLink(plan, draft, "confidence_below_persistence_threshold");
+      await this.auditSkippedContextLink(plan, draft, "confidence_below_persistence_threshold", traceId);
       return undefined;
     }
 
@@ -161,7 +163,8 @@ export class MemoryPlanApplier {
       tenantId: plan.tenantId,
       elderId: plan.elderId,
       sourceId: plan.sourceId,
-      payload: { link },
+      traceId,
+      payload: { traceId, link },
     });
 
     return link;
@@ -171,17 +174,19 @@ export class MemoryPlanApplier {
     plan: MemoryPlan,
     draft: MemoryPlan["contextLinks"][number],
     reason: string,
+    traceId: string,
   ): Promise<void> {
     await this.deps.auditLog.record({
       type: "memory_context_link_skipped",
       tenantId: plan.tenantId,
       elderId: plan.elderId,
       sourceId: plan.sourceId,
-      payload: { reason, contextLink: draft },
+      traceId,
+      payload: { traceId, reason, contextLink: draft },
     });
   }
 
-  private async writeSemanticMemories(plan: MemoryPlan, events: MemoryEvent[]): Promise<void> {
+  private async writeSemanticMemories(plan: MemoryPlan, events: MemoryEvent[], traceId: string): Promise<void> {
     for (const event of events) {
       await this.deps.semanticMemory.addMemory({
         tenantId: event.tenantId,
@@ -204,6 +209,7 @@ export class MemoryPlanApplier {
           createdAt: event.createdAt,
           riskLevel: event.riskLevel,
           visibility: event.visibility,
+          traceId,
         },
       });
     }
@@ -213,7 +219,7 @@ export class MemoryPlanApplier {
         tenantId: plan.tenantId,
         elderId: plan.elderId,
         memory: update.content,
-        metadata: { ...update.metadata, tenantId: plan.tenantId, elderId: plan.elderId, sourceId: plan.sourceId },
+        metadata: { ...update.metadata, tenantId: plan.tenantId, elderId: plan.elderId, sourceId: plan.sourceId, traceId },
       });
     }
   }

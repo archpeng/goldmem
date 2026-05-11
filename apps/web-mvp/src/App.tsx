@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Brain, Check, Database, GitBranch, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
-import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import { Bell, Brain, Check, Database, GitBranch, HelpCircle, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users, X } from "lucide-react";
+import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 import {
   confirmFamilyTask,
   confirmReminder,
   createTextNote,
+  getDebugTrace,
   listMvpData,
   queryMemory,
+  rejectFamilyTask,
+  requestFamilyTaskInfo,
   type IngestResult,
   type MvpLists,
 } from "./lib/api.js";
@@ -43,6 +46,8 @@ export function App() {
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [familyTasks, setFamilyTasks] = useState<FamilyTask[]>([]);
+  const [debugTraceId, setDebugTraceId] = useState("");
+  const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
   const [state, setState] = useState<RequestState>({ loading: false });
 
   const canRefresh = elderId.trim().length > 0;
@@ -84,6 +89,26 @@ export function App() {
     await runRequest(setState, copy.status.familyTaskConfirmed, async () => {
       await confirmFamilyTask({ taskId: task.id, actorUserId: familyActorUserId });
       await refreshLists(elderId, setLists, setState, false);
+    });
+  }
+
+  async function handleRejectFamilyTask(task: FamilyTask) {
+    await runRequest(setState, "家属任务已拒绝。", async () => {
+      await rejectFamilyTask({ taskId: task.id, actorUserId: familyActorUserId });
+      await refreshLists(elderId, setLists, setState, false);
+    });
+  }
+
+  async function handleRequestFamilyTaskInfo(task: FamilyTask) {
+    await runRequest(setState, "已标记需要补充信息。", async () => {
+      await requestFamilyTaskInfo({ taskId: task.id, actorUserId: familyActorUserId });
+      await refreshLists(elderId, setLists, setState, false);
+    });
+  }
+
+  async function handleLoadDebugTrace() {
+    await runRequest(setState, "调试链路已加载。", async () => {
+      setDebugTrace(await getDebugTrace(debugTraceId));
     });
   }
 
@@ -234,6 +259,8 @@ export function App() {
                   loading={state.loading}
                   task={task}
                   onConfirm={() => void handleConfirmFamilyTask(task)}
+                  onReject={() => void handleRejectFamilyTask(task)}
+                  onNeedsMoreInfo={() => void handleRequestFamilyTaskInfo(task)}
                 />
               ))
             ) : (
@@ -242,6 +269,35 @@ export function App() {
           </CardContent>
         </Card>
       </section>
+
+      {import.meta.env.DEV ? (
+        <section className="mt-4">
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>调试链路</CardTitle>
+                <CardDescription>按 traceId 读取只读 audit 链路。</CardDescription>
+              </div>
+              <Button disabled={state.loading || !debugTraceId.trim()} onClick={() => void handleLoadDebugTrace()}>
+                <Search className="h-4 w-4" />
+                查询
+              </Button>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <Input value={debugTraceId} onChange={(event) => setDebugTraceId(event.target.value)} placeholder="traceId" />
+              {debugTrace ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <p className="font-medium text-slate-950">{debugTrace.traceId}</p>
+                  <p className="mt-1">audit {debugTrace.auditTrail.length} 条</p>
+                  <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-white p-3 text-xs leading-5">
+                    {JSON.stringify(debugTrace, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -379,10 +435,14 @@ function FamilyTaskCard({
   loading,
   task,
   onConfirm,
+  onReject,
+  onNeedsMoreInfo,
 }: {
   loading: boolean;
   task: FamilyTask;
   onConfirm: () => void;
+  onReject: () => void;
+  onNeedsMoreInfo: () => void;
 }) {
   return (
     <article className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -394,12 +454,23 @@ function FamilyTaskCard({
             {translateUrgency(task.urgency)}
           </Badge>
           <Badge>{translateVisibility(task.visibility)}</Badge>
+          <Badge>{translateStatus(task.status)}</Badge>
         </div>
       </div>
-      <Button disabled={loading} onClick={onConfirm}>
-        <Check className="h-4 w-4" />
-        {copy.familyTasks.confirm}
-      </Button>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Button disabled={loading || task.status !== "pending"} onClick={onConfirm}>
+          <Check className="h-4 w-4" />
+          {copy.familyTasks.confirm}
+        </Button>
+        <Button disabled={loading || task.status !== "pending"} variant="secondary" onClick={onNeedsMoreInfo}>
+          <HelpCircle className="h-4 w-4" />
+          补充
+        </Button>
+        <Button disabled={loading || task.status !== "pending"} variant="secondary" onClick={onReject}>
+          <X className="h-4 w-4" />
+          拒绝
+        </Button>
+      </div>
     </article>
   );
 }

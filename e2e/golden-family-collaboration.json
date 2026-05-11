@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "Family collaboration golden E2E for explainable task action workflow.",
+  "seedNotes": [
+    {
+      "id": "fraud-family-review",
+      "transcript": "有个陌生人说能帮我办补贴，让我把身份证号和验证码发给他，我还没发。"
+    },
+    {
+      "id": "shopping-memory",
+      "transcript": "今天上午我去城里买了牙膏和青菜。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "shopping-recall",
+      "query": "我今天上午买了什么？",
+      "expectedAnswerHints": ["牙膏"],
+      "expectedEvidenceHints": ["牙膏"],
+      "allowedSources": ["postgres", "mem0", "context_link"],
+      "minConfidence": 0.4
+    }
+  ],
+  "riskExpectations": [
+    {
+      "seedNoteId": "fraud-family-review",
+      "eventRiskLevel": "fraud_risk",
+      "familyTaskType": "risk_review"
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码"
+    }
+  ],
+  "familyTaskActionExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码",
+      "action": "needs_more_info",
+      "expectedStatus": "needs_more_info"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": []
+}

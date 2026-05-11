@@ -13,7 +13,7 @@ export class IngestOrchestrator {
     this.temporalWriter = new IngestTemporalWriter(deps);
   }
 
-  async ingestSource(source: MemorySource): Promise<IngestResult> {
+  async ingestSource(source: MemorySource, traceId: string): Promise<IngestResult> {
     try {
       const baseContext = await this.deps.personalContextStore.buildContext({
         elderId: source.elderId,
@@ -43,15 +43,17 @@ export class IngestOrchestrator {
         source.elderId,
       );
 
-      const applied = await this.planApplier.apply(permissionedPlan, context);
-      const temporalMemory = await this.temporalWriter.write(source, applied);
+      const applied = await this.planApplier.apply(permissionedPlan, context, traceId);
+      const temporalMemory = await this.temporalWriter.write(source, applied, traceId);
 
       await this.deps.auditLog.record({
         type: "memory_ingest",
         tenantId: source.tenantId,
         elderId: source.elderId,
         sourceId: source.id,
+        traceId,
         payload: {
+          traceId,
           plan: permissionedPlan,
           result: {
             eventIds: applied.events.map((event) => event.id),
@@ -64,6 +66,7 @@ export class IngestOrchestrator {
       });
 
       return {
+        traceId,
         sourceId: source.id,
         summary: permissionedPlan.summary,
         events: applied.events,
@@ -82,7 +85,9 @@ export class IngestOrchestrator {
         tenantId: source.tenantId,
         elderId: source.elderId,
         sourceId: source.id,
+        traceId,
         payload: {
+          traceId,
           errorName: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
         },

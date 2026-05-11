@@ -141,7 +141,7 @@ export const RiskFlagRecordSchema = RiskFlagSchema.extend({
 export type RiskFlagRecord = z.infer<typeof RiskFlagRecordSchema>;
 
 export const FamilyConfirmationTaskDraftSchema = z.object({
-  type: z.enum(["reminder_confirm", "risk_review", "memory_correction", "general_review"]),
+  type: z.enum(["reminder_confirm", "risk_review", "memory_correction", "general_review", "conflict_review"]),
   title: z.string().min(1),
   summary: z.string().min(1),
   urgency: z.enum(["low", "medium", "high"]),
@@ -156,12 +156,25 @@ export const FamilyTaskSchema = FamilyConfirmationTaskDraftSchema.omit({ related
   elderId: z.string().min(1),
   familyUserId: z.string().optional(),
   relatedEventId: z.string().optional(),
-  status: z.enum(["pending", "confirmed", "cancelled"]),
+  status: z.enum(["pending", "confirmed", "rejected", "needs_more_info", "cancelled"]),
   confirmedBy: z.string().optional(),
   confirmedAt: ISODateTimeSchema.optional(),
   createdAt: ISODateTimeSchema,
 });
 export type FamilyTask = z.infer<typeof FamilyTaskSchema>;
+
+export const NotificationIntentSchema = z.object({
+  id: z.string().min(1),
+  tenantId: TenantIdSchema,
+  elderId: z.string().min(1),
+  familyUserId: z.string().optional(),
+  type: z.enum(["family_task", "reminder", "risk_review", "conflict_review"]),
+  status: z.enum(["pending", "sent", "failed", "cancelled"]),
+  title: z.string().min(1),
+  payload: z.record(z.unknown()).default({}),
+  createdAt: ISODateTimeSchema,
+});
+export type NotificationIntent = z.infer<typeof NotificationIntentSchema>;
 
 export const FeedbackSchema = z.object({
   id: z.string().min(1),
@@ -175,6 +188,32 @@ export const FeedbackSchema = z.object({
   createdAt: ISODateTimeSchema,
 });
 export type Feedback = z.infer<typeof FeedbackSchema>;
+
+export const AuditRecordSchema = z.object({
+  id: z.string().min(1),
+  tenantId: TenantIdSchema,
+  elderId: z.string().min(1),
+  sourceId: z.string().optional(),
+  traceId: z.string().optional(),
+  type: z.string().min(1),
+  payload: z.record(z.unknown()),
+  createdAt: ISODateTimeSchema,
+});
+export type AuditRecord = z.infer<typeof AuditRecordSchema>;
+
+export const DebugTraceSchema = z.object({
+  traceId: z.string().min(1),
+  source: MemorySourceSchema.optional(),
+  memoryPlan: z.unknown().optional(),
+  guardrails: z.unknown().optional(),
+  postgresWrites: z.unknown().optional(),
+  mem0WritesOrCandidates: z.unknown().optional(),
+  graphitiEpisodesOrFacts: z.unknown().optional(),
+  evidenceMerge: z.unknown().optional(),
+  finalAnswer: z.unknown().optional(),
+  auditTrail: z.array(AuditRecordSchema),
+});
+export type DebugTrace = z.infer<typeof DebugTraceSchema>;
 
 export const MemoryUpdateDraftSchema = z.object({
   target: z.enum(["semantic_memory", "wiki_page"]),
@@ -303,6 +342,7 @@ export const ParsedMemoryQuerySchema = z.object({
 export type ParsedMemoryQuery = z.infer<typeof ParsedMemoryQuerySchema>;
 
 export const MemoryAnswerSchema = z.object({
+  traceId: z.string().min(1).optional(),
   answerText: z.string().min(1),
   confidence: z.number().min(0).max(1),
   matchedSources: z
@@ -409,6 +449,7 @@ export const ConfirmReminderRequestSchema = z.object({
   tenantId: TenantIdSchema,
   actorUserId: z.string().min(1),
   remindAt: ISODateTimeSchema.optional(),
+  traceId: z.string().min(1).optional(),
 });
 export type ConfirmReminderRequest = z.infer<typeof ConfirmReminderRequestSchema>;
 
@@ -421,5 +462,6 @@ export const CreateFamilyReminderRequestSchema = z.object({
   remindAt: ISODateTimeSchema.optional(),
   reason: z.string().default("Family-created reminder."),
   idempotencyKey: z.string().min(1).optional(),
+  traceId: z.string().min(1).optional(),
 });
 export type CreateFamilyReminderRequest = z.infer<typeof CreateFamilyReminderRequestSchema>;

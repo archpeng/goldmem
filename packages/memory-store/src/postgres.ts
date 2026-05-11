@@ -7,6 +7,8 @@ import type {
   FamilyReminderCommandStore,
   FamilyTaskStore,
   FeedbackStore,
+  DebugTraceStore,
+  NotificationIntentStore,
   PersonalContextStore,
   ReminderStore,
   RiskFlagStore,
@@ -19,6 +21,8 @@ import { PostgresEventStore } from "./postgres-events.js";
 import { PostgresFamilyReminderCommandStore } from "./postgres-family-reminder-command.js";
 import { PostgresFamilyTaskStore } from "./postgres-family-tasks.js";
 import { PostgresFeedbackStore } from "./postgres-feedback.js";
+import { PostgresDebugTraceStore } from "./postgres-debug-traces.js";
+import { PostgresNotificationIntentStore } from "./postgres-notification-intents.js";
 import { PostgresPersonalContextStore } from "./postgres-read-models.js";
 import { PostgresReminderStore } from "./postgres-reminders.js";
 import { PostgresRiskFlagStore } from "./postgres-risk-flags.js";
@@ -39,6 +43,8 @@ export type PostgresStores = {
   familyTaskStore: FamilyTaskStore;
   riskFlagStore: RiskFlagStore;
   feedbackStore: FeedbackStore;
+  debugTraceStore: DebugTraceStore;
+  notificationIntentStore: NotificationIntentStore;
   familyReminderCommandStore: FamilyReminderCommandStore;
   personalContextStore: PersonalContextStore;
   auditLog: AuditLog;
@@ -60,6 +66,8 @@ export function createPostgresStores(options: PostgresStoreOptions): PostgresSto
     familyTaskStore: new PostgresFamilyTaskStore(db),
     riskFlagStore: new PostgresRiskFlagStore(db),
     feedbackStore: new PostgresFeedbackStore(db),
+    debugTraceStore: new PostgresDebugTraceStore(db),
+    notificationIntentStore: new PostgresNotificationIntentStore(db),
     familyReminderCommandStore: new PostgresFamilyReminderCommandStore(db),
     personalContextStore: new PostgresPersonalContextStore(db),
     auditLog: new PostgresAuditLog(db),

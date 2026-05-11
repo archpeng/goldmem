@@ -6,6 +6,7 @@ import {
   type MemorySource,
   type Reminder,
 } from "@goldmem/memory-schema";
+import { randomUUID } from "node:crypto";
 import type { ModelGateway } from "@goldmem/model-gateway";
 import type { TemporalMemoryStore } from "@goldmem/temporal-memory";
 import type {
@@ -33,6 +34,7 @@ export type IngestTextInput = {
   transcript: string;
   localCreatedAt?: string;
   metadata?: MemorySource["metadata"];
+  traceId?: string;
 };
 
 export type IngestVoiceInput = {
@@ -41,9 +43,11 @@ export type IngestVoiceInput = {
   audio: Uint8Array;
   localCreatedAt?: string;
   metadata?: MemorySource["metadata"];
+  traceId?: string;
 };
 
 export type IngestResult = {
+  traceId: string;
   sourceId: string;
   summary: string;
   events: MemoryEvent[];
@@ -68,6 +72,7 @@ export type QueryMemoryInput = {
   elderId: string;
   query: string;
   now?: string;
+  traceId?: string;
 };
 
 export type CreateFamilyReminderInput = CreateFamilyReminderRequest;
@@ -100,6 +105,7 @@ export class ElderMemoryKernel {
   }
 
   async ingestVoice(input: IngestVoiceInput): Promise<IngestResult> {
+    const traceId = input.traceId ?? randomUUID();
     const audioUrl = await this.deps.sourceStore.saveAudio(input.audio);
     const transcription = await this.deps.modelGateway.transcribe(input.audio);
 
@@ -115,10 +121,11 @@ export class ElderMemoryKernel {
       metadata: input.metadata,
     });
 
-    return this.ingestOrchestrator.ingestSource(source);
+    return this.ingestOrchestrator.ingestSource(source, traceId);
   }
 
   async ingestText(input: IngestTextInput): Promise<IngestResult> {
+    const traceId = input.traceId ?? randomUUID();
     const source = await this.deps.sourceStore.create({
       tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
       elderId: input.elderId,
@@ -129,14 +136,14 @@ export class ElderMemoryKernel {
       metadata: input.metadata,
     });
 
-    return this.ingestOrchestrator.ingestSource(source);
+    return this.ingestOrchestrator.ingestSource(source, traceId);
   }
 
   async createFamilyReminder(input: CreateFamilyReminderInput): Promise<Reminder> {
-    return createFamilyReminderCommand(this.deps, input);
+    return createFamilyReminderCommand(this.deps, input, input.traceId ?? randomUUID());
   }
 
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {
-    return this.queryOrchestrator.queryMemory(input);
+    return this.queryOrchestrator.queryMemory(input, input.traceId ?? randomUUID());
   }
 }

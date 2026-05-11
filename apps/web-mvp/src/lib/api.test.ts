@@ -3,8 +3,11 @@ import {
   confirmFamilyTask,
   confirmReminder,
   createTextNote,
+  getDebugTrace,
   listMvpData,
   queryMemory,
+  rejectFamilyTask,
+  requestFamilyTaskInfo,
 } from "./api.js";
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -16,7 +19,7 @@ beforeEach(() => {
 
 describe("web MVP api adapter", () => {
   it("posts text notes through the API proxy", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ sourceId: "source-1", summary: "已保存", events: [], reminderCandidates: [], elderFacingCards: [] }));
+    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", sourceId: "source-1", summary: "已保存", events: [], reminderCandidates: [], elderFacingCards: [] }));
 
     await expect(createTextNote({ elderId: "elder-1", transcript: "我买了青菜。" })).resolves.toMatchObject({
       sourceId: "source-1",
@@ -27,6 +30,14 @@ describe("web MVP api adapter", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ elderId: "elder-1", transcript: "我买了青菜。" }),
     }));
+  });
+
+  it("loads debug traces through the debug API", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", auditTrail: [] }));
+
+    await expect(getDebugTrace("trace-1")).resolves.toMatchObject({ traceId: "trace-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/debug/traces/trace-1", expect.any(Object));
   });
 
   it("queries memory and lists MVP data with encoded elder ids", async () => {
@@ -44,21 +55,31 @@ describe("web MVP api adapter", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/query", expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/elder/events?elderId=elder%201", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/elder/reminders?elderId=elder%201", expect.any(Object));
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/elders/elder%201/pending-tasks", expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/elders/elder%201/tasks", expect.any(Object));
   });
 
   it("confirms reminders and family tasks through thin route calls", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ id: "reminder-1", status: "confirmed" }))
-      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "confirmed" }));
+      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "confirmed" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "rejected" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "task-1", status: "needs_more_info" }));
 
     await confirmReminder({ reminderId: "reminder-1", actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" });
     await confirmFamilyTask({ taskId: "task-1", actorUserId: "family-1" });
+    await rejectFamilyTask({ taskId: "task-1", actorUserId: "family-1" });
+    await requestFamilyTaskInfo({ taskId: "task-1", actorUserId: "family-1" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/reminders/reminder-1/confirm", expect.objectContaining({
       body: JSON.stringify({ actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" }),
     }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/family/tasks/task-1/confirm", expect.objectContaining({
+      body: JSON.stringify({ actorUserId: "family-1" }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/family/tasks/task-1/reject", expect.objectContaining({
+      body: JSON.stringify({ actorUserId: "family-1" }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/tasks/task-1/needs-more-info", expect.objectContaining({
       body: JSON.stringify({ actorUserId: "family-1" }),
     }));
   });

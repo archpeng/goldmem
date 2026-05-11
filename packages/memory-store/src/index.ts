@@ -1,11 +1,13 @@
 import type {
   FamilyTask,
   Feedback,
+  DebugTrace,
   MemoryAnswer,
   MemoryContextLink,
   MemoryEvent,
   MemoryPlan,
   MemorySource,
+  NotificationIntent,
   PersonalContext,
   Reminder,
   RiskFlag,
@@ -67,8 +69,11 @@ export interface FamilyTaskStore {
     visibility: string;
     relatedEventId?: string;
   }): Promise<FamilyTask>;
+  listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]>;
   listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]>;
   confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
+  reject(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
+  requestMoreInfo(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
 }
 
 export interface RiskFlagStore {
@@ -76,7 +81,14 @@ export interface RiskFlagStore {
 }
 
 export interface AuditLog {
-  record(input: { type: string; tenantId: string; elderId: string; sourceId?: string; payload: Record<string, unknown> }): Promise<void>;
+  record(input: {
+    type: string;
+    tenantId: string;
+    elderId: string;
+    sourceId?: string;
+    traceId?: string;
+    payload: Record<string, unknown>;
+  }): Promise<void>;
 }
 
 export type CreateFamilyReminderCommandInput = {
@@ -100,6 +112,17 @@ export interface FamilyReminderCommandStore {
 
 export interface FeedbackStore {
   create(input: Omit<Feedback, "id" | "createdAt">): Promise<Feedback>;
+}
+
+export interface DebugTraceStore {
+  getByTrace(input: { tenantId: string; traceId: string }): Promise<DebugTrace | null>;
+  getBySource(input: { tenantId: string; sourceId: string }): Promise<DebugTrace | null>;
+  getByAuditId(input: { tenantId: string; auditId: string }): Promise<DebugTrace | null>;
+}
+
+export interface NotificationIntentStore {
+  create(input: Omit<NotificationIntent, "id" | "createdAt" | "status"> & { status?: NotificationIntent["status"] }): Promise<NotificationIntent>;
+  listByElder(input: { tenantId: string; elderId: string }): Promise<NotificationIntent[]>;
 }
 
 export type MemoryRecallResult = {
@@ -164,6 +187,7 @@ export interface TemporalMemoryJobStore {
     tenantId: string;
     elderId: string;
     sourceId: string;
+    traceId?: string;
     episode: Record<string, unknown>;
     nextRunAt?: string;
     maxAttempts?: number;

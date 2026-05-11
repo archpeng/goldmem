@@ -6,7 +6,7 @@ import type { AppliedMemoryPlan } from "./ingest-types.js";
 export class IngestTemporalWriter {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
 
-  async write(source: MemorySource, applied: AppliedMemoryPlan): Promise<IngestResult["temporalMemory"]> {
+  async write(source: MemorySource, applied: AppliedMemoryPlan, traceId: string): Promise<IngestResult["temporalMemory"]> {
     const episode = buildMemorySourceTemporalEpisode({
       tenantId: source.tenantId,
       elderId: source.elderId,
@@ -14,7 +14,7 @@ export class IngestTemporalWriter {
       events: applied.events,
       reminders: applied.reminderCandidates,
       riskFlags: applied.riskFlags,
-      metadata: { writeMode: "production_ingest" },
+      metadata: { writeMode: "production_ingest", traceId },
     });
 
     try {
@@ -32,6 +32,7 @@ export class IngestTemporalWriter {
           tenantId: source.tenantId,
           elderId: source.elderId,
           sourceId: source.id,
+          traceId,
           episode: { ...episode },
         });
         retryJobId = job.id;
@@ -43,7 +44,9 @@ export class IngestTemporalWriter {
           tenantId: source.tenantId,
           elderId: source.elderId,
           sourceId: source.id,
+          traceId,
           payload: {
+            traceId,
             originalErrorCode: errorCode,
             originalErrorMessage: errorMessage,
             errorMessage: enqueueErrorMessage,
@@ -55,7 +58,8 @@ export class IngestTemporalWriter {
         tenantId: source.tenantId,
         elderId: source.elderId,
         sourceId: source.id,
-        payload: { errorCode, errorMessage, retryQueued, retryJobId },
+        traceId,
+        payload: { traceId, errorCode, errorMessage, retryQueued, retryJobId },
       });
       return { status: "failed", errorCode, errorMessage, retryQueued, retryJobId };
     }

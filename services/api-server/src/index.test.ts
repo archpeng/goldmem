@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
-import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 describe("api-server", () => {
   it("handles elder text ingest, query, reminder list, and family task endpoints", async () => {
@@ -52,7 +52,7 @@ describe("api-server", () => {
 
     const tasks = await server.inject({
       method: "GET",
-      url: "/family/elders/elder-1/pending-tasks",
+      url: "/family/elders/elder-1/tasks",
     });
     expect(tasks.statusCode).toBe(200);
     expect(tasks.json()).toHaveLength(1);
@@ -65,6 +65,22 @@ describe("api-server", () => {
     expect(confirmed.statusCode).toBe(200);
     expect(confirmed.json().status).toBe("confirmed");
     expect(deps.auditRecords.some((record) => record.type === "family_task_confirmed")).toBe(true);
+
+    const rejected = await server.inject({
+      method: "POST",
+      url: "/family/tasks/task-1/reject",
+      payload: { actorUserId: "family-1" },
+    });
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.json().status).toBe("rejected");
+
+    const needsMoreInfo = await server.inject({
+      method: "POST",
+      url: "/family/tasks/task-1/needs-more-info",
+      payload: { actorUserId: "family-1" },
+    });
+    expect(needsMoreInfo.statusCode).toBe(200);
+    expect(needsMoreInfo.json().status).toBe("needs_more_info");
 
     const reminderConfirmed = await server.inject({
       method: "POST",
@@ -89,6 +105,13 @@ describe("api-server", () => {
     expect(familyReminder.statusCode).toBe(200);
     expect(familyReminder.json().id).toBe("family-reminder-1");
     expect(deps.auditRecords.some((record) => record.type === "family_reminder_created")).toBe(true);
+
+    const trace = await server.inject({
+      method: "GET",
+      url: "/debug/traces/trace-1",
+    });
+    expect(trace.statusCode).toBe(200);
+    expect(trace.json().traceId).toBe("trace-1");
   });
 
   it("fails fast when production requires Graphiti config", () => {
@@ -152,10 +175,23 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
   };
 
   const auditRecords: Array<{ type: string }> = [];
+  const debugTrace: DebugTrace = {
+    traceId: "trace-1",
+    auditTrail: [{
+      id: "audit-1",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      traceId: "trace-1",
+      type: "memory_query",
+      payload: { traceId: "trace-1" },
+      createdAt: "2026-05-09T12:00:00.000Z",
+    }],
+  };
 
   return {
     kernel: {
       ingestText: async () => ({
+        traceId: "trace-ingest",
         sourceId: "source-1",
         summary: "Summary",
         events: [],
@@ -163,6 +199,7 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         elderFacingCards: [],
       }),
       ingestVoice: async () => ({
+        traceId: "trace-ingest",
         sourceId: "source-1",
         summary: "Summary",
         events: [],
@@ -170,6 +207,7 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         elderFacingCards: [],
       }),
       queryMemory: async (): Promise<MemoryAnswer> => ({
+        traceId: "trace-query",
         answerText: "You bought vegetables.",
         confidence: 0.9,
         matchedSources: [],
@@ -216,11 +254,24 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
     } as ApiServerDeps["reminderEngine"],
     familyTaskStore: {
       create: async (input) => ({ ...task, ...input }),
+      listByElder: async () => [task],
       listPending: async () => [task],
-      confirm: async (_taskId, actorUserId) => ({
+      confirm: async (input) => ({
         ...task,
         status: "confirmed",
-        confirmedBy: actorUserId,
+        confirmedBy: input.actorUserId,
+        confirmedAt: "2026-05-09T12:01:00.000Z",
+      }),
+      reject: async (input) => ({
+        ...task,
+        status: "rejected",
+        confirmedBy: input.actorUserId,
+        confirmedAt: "2026-05-09T12:01:00.000Z",
+      }),
+      requestMoreInfo: async (input) => ({
+        ...task,
+        status: "needs_more_info",
+        confirmedBy: input.actorUserId,
         confirmedAt: "2026-05-09T12:01:00.000Z",
       }),
     },
@@ -228,6 +279,20 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
       record: async (input) => {
         auditRecords.push(input);
       },
+    },
+    debugTraceStore: {
+      getByTrace: async () => debugTrace,
+      getBySource: async () => debugTrace,
+      getByAuditId: async () => debugTrace,
+    },
+    notificationIntentStore: {
+      create: async (input) => ({
+        ...input,
+        id: "notification-1",
+        status: input.status ?? "pending",
+        createdAt: "2026-05-09T12:00:00.000Z",
+      }),
+      listByElder: async () => [],
     },
     healthCheck: async () => ({ postgres: "ok" }),
     auditRecords,

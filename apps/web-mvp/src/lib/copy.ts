@@ -59,6 +59,8 @@ export function translateStatus(status: string): string {
     sent: "已发送",
     done: "已完成",
     cancelled: "已取消",
+    rejected: "已拒绝",
+    needs_more_info: "需补充",
     expired: "已过期",
     active: "有效",
     needs_review: "需复核",

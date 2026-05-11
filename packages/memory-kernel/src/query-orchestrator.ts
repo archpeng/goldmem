@@ -25,7 +25,7 @@ import type { ElderMemoryKernelDeps, QueryMemoryInput } from "./index.js";
 export class QueryOrchestrator {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
 
-  async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {
+  async queryMemory(input: QueryMemoryInput, traceId: string): Promise<MemoryAnswer> {
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const now = input.now ?? new Date().toISOString();
     const context = await this.deps.personalContextStore.buildContext({
@@ -63,6 +63,7 @@ export class QueryOrchestrator {
       elderId: input.elderId,
       query: input.query,
       parsedQuery,
+      traceId,
     });
     const alignedTemporalResults = await this.alignTemporalEvidence({
       tenantId,
@@ -86,6 +87,7 @@ export class QueryOrchestrator {
     if (evidence.length === 0) {
       const answer: MemoryAnswer = {
         answerText: "I could not find a matching memory for that question.",
+        traceId,
         confidence: 0,
         matchedSources: [],
         retrievedEvidence: [],
@@ -97,7 +99,8 @@ export class QueryOrchestrator {
         type: "memory_query",
         tenantId,
         elderId: input.elderId,
-        payload: { query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true },
+        traceId,
+        payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true, failureType: "no_evidence" },
       });
 
       return answer;
@@ -111,6 +114,7 @@ export class QueryOrchestrator {
     }));
     const answer: MemoryAnswer = {
       ...generatedAnswer,
+      traceId,
       retrievedEvidence: evidence,
       matchedSources: evidenceBoundMatchedSources(generatedAnswer.matchedSources, evidence),
     };
@@ -119,7 +123,8 @@ export class QueryOrchestrator {
       type: "memory_query",
       tenantId,
       elderId: input.elderId,
-      payload: { query: input.query, parsedQuery, evidence, retrieval, answer },
+      traceId,
+      payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer },
     });
 
     return answer;
@@ -130,6 +135,7 @@ export class QueryOrchestrator {
     elderId: string;
     query: string;
     parsedQuery: ParsedMemoryQuery;
+    traceId: string;
   }): Promise<TemporalEvidence[]> {
     if (!shouldSearchTemporalMemory(input.query, input.parsedQuery)) return [];
 
@@ -148,7 +154,9 @@ export class QueryOrchestrator {
         type: "graphiti_search_failed",
         tenantId: input.tenantId,
         elderId: input.elderId,
+        traceId: input.traceId,
         payload: {
+          traceId: input.traceId,
           query: input.query,
           errorCode: error instanceof Error && error.name === "TemporalMemoryNotConfiguredError"
             ? "graphiti_not_configured"

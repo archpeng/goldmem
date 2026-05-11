@@ -1,6 +1,7 @@
-import type { FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 export type IngestResult = {
+  traceId: string;
   sourceId: string;
   summary: string;
   events: MemoryEvent[];
@@ -45,7 +46,7 @@ export async function listMvpData(elderId: string): Promise<MvpLists> {
   const [events, reminders, familyTasks] = await Promise.all([
     request<MemoryEvent[]>(`/elder/events?elderId=${encoded}`),
     request<Reminder[]>(`/elder/reminders?elderId=${encoded}`),
-    request<FamilyTask[]>(`/family/elders/${encoded}/pending-tasks`),
+    request<FamilyTask[]>(`/family/elders/${encoded}/tasks`),
   ]);
   return { events, reminders, familyTasks };
 }
@@ -71,6 +72,28 @@ export async function confirmFamilyTask(input: { taskId: string; actorUserId: st
       actorUserId: input.actorUserId,
     },
   });
+}
+
+export async function rejectFamilyTask(input: { taskId: string; actorUserId: string }): Promise<FamilyTask> {
+  return request<FamilyTask>(`/family/tasks/${encodeURIComponent(input.taskId)}/reject`, {
+    method: "POST",
+    body: {
+      actorUserId: input.actorUserId,
+    },
+  });
+}
+
+export async function requestFamilyTaskInfo(input: { taskId: string; actorUserId: string }): Promise<FamilyTask> {
+  return request<FamilyTask>(`/family/tasks/${encodeURIComponent(input.taskId)}/needs-more-info`, {
+    method: "POST",
+    body: {
+      actorUserId: input.actorUserId,
+    },
+  });
+}
+
+export async function getDebugTrace(traceId: string): Promise<DebugTrace> {
+  return request<DebugTrace>(`/debug/traces/${encodeURIComponent(traceId)}`);
 }
 
 async function request<T>(path: string, options: { method?: string; body?: Record<string, unknown> } = {}): Promise<T> {

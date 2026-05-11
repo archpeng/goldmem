@@ -5,6 +5,7 @@ import type { CreateFamilyReminderInput, ElderMemoryKernelDeps } from "./index.j
 export async function createFamilyReminderCommand(
   deps: ElderMemoryKernelDeps,
   input: CreateFamilyReminderInput,
+  traceId: string,
 ): Promise<Reminder> {
   const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
   const source = {
@@ -31,10 +32,12 @@ export async function createFamilyReminderCommand(
     type: "family_reminder_created",
     tenantId,
     elderId: input.elderId,
+    traceId,
     payload: {
       actorUserId: input.actorUserId,
       hasRemindAt: Boolean(input.remindAt),
       idempotencyKey: input.idempotencyKey,
+      traceId,
     },
   };
 
@@ -63,6 +66,7 @@ export async function createFamilyReminderCommand(
       elderId: input.elderId,
       actorUserId: input.actorUserId,
       idempotencyKey: input.idempotencyKey,
+      traceId,
       error,
     });
     throw error;
@@ -76,6 +80,7 @@ async function recordFamilyReminderFailure(
     elderId: string;
     actorUserId: string;
     idempotencyKey?: string;
+    traceId: string;
     error: unknown;
   },
 ): Promise<void> {
@@ -84,9 +89,11 @@ async function recordFamilyReminderFailure(
       type: "family_reminder_create_failed",
       tenantId: input.tenantId,
       elderId: input.elderId,
+      traceId: input.traceId,
       payload: {
         actorUserId: input.actorUserId,
         idempotencyKey: input.idempotencyKey,
+        traceId: input.traceId,
         errorName: input.error instanceof Error ? input.error.name : "UnknownError",
         errorMessage: input.error instanceof Error ? input.error.message : String(input.error),
       },

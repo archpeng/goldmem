@@ -43,13 +43,22 @@ export async function runGraphitiRetryBatch(input: {
 }
 
 async function audit(postgres: PostgresStores, type: string, job: TemporalMemoryJob, payload: Record<string, unknown>) {
+  const traceId = extractTraceId(job.episode);
   await postgres.auditLog.record({
     type,
     tenantId: job.tenantId,
     elderId: job.elderId,
     sourceId: job.sourceId,
-    payload: { jobId: job.id, attempts: job.attempts, status: job.status, ...payload },
+    traceId,
+    payload: { traceId, jobId: job.id, attempts: job.attempts, status: job.status, ...payload },
   });
+}
+
+function extractTraceId(episode: Record<string, unknown>): string | undefined {
+  const metadata = episode.metadata;
+  if (!metadata || typeof metadata !== "object" || !("traceId" in metadata)) return undefined;
+  const traceId = (metadata as { traceId?: unknown }).traceId;
+  return typeof traceId === "string" && traceId.length > 0 ? traceId : undefined;
 }
 
 function nextRetryTime(job: TemporalMemoryJob): Date {

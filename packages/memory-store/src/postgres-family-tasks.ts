@@ -45,23 +45,43 @@ export class PostgresFamilyTaskStore implements FamilyTaskStore {
   }
 
   async listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
+    return (await this.listByElder(input)).filter((task) => task.status === "pending");
+  }
+
+  async listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
     const rows = await this.db
       .select()
       .from(schema.familyTasks)
       .where(and(
         eq(schema.familyTasks.tenantId, input.tenantId),
         eq(schema.familyTasks.elderId, input.elderId),
-        eq(schema.familyTasks.status, "pending"),
       ))
       .orderBy(desc(schema.familyTasks.createdAt));
     return rows.map(mapFamilyTask);
   }
 
   async confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "confirmed" });
+  }
+
+  async reject(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "rejected" });
+  }
+
+  async requestMoreInfo(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "needs_more_info" });
+  }
+
+  private async updateStatus(input: {
+    tenantId: string;
+    taskId: string;
+    actorUserId: string;
+    status: FamilyTask["status"];
+  }): Promise<FamilyTask> {
     const confirmedAt = new Date();
     const [row] = await this.db
       .update(schema.familyTasks)
-      .set({ status: "confirmed", confirmedBy: input.actorUserId, confirmedAt })
+      .set({ status: input.status, confirmedBy: input.actorUserId, confirmedAt })
       .where(and(eq(schema.familyTasks.tenantId, input.tenantId), eq(schema.familyTasks.id, input.taskId)))
       .returning();
     if (!row) throw new Error(`Family task not found: ${input.taskId}`);

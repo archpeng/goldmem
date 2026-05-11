@@ -23,10 +23,12 @@
     "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json tsx scripts/golden-e2e.ts",
     "e2e:graphiti": "GOLDEN_E2E_FIXTURE=e2e/golden-graphiti.json GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts",
     "graphiti:smoke": "tsx scripts/graphiti-smoke.ts",
+    "graphiti:consolidate": "tsx scripts/graphiti-consolidate.ts",
     "graphiti:replay": "tsx scripts/graphiti-replay.ts",
     "graphiti:worker": "tsx scripts/graphiti-worker.ts",
     "mem0:smoke": "tsx scripts/mem0-smoke.ts",
     "semantic:rebuild": "tsx scripts/rebuild-semantic-memory.ts",
+    "eval:candidates": "tsx scripts/export-eval-candidates.ts",
     "eval": "tsx scripts/eval-runner.ts"
   },
   "devDependencies": {

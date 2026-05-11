@@ -195,3 +195,15 @@ export const familyReminderCommands = pgTable("family_reminder_commands", {
   request: jsonb("request_json").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const notificationIntents = pgTable("notification_intents", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  elderId: text("elder_id").notNull(),
+  familyUserId: text("family_user_id"),
+  type: text("type").notNull(),
+  status: text("status").notNull(),
+  title: text("title").notNull(),
+  payload: jsonb("payload_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

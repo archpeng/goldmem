@@ -60,13 +60,20 @@ describe("ElderMemoryKernel", () => {
     const result = await harness.kernel.ingestText({
       elderId: "elder-1",
       transcript: "I bought vegetables at the market.",
+      traceId: "trace-ingest-1",
     });
 
+    expect(result.traceId).toBe("trace-ingest-1");
     expect(result.events).toHaveLength(1);
     expect(result.events[0]?.visibility).toBe("private");
     expect(result.events[0]?.status).toBe("active");
     expect(harness.semanticMemory.memories).toHaveLength(1);
+    expect(harness.semanticMemory.memories[0]?.metadata).toMatchObject({ traceId: "trace-ingest-1" });
     expect(harness.audit.records.at(-1)?.type).toBe("memory_ingest");
+    expect(harness.audit.records.at(-1)).toMatchObject({
+      traceId: "trace-ingest-1",
+      payload: expect.objectContaining({ traceId: "trace-ingest-1" }),
+    });
   });
 
   it("requires confirmation for ambiguous reminder times", async () => {
@@ -239,9 +246,12 @@ describe("ElderMemoryKernel", () => {
         elderId: "elder-1",
         sourceId: "source-1",
         status: "pending",
+        episode: expect.objectContaining({
+          metadata: expect.objectContaining({ traceId: result.traceId }),
+        }),
       }),
     ]);
-    expect(harness.audit.records.some((record) => record.type === "graphiti_write_failed")).toBe(true);
+    expect(harness.audit.records.some((record) => record.type === "graphiti_write_failed" && record.traceId === result.traceId)).toBe(true);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_ingest");
   });
 
@@ -844,11 +854,20 @@ describe("ElderMemoryKernel", () => {
       elderId: "elder-1",
       query: "What happened yesterday?",
       now,
+      traceId: "trace-query-no-evidence",
     });
 
+    expect(answer.traceId).toBe("trace-query-no-evidence");
     expect(answer.confidence).toBe(0);
     expect(answer.safetyNote).toContain("No source evidence");
     expect(harness.model.answerCalls).toBe(0);
+    expect(harness.audit.records.at(-1)).toMatchObject({
+      traceId: "trace-query-no-evidence",
+      payload: expect.objectContaining({
+        traceId: "trace-query-no-evidence",
+        failureType: "no_evidence",
+      }),
+    });
   });
 
   it("expands query evidence through persisted context links", async () => {
@@ -1056,6 +1075,7 @@ describe("ElderMemoryKernel", () => {
       remindAt: "2026-05-11T09:00:00.000Z",
       reason: "Family-created reminder.",
       idempotencyKey: "family-reminder-1",
+      traceId: "trace-family-reminder-1",
     });
 
     expect(harness.sourceStore.sources[0]).toMatchObject({
@@ -1071,11 +1091,13 @@ describe("ElderMemoryKernel", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "family_reminder_created",
+          traceId: "trace-family-reminder-1",
           payload: expect.objectContaining({
             reminderId: reminder.id,
             actorUserId: "family-1",
             hasRemindAt: true,
             idempotencyKey: "family-reminder-1",
+            traceId: "trace-family-reminder-1",
           }),
         }),
       ]),
@@ -1512,10 +1534,31 @@ class InMemoryFamilyTaskStore implements FamilyTaskStore {
     return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId && task.status === "pending");
   }
 
+  async listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
+    return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId);
+  }
+
   async confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "confirmed" });
+  }
+
+  async reject(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "rejected" });
+  }
+
+  async requestMoreInfo(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
+    return this.updateStatus({ ...input, status: "needs_more_info" });
+  }
+
+  private updateStatus(input: {
+    tenantId: string;
+    taskId: string;
+    actorUserId: string;
+    status: FamilyTask["status"];
+  }): FamilyTask {
     const task = this.tasks.find((item) => item.tenantId === input.tenantId && item.id === input.taskId);
     if (!task) throw new Error(`Family task not found: ${input.taskId}`);
-    task.status = "confirmed";
+    task.status = input.status;
     task.confirmedBy = input.actorUserId;
     task.confirmedAt = now;
     return task;

@@ -1,4 +1,4 @@
-import type { FamilyTask, MemoryContextLink, MemoryEvent, MemorySource, Reminder } from "@goldmem/memory-schema";
+import type { FamilyTask, MemoryContextLink, MemoryEvent, MemorySource, NotificationIntent, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
 import type { TemporalMemoryJob } from "./index.js";
 import * as schema from "./postgres-schema.js";
 
@@ -82,6 +82,24 @@ export function mapFamilyTask(row: typeof schema.familyTasks.$inferSelect): Fami
   };
 }
 
+export function mapRiskFlag(row: typeof schema.riskFlags.$inferSelect): RiskFlagRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    elderId: row.elderId,
+    sourceId: row.sourceId,
+    eventId: row.eventId ?? undefined,
+    type: row.type as RiskFlagRecord["type"],
+    severity: row.severity as RiskFlagRecord["severity"],
+    summary: row.summary,
+    reason: row.reason,
+    requiresFamilyReview: row.requiresFamilyReview,
+    requiresHumanConfirmation: row.requiresHumanConfirmation,
+    evidence: row.evidence as RiskFlagRecord["evidence"],
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export function mapContextLink(row: typeof schema.memoryContextLinks.$inferSelect): MemoryContextLink {
   return {
     id: row.id,
@@ -114,5 +132,19 @@ export function mapTemporalMemoryJob(row: typeof schema.temporalMemoryJobs.$infe
     episode: row.episode as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function mapNotificationIntent(row: typeof schema.notificationIntents.$inferSelect): NotificationIntent {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    elderId: row.elderId,
+    familyUserId: row.familyUserId ?? undefined,
+    type: row.type as NotificationIntent["type"],
+    status: row.status as NotificationIntent["status"],
+    title: row.title,
+    payload: row.payload as NotificationIntent["payload"],
+    createdAt: row.createdAt.toISOString(),
   };
 }

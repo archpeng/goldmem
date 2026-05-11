@@ -50,6 +50,12 @@ const GoldenCaseSchema = z.object({
     )
     .default([]),
   familyTaskExpectations: z.array(z.object({ type: z.string().optional(), hint: z.string().min(1) })).default([]),
+  familyTaskActionExpectations: z.array(z.object({
+    type: z.string().optional(),
+    hint: z.string().min(1),
+    action: z.enum(["confirm", "reject", "needs_more_info"]),
+    expectedStatus: z.enum(["confirmed", "rejected", "needs_more_info"]),
+  })).default([]),
   forbidAutoConfirmedReminderHints: z.array(z.string().min(1)).default([]),
 });
 
@@ -82,6 +88,7 @@ for (const note of fixture.seedNotes) {
   console.log(
     `golden seed ok: ${note.id} source=${result.sourceId} events=${result.events.length} reminders=${result.reminderCandidates.length}`,
   );
+  assert(Boolean(result.traceId), `Seed note ${note.id} did not return traceId`);
   ingests.set(note.id, result);
   assert(result.events.length > 0 || result.reminderCandidates.length > 0, `Seed note ${note.id} produced no records`);
   if (fixturePath.includes("graphiti")) {
@@ -92,7 +99,7 @@ for (const note of fixture.seedNotes) {
 const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
 const events = await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`);
 const reminders = await request<Reminder[]>("GET", `/elder/reminders?${tenantQuery}`);
-const familyTasks = await request<FamilyTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}`);
+const familyTasks = await request<FamilyTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/tasks?tenantId=${encodeURIComponent(tenantId)}`);
 
 for (const expectation of fixture.riskExpectations) {
   const ingest = requiredIngest(ingests, expectation.seedNoteId);
@@ -130,6 +137,21 @@ for (const expectation of fixture.familyTaskExpectations) {
   );
 }
 
+for (const expectation of fixture.familyTaskActionExpectations) {
+  const task = familyTasks.find((item) => {
+    const text = `${item.title}\n${item.summary}`;
+    return (!expectation.type || item.type === expectation.type) && textIncludes(text, expectation.hint);
+  });
+  assert(Boolean(task), `Expected actionable family task containing ${expectation.hint}`);
+  const path = expectation.action === "confirm"
+    ? `/family/tasks/${encodeURIComponent(task.id)}/confirm`
+    : expectation.action === "reject"
+      ? `/family/tasks/${encodeURIComponent(task.id)}/reject`
+      : `/family/tasks/${encodeURIComponent(task.id)}/needs-more-info`;
+  const updated = await request<FamilyTask>("POST", path, { tenantId, actorUserId: "golden-family" });
+  assert(updated.status === expectation.expectedStatus, `Expected family task ${task.id} status ${expectation.expectedStatus}`);
+}
+
 for (const hint of fixture.forbidAutoConfirmedReminderHints) {
   assert(
     !reminders.some(
@@ -149,6 +171,9 @@ for (const queryCase of fixture.queries) {
     elderId,
     query: queryCase.query,
   }));
+  assert(Boolean(answer.traceId), `${queryCase.id} did not return traceId`);
+  const debugTrace = await request<{ auditTrail?: unknown[] }>("GET", `/debug/traces/${encodeURIComponent(answer.traceId ?? "")}?tenantId=${encodeURIComponent(tenantId)}`);
+  assert((debugTrace.auditTrail?.length ?? 0) > 0, `${queryCase.id} debug trace did not read back audit trail`);
   const answerText = normalizeText(answer.answerText);
   const evidenceText = normalizeText(answer.retrievedEvidence.map((item) => item.summary).join("\n"));
   const evidenceSources = new Set(answer.retrievedEvidence.map((item) => item.retrievalSource));
@@ -214,6 +239,7 @@ console.log(
 
 async function ingestNote(transcript: string) {
   return request<{
+    traceId: string;
     sourceId: string;
     summary: string;
     events: MemoryEvent[];

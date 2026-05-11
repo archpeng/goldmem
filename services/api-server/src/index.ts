@@ -1,5 +1,6 @@
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -18,7 +19,9 @@ import {
   type FamilyTaskStore,
   type AuditLog,
   type ContextLinkStore,
+  type DebugTraceStore,
   type EventStore,
+  type NotificationIntentStore,
   type ReminderStore,
 } from "@goldmem/memory-store";
 import { NotImplementedModelGateway, OpenAIModelGateway, type ModelGateway } from "@goldmem/model-gateway";
@@ -37,9 +40,18 @@ export const apiRouteContract = {
   family: {
     todaySummary: "GET /family/elders/:elderId/today-summary",
     pendingTasks: "GET /family/elders/:elderId/pending-tasks",
+    tasks: "GET /family/elders/:elderId/tasks",
     confirmTask: "POST /family/tasks/:taskId/confirm",
+    rejectTask: "POST /family/tasks/:taskId/reject",
+    needsMoreInfoTask: "POST /family/tasks/:taskId/needs-more-info",
+    notificationIntents: "GET /family/elders/:elderId/notification-intents",
     createRemoteReminder: "POST /family/reminders",
     sendFeedback: "POST /family/feedback",
+  },
+  debug: {
+    getTrace: "GET /debug/traces/:traceId",
+    getSourceTrace: "GET /debug/sources/:sourceId",
+    getQueryTrace: "GET /debug/queries/:auditId",
   },
 } as const;
 
@@ -53,6 +65,8 @@ export type ApiServerDeps = {
   reminderEngine: DefaultReminderEngine;
   familyTaskStore: FamilyTaskStore;
   auditLog: AuditLog;
+  debugTraceStore?: DebugTraceStore;
+  notificationIntentStore?: NotificationIntentStore;
   healthCheck?: () => Promise<Record<string, unknown>>;
 };
 
@@ -108,6 +122,7 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
   server.post("/elder/reminders/:id/confirm", async (request) => {
     const params = request.params as { id: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
+    const traceId = input.traceId ?? randomUUID();
     const before = await deps.reminderStore.get({ tenantId: input.tenantId, reminderId: params.id });
     const reminder = await deps.reminderEngine.confirmReminder({
       tenantId: input.tenantId,
@@ -120,7 +135,9 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
       tenantId: reminder.tenantId,
       elderId: reminder.elderId,
       sourceId: reminder.sourceId,
+      traceId,
       payload: {
+        traceId,
         reminderId: reminder.id,
         actorUserId: input.actorUserId,
         previousStatus: before?.status,
@@ -137,15 +154,24 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     return deps.familyTaskStore.listPending({ tenantId, elderId: params.elderId });
   });
 
+  server.get("/family/elders/:elderId/tasks", async (request) => {
+    const params = request.params as { elderId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    return deps.familyTaskStore.listByElder({ tenantId, elderId: params.elderId });
+  });
+
   server.post("/family/tasks/:taskId/confirm", async (request) => {
     const params = request.params as { taskId: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
+    const traceId = input.traceId ?? randomUUID();
     const task = await deps.familyTaskStore.confirm({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
     await deps.auditLog.record({
       type: "family_task_confirmed",
       tenantId: task.tenantId,
       elderId: task.elderId,
+      traceId,
       payload: {
+        traceId,
         taskId: task.id,
         actorUserId: input.actorUserId,
         status: task.status,
@@ -155,9 +181,73 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     return task;
   });
 
+  server.post("/family/tasks/:taskId/reject", async (request) => {
+    const params = request.params as { taskId: string };
+    const input = ConfirmReminderRequestSchema.parse(request.body);
+    const traceId = input.traceId ?? randomUUID();
+    const task = await deps.familyTaskStore.reject({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
+    await deps.auditLog.record({
+      type: "family_task_rejected",
+      tenantId: task.tenantId,
+      elderId: task.elderId,
+      traceId,
+      payload: { traceId, taskId: task.id, actorUserId: input.actorUserId, status: task.status },
+    });
+    return task;
+  });
+
+  server.post("/family/tasks/:taskId/needs-more-info", async (request) => {
+    const params = request.params as { taskId: string };
+    const input = ConfirmReminderRequestSchema.parse(request.body);
+    const traceId = input.traceId ?? randomUUID();
+    const task = await deps.familyTaskStore.requestMoreInfo({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
+    await deps.auditLog.record({
+      type: "family_task_needs_more_info",
+      tenantId: task.tenantId,
+      elderId: task.elderId,
+      traceId,
+      payload: { traceId, taskId: task.id, actorUserId: input.actorUserId, status: task.status },
+    });
+    return task;
+  });
+
   server.post("/family/reminders", async (request) => {
     const input = CreateFamilyReminderRequestSchema.parse(request.body);
     return deps.kernel.createFamilyReminder(input);
+  });
+
+  server.get("/family/elders/:elderId/notification-intents", async (request, reply) => {
+    if (!deps.notificationIntentStore) return reply.code(404).send({ message: "Notification intent store is not configured" });
+    const params = request.params as { elderId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    return deps.notificationIntentStore.listByElder({ tenantId, elderId: params.elderId });
+  });
+
+  server.get("/debug/traces/:traceId", async (request, reply) => {
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { traceId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getByTrace({ tenantId, traceId: params.traceId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return trace;
+  });
+
+  server.get("/debug/sources/:sourceId", async (request, reply) => {
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { sourceId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getBySource({ tenantId, sourceId: params.sourceId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return trace;
+  });
+
+  server.get("/debug/queries/:auditId", async (request, reply) => {
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { auditId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getByAuditId({ tenantId, auditId: params.auditId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return trace;
   });
 
   return server;
@@ -202,6 +292,8 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       reminderEngine,
       familyTaskStore: postgres.familyTaskStore,
       auditLog: postgres.auditLog,
+      debugTraceStore: postgres.debugTraceStore,
+      notificationIntentStore: postgres.notificationIntentStore,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
         const graphiti = await checkGraphitiHealth(temporalMemory);

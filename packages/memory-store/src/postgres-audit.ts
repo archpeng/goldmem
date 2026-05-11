@@ -13,7 +13,7 @@ export class PostgresAuditLog implements AuditLog {
       elderId: input.elderId,
       sourceId: input.sourceId,
       type: input.type,
-      payload: input.payload,
+      payload: input.traceId ? { ...input.payload, traceId: input.traceId } : input.payload,
       createdAt: new Date(),
     });
   }

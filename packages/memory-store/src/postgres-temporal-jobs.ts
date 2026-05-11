@@ -12,6 +12,7 @@ export class PostgresTemporalMemoryJobStore implements TemporalMemoryJobStore {
     tenantId: string;
     elderId: string;
     sourceId: string;
+    traceId?: string;
     episode: Record<string, unknown>;
     nextRunAt?: string;
     maxAttempts?: number;
@@ -28,7 +29,15 @@ export class PostgresTemporalMemoryJobStore implements TemporalMemoryJobStore {
       nextRunAt: input.nextRunAt ? new Date(input.nextRunAt) : now,
       lockedAt: null,
       lastError: null,
-      episode: input.episode,
+      episode: input.traceId
+        ? {
+          ...input.episode,
+          metadata: {
+            ...(typeof input.episode.metadata === "object" && input.episode.metadata !== null ? input.episode.metadata : {}),
+            traceId: input.traceId,
+          },
+        }
+        : input.episode,
       createdAt: now,
       updatedAt: now,
     };

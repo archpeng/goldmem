@@ -13,6 +13,9 @@ vi.mock("./lib/api.js", async (importOriginal) => {
     listMvpData: vi.fn(),
     confirmReminder: vi.fn(),
     confirmFamilyTask: vi.fn(),
+    rejectFamilyTask: vi.fn(),
+    requestFamilyTaskInfo: vi.fn(),
+    getDebugTrace: vi.fn(),
   };
 });
 
@@ -24,6 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   listMvpDataMock.mockResolvedValue({ events: [], reminders: [], familyTasks: [] });
   createTextNoteMock.mockResolvedValue({
+    traceId: "trace-web-test",
     sourceId: "source-1",
     summary: "老人说今天买了青菜。",
     events: [],
