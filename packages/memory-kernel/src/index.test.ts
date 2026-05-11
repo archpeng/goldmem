@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "./index.js";
 import type {
   FamilyTask,
+  ElderTurnPlan,
   MemoryAnswer,
   MemoryContextLink,
   MemoryEvent,
@@ -11,7 +12,7 @@ import type {
   PersonalContext,
   Reminder,
 } from "@goldmem/memory-schema";
-import type { GenerateMemoryPlanInput, ModelGateway, TranscriptionResult } from "@goldmem/model-gateway";
+import { ModelGatewayError, type GenerateMemoryPlanInput, type ModelGateway, type PlanElderTurnInput, type TranscriptionResult } from "@goldmem/model-gateway";
 import type {
   AuditLog,
   ContextLinkStore,
@@ -590,6 +591,121 @@ describe("ElderMemoryKernel", () => {
       expect.objectContaining({ sourceId: "source-shopping", summary: "老人买了青菜。" }),
     ]);
     expect(answer.matchedSources.some((source) => source.sourceId === "source-hallucinated")).toBe(false);
+  });
+
+  it("falls back to evidence-bound answers when answer generation schema validation fails", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["shopping"],
+      entities: [],
+    };
+    harness.model.answerError = new ModelGatewayError("schema_validation_error", "bad answer shape");
+    harness.eventStore.searchResults = [
+      memoryEvent({
+        id: "event-shopping",
+        sourceId: "source-shopping",
+        type: "shopping",
+        title: "买青菜",
+        summary: "老人买了青菜。",
+      }),
+    ];
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "我买了什么？",
+      now,
+    });
+
+    expect(answer.answerText).toContain("老人买了青菜");
+    expect(answer.matchedSources).toEqual([
+      expect.objectContaining({ sourceId: "source-shopping", summary: "老人买了青菜。" }),
+    ]);
+    expect(harness.audit.records.some((record) => record.type === "memory_query_answer_generation_failed")).toBe(true);
+    expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
+  });
+
+  it("routes elder turns to memory writes without frontend intent branching", async () => {
+    const harness = createHarness(buildPlan({
+      summary: "老人买了青菜。",
+      events: [buildEvent({ title: "买青菜", summary: "老人买了青菜。", type: "shopping" })],
+    }));
+    harness.model.turnPlan = {
+      intent: "record",
+      confidence: 0.9,
+      recordText: "我今天买了青菜。",
+    };
+
+    const result = await harness.kernel.elderTurn({
+      elderId: "elder-1",
+      text: "我今天买了青菜。",
+      now,
+    });
+
+    expect(result.turnType).toBe("record");
+    expect(result.ingestResult?.summary).toBe("老人买了青菜。");
+    expect(result.answer).toBeUndefined();
+    expect(harness.sourceStore.sources).toHaveLength(1);
+    expect(harness.audit.records.at(-1)?.type).toBe("elder_turn");
+  });
+
+  it("routes elder turns to recall with evidence-bound answers", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.model.turnPlan = {
+      intent: "recall",
+      confidence: 0.9,
+      queryText: "我买了什么？",
+    };
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["shopping"],
+      entities: [],
+    };
+    harness.model.answer = {
+      answerText: "您买了青菜。",
+      confidence: 0.9,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+    harness.eventStore.searchResults = [
+      memoryEvent({
+        id: "event-shopping",
+        sourceId: "source-shopping",
+        type: "shopping",
+        title: "买青菜",
+        summary: "老人买了青菜。",
+      }),
+    ];
+
+    const result = await harness.kernel.elderTurn({
+      elderId: "elder-1",
+      text: "我买了什么？",
+      now,
+    });
+
+    expect(result.turnType).toBe("recall");
+    expect(result.answer?.answerText).toBe("您买了青菜。");
+    expect(result.ingestResult).toBeUndefined();
+    expect(harness.sourceStore.sources).toHaveLength(0);
+  });
+
+  it("does not write truth when elder turn planning falls back to clarify", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.model.turnError = new ModelGatewayError("schema_validation_error", "bad turn plan");
+
+    const result = await harness.kernel.elderTurn({
+      elderId: "elder-1",
+      text: "这个呢？",
+      now,
+    });
+
+    expect(result.turnType).toBe("clarify");
+    expect(harness.sourceStore.sources).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "elder_turn_plan_failed")).toBe(true);
+    expect(harness.audit.records.at(-1)?.type).toBe("elder_turn");
   });
 
   it("uses source-aligned Graphiti evidence in queryMemory", async () => {
@@ -1310,7 +1426,16 @@ function evidence() {
 
 class FakeModelGateway implements ModelGateway {
   answerCalls = 0;
+  answerError?: Error;
+  turnError?: Error;
   lastPlanContext?: PersonalContext;
+  lastTurnInput?: PlanElderTurnInput;
+
+  turnPlan: ElderTurnPlan = {
+    intent: "clarify",
+    confidence: 0.5,
+    clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
+  };
 
   parsedQuery: ParsedMemoryQuery = {
     intent: "unknown",
@@ -1338,12 +1463,19 @@ class FakeModelGateway implements ModelGateway {
     return this.plan;
   }
 
+  async planElderTurn(input: PlanElderTurnInput): Promise<ElderTurnPlan> {
+    this.lastTurnInput = input;
+    if (this.turnError) throw this.turnError;
+    return this.turnPlan;
+  }
+
   async parseMemoryQuery(): Promise<ParsedMemoryQuery> {
     return this.parsedQuery;
   }
 
   async generateMemoryAnswer(): Promise<MemoryAnswer> {
     this.answerCalls += 1;
+    if (this.answerError) throw this.answerError;
     return this.answer;
   }
 }

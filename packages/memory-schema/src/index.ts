@@ -383,6 +383,59 @@ export const MemoryAnswerSchema = z.object({
 });
 export type MemoryAnswer = z.infer<typeof MemoryAnswerSchema>;
 
+export const ElderTurnIntentSchema = z.enum(["record", "recall", "record_and_recall", "clarify"]);
+export type ElderTurnIntent = z.infer<typeof ElderTurnIntentSchema>;
+
+export const ElderTurnPlanSchema = z.object({
+  intent: ElderTurnIntentSchema,
+  confidence: z.number().min(0).max(1),
+  recordText: z.string().min(1).optional(),
+  queryText: z.string().min(1).optional(),
+  clarifyingQuestion: z.string().min(1).optional(),
+});
+export type ElderTurnPlan = z.infer<typeof ElderTurnPlanSchema>;
+
+export const ElderTurnRequestSchema = z.object({
+  tenantId: TenantIdSchema,
+  elderId: z.string().min(1),
+  text: z.string().min(1),
+  now: ISODateTimeSchema.optional(),
+  traceId: z.string().min(1).optional(),
+});
+export type ElderTurnRequest = z.infer<typeof ElderTurnRequestSchema>;
+
+export const ElderTurnResultSchema = z.object({
+  traceId: z.string().min(1),
+  turnType: ElderTurnIntentSchema,
+  message: z.string().min(1),
+  ingestResult: z
+    .object({
+      traceId: z.string().min(1),
+      sourceId: z.string().min(1),
+      summary: z.string().min(1),
+      events: z.array(MemoryEventSchema),
+      reminderCandidates: z.array(ReminderSchema),
+      elderFacingCards: z.array(z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        needsConfirmation: z.boolean(),
+        riskLevel: z.string().min(1),
+      })),
+      temporalMemory: z
+        .object({
+          status: z.enum(["written", "failed"]),
+          errorCode: z.enum(["graphiti_not_configured", "graphiti_write_failed", "graphiti_retry_enqueue_failed"]).optional(),
+          errorMessage: z.string().optional(),
+          retryQueued: z.boolean().optional(),
+          retryJobId: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  answer: MemoryAnswerSchema.optional(),
+});
+export type ElderTurnResult = z.infer<typeof ElderTurnResultSchema>;
+
 export const PersonalContextSchema = z.object({
   elderProfile: z.record(z.unknown()).optional(),
   recentEvents: z.array(z.object({
@@ -428,22 +481,17 @@ export const PersonalContextSchema = z.object({
 });
 export type PersonalContext = z.infer<typeof PersonalContextSchema>;
 
-export const CreateTextNoteRequestSchema = z.object({
+export const CreateFeedbackRequestSchema = z.object({
   tenantId: TenantIdSchema,
   elderId: z.string().min(1),
-  transcript: z.string().min(1),
-  localCreatedAt: ISODateTimeSchema.optional(),
-  metadata: MemorySourceSchema.shape.metadata,
+  actorUserId: z.string().min(1),
+  sourceId: z.string().min(1).optional(),
+  eventId: z.string().min(1).optional(),
+  feedbackType: z.string().min(1),
+  correction: z.record(z.unknown()).default({}),
+  traceId: z.string().min(1).optional(),
 });
-export type CreateTextNoteRequest = z.infer<typeof CreateTextNoteRequestSchema>;
-
-export const QueryMemoryRequestSchema = z.object({
-  tenantId: TenantIdSchema,
-  elderId: z.string().min(1),
-  query: z.string().min(1),
-  now: ISODateTimeSchema.optional(),
-});
-export type QueryMemoryRequest = z.infer<typeof QueryMemoryRequestSchema>;
+export type CreateFeedbackRequest = z.infer<typeof CreateFeedbackRequestSchema>;
 
 export const ConfirmReminderRequestSchema = z.object({
   tenantId: TenantIdSchema,

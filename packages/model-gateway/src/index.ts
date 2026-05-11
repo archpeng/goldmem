@@ -3,15 +3,18 @@ import { join } from "node:path";
 import { Buffer } from "node:buffer";
 import OpenAI from "openai";
 import {
+  ElderTurnPlanSchema,
   MemoryAnswerSchema,
   MemoryPlanSchema,
   ParsedMemoryQuerySchema,
+  type ElderTurnPlan,
   type MemoryAnswer,
   type MemoryPlan,
   type PersonalContext,
   type ParsedMemoryQuery,
 } from "@goldmem/memory-schema";
 import {
+  normalizeElderTurnPlanResult,
   normalizeMemoryAnswerResult,
   normalizeMemoryPlanResult,
   normalizeParsedMemoryQueryResult,
@@ -39,6 +42,14 @@ export type GenerateMemoryAnswerInput = {
   responseStyle: "elder_friendly_voice" | "family_summary";
 };
 
+export type PlanElderTurnInput = {
+  tenantId: string;
+  elderId: string;
+  text: string;
+  now: string;
+  context: PersonalContext;
+};
+
 export type ParseMemoryQueryInput = {
   tenantId: string;
   elderId: string;
@@ -61,6 +72,7 @@ export type RetrievedEvidence = {
 export interface ModelGateway {
   transcribe(audio: Uint8Array): Promise<TranscriptionResult>;
   generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan>;
+  planElderTurn(input: PlanElderTurnInput): Promise<ElderTurnPlan>;
   parseMemoryQuery(input: ParseMemoryQueryInput): Promise<ParsedMemoryQuery>;
   generateMemoryAnswer(input: GenerateMemoryAnswerInput): Promise<MemoryAnswer>;
 }
@@ -72,6 +84,10 @@ export class NotImplementedModelGateway implements ModelGateway {
 
   async generateMemoryPlan(): Promise<MemoryPlan> {
     throw new Error("ModelGateway.generateMemoryPlan is not implemented");
+  }
+
+  async planElderTurn(): Promise<ElderTurnPlan> {
+    throw new Error("ModelGateway.planElderTurn is not implemented");
   }
 
   async parseMemoryQuery(): Promise<ParsedMemoryQuery> {
@@ -147,6 +163,18 @@ export class OpenAIModelGateway implements ModelGateway {
       return MemoryPlanSchema.parse(normalized);
     } catch (error) {
       throw new ModelGatewayError("schema_validation_error", "OpenAI MemoryPlan output failed schema validation", error);
+    }
+  }
+
+  async planElderTurn(input: PlanElderTurnInput): Promise<ElderTurnPlan> {
+    const prompt = await this.loadPrompt("elder-turn.md");
+    const result = await this.completeJson(prompt, input);
+    const normalized = normalizeElderTurnPlanResult(result, input);
+
+    try {
+      return ElderTurnPlanSchema.parse(normalized);
+    } catch (error) {
+      throw new ModelGatewayError("schema_validation_error", "OpenAI elder turn output failed schema validation", error);
     }
   }
 

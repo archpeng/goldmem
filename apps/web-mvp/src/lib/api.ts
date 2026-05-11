@@ -1,23 +1,4 @@
-import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
-
-export type IngestResult = {
-  traceId: string;
-  sourceId: string;
-  summary: string;
-  events: MemoryEvent[];
-  reminderCandidates: Reminder[];
-  elderFacingCards: Array<{
-    title: string;
-    summary: string;
-    needsConfirmation: boolean;
-    riskLevel: string;
-  }>;
-  temporalMemory?: {
-    status: "written" | "failed";
-    errorCode?: "graphiti_not_configured" | "graphiti_write_failed" | "graphiti_retry_enqueue_failed";
-    errorMessage?: string;
-  };
-};
+import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 export type MvpLists = {
   events: MemoryEvent[];
@@ -27,17 +8,32 @@ export type MvpLists = {
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
-export async function createTextNote(input: { elderId: string; transcript: string }): Promise<IngestResult> {
-  return request<IngestResult>("/elder/text-notes", {
+export async function sendElderTurn(input: { elderId: string; text: string }): Promise<ElderTurnResult> {
+  return request<ElderTurnResult>("/elder/turn", {
     method: "POST",
     body: input,
   });
 }
 
-export async function queryMemory(input: { elderId: string; query: string }): Promise<MemoryAnswer> {
-  return request<MemoryAnswer>("/elder/query", {
+export async function sendFeedback(input: {
+  elderId: string;
+  actorUserId: string;
+  sourceId?: string;
+  eventId?: string;
+  feedbackType: string;
+  correction?: Record<string, unknown>;
+}): Promise<Feedback> {
+  return request<Feedback>("/elder/feedback", {
     method: "POST",
-    body: input,
+    body: {
+      tenantId: "tenant-mvp",
+      elderId: input.elderId,
+      actorUserId: input.actorUserId,
+      sourceId: input.sourceId,
+      eventId: input.eventId,
+      feedbackType: input.feedbackType,
+      correction: input.correction ?? {},
+    },
   });
 }
 
@@ -115,6 +111,8 @@ function toUserMessage(message: string): string {
   if (message.includes("Cannot confirm reminder without remindAt")) return "请先补充提醒时间。";
   if (message.includes("elderId is required")) return "请填写老人 ID。";
   if (message.includes("schema_validation_error")) return "模型输出格式校验失败，请稍后重试。";
-  if (message.includes("fetch")) return "无法连接后端服务，请确认 API server 已启动。";
+  if (message.includes("fetch") || /^GET\s+\/.+failed$/.test(message) || /^POST\s+\/.+failed$/.test(message)) {
+    return "暂时连不上记忆服务，请稍后再试。";
+  }
   return message;
 }

@@ -1,4 +1,4 @@
-import type { GenerateMemoryAnswerInput, GenerateMemoryPlanInput, ParseMemoryQueryInput, RetrievedEvidence } from "./index.js";
+import type { GenerateMemoryAnswerInput, GenerateMemoryPlanInput, ParseMemoryQueryInput, PlanElderTurnInput, RetrievedEvidence } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -42,6 +42,7 @@ const QUERY_INTENTS = [
   "ask_person_related",
   "unknown",
 ] as const;
+const ELDER_TURN_INTENTS = ["record", "recall", "record_and_recall", "clarify"] as const;
 
 export function normalizeMemoryPlanResult(
   raw: unknown,
@@ -92,17 +93,50 @@ export function normalizeParsedMemoryQueryResult(raw: unknown, input: ParseMemor
   };
 }
 
+export function normalizeElderTurnPlanResult(raw: unknown, input: PlanElderTurnInput): unknown {
+  const record = asRecord(raw);
+  const intent = enumValue(record.intent ?? record.turnType ?? record.action, ELDER_TURN_INTENTS, "clarify");
+  const recordText = optionalString(record.recordText ?? record.memoryText ?? record.noteText);
+  const queryText = optionalString(record.queryText ?? record.question);
+
+  return {
+    ...record,
+    intent,
+    confidence: numberValue(record.confidence, 0.5),
+    recordText: intent === "record" || intent === "record_and_recall" ? recordText ?? input.text : recordText,
+    queryText: intent === "recall" || intent === "record_and_recall" ? queryText ?? input.text : queryText,
+    clarifyingQuestion: intent === "clarify"
+      ? optionalString(record.clarifyingQuestion ?? record.question) ?? "您想让我记住这件事，还是帮您查以前的记忆？"
+      : optionalString(record.clarifyingQuestion),
+  };
+}
+
 export function normalizeMemoryAnswerResult(raw: unknown, input: GenerateMemoryAnswerInput): unknown {
   const record = asRecord(raw);
 
   return {
     ...record,
-    answerText: optionalString(record.answerText ?? record.answer ?? record.text ?? record.response),
-    confidence: optionalNumberValue(record.confidence),
+    answerText: extractAnswerText(record),
+    confidence: optionalNumberValue(record.confidence ?? record.score ?? record.certainty) ?? defaultAnswerConfidence(input.evidence),
     matchedSources: normalizeMatchedSources(record.matchedSources, input.evidence),
     suggestedActions: arrayValue(record.suggestedActions).map(normalizeSuggestedAction).filter(isRecord),
     safetyNote: optionalString(record.safetyNote),
   };
+}
+
+function extractAnswerText(record: JsonRecord): string | undefined {
+  const direct = optionalString(record.answerText ?? record.text ?? record.response);
+  if (direct) return direct;
+
+  const answer = record.answer;
+  if (typeof answer === "string") return optionalString(answer);
+  const nested = asRecord(answer);
+  return optionalString(nested.answerText ?? nested.text ?? nested.summary ?? nested.response);
+}
+
+function defaultAnswerConfidence(evidence: RetrievedEvidence[]): number {
+  if (evidence.length === 0) return 0.5;
+  return clamp01(Math.max(...evidence.map((item) => item.score), 0.5));
 }
 
 function normalizeEventDraft(raw: unknown, input: GenerateMemoryPlanInput): JsonRecord | undefined {
@@ -443,6 +477,10 @@ function optionalNumberValue(value: unknown): number | undefined {
   if (typeof value !== "string") return undefined;
 
   const normalized = value.trim().toLowerCase();
+  if (normalized.endsWith("%")) {
+    const parsedPercent = Number(normalized.slice(0, -1));
+    if (Number.isFinite(parsedPercent)) return clamp01(parsedPercent / 100);
+  }
   const parsed = Number(normalized);
   if (Number.isFinite(parsed)) return clamp01(parsed);
 

@@ -15,6 +15,7 @@ The key architectural decision is to stop treating PostgreSQL as the long-term m
 7. [Risks and Validation](./07-risks-and-validation.md)
 8. [Temporal Memory Implementation Note](./08-temporal-memory-implementation-note.md)
 9. [Production Graphiti Plan Pack](./09-production-graphiti-plan-pack.md)
+10. [Mobile Elder AI-Native Roadmap](./10-mobile-elder-ai-native-roadmap.md)
 
 ## One-line direction
 
@@ -49,16 +50,16 @@ Current code already has:
 - PostgreSQL truth-store migrations
 - `memory_sources`, `memory_events`, `reminders`, `risk_flags`, `family_tasks`, `feedback`, `audit_logs`
 - Mem0-compatible `SemanticMemoryStore`
-- `TemporalMemoryStore` interface and deterministic Graphiti episode builder
+- `TemporalMemoryStore` interface, Graphiti adapter, sidecar, retry job, and deterministic Graphiti episode builder
 - `memory_context_links` as a lightweight event-to-event context link layer
 - React MVP shell
 - eval and golden retrieval scripts
 
 Current code does **not** yet have:
 
-- Graphiti adapter
-- Graphiti-backed long-term query evidence
 - Nightly consolidation job
-- Graphiti production write/query validation
+- production notification scheduling
+- production auth and permission onboarding
+- mobile-first elder product experience
 
-This roadmap describes how to evolve from the current state without destabilizing the MVP path.
+This roadmap describes how to evolve from the current state without destabilizing the MVP path. The current product priority is documented in [Mobile Elder AI-Native Roadmap](./10-mobile-elder-ai-native-roadmap.md): transform `apps/web-mvp` from a Kernel console into a mobile-first elder experience while keeping backend truth and memory boundaries intact.

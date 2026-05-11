@@ -166,11 +166,12 @@ for (const hint of fixture.forbidAutoConfirmedReminderHints) {
 let mem0EvidenceQueries = 0;
 for (const queryCase of fixture.queries) {
   console.log(`golden query start: ${queryCase.id}`);
-  const answer = MemoryAnswerSchema.parse(await request<unknown>("POST", "/elder/query", {
+  const turn = await request<{ traceId: string; answer?: unknown }>("POST", "/elder/turn", {
     tenantId,
     elderId,
-    query: queryCase.query,
-  }));
+    text: queryCase.query,
+  });
+  const answer = MemoryAnswerSchema.parse(turn.answer);
   assert(Boolean(answer.traceId), `${queryCase.id} did not return traceId`);
   const debugTrace = await request<{ auditTrail?: unknown[] }>("GET", `/debug/traces/${encodeURIComponent(answer.traceId ?? "")}?tenantId=${encodeURIComponent(tenantId)}`);
   assert((debugTrace.auditTrail?.length ?? 0) > 0, `${queryCase.id} debug trace did not read back audit trail`);
@@ -238,21 +239,22 @@ console.log(
 );
 
 async function ingestNote(transcript: string) {
-  return request<{
-    traceId: string;
-    sourceId: string;
-    summary: string;
-    events: MemoryEvent[];
-    reminderCandidates: Reminder[];
-    temporalMemory?: { status: "written" | "failed"; errorMessage?: string };
-  }>("POST", "/elder/text-notes", {
+  const turn = await request<{
+    ingestResult?: {
+      traceId: string;
+      sourceId: string;
+      summary: string;
+      events: MemoryEvent[];
+      reminderCandidates: Reminder[];
+      temporalMemory?: { status: "written" | "failed"; errorMessage?: string };
+    };
+  }>("POST", "/elder/turn", {
     tenantId,
     elderId,
-    transcript,
-    metadata: {
-      appVersion: `golden-e2e-v${fixture.version}`,
-    },
+    text: transcript,
   });
+  if (!turn.ingestResult) throw new Error("Elder turn did not return ingestResult for seed note");
+  return turn.ingestResult;
 }
 
 async function request<T>(method: string, path: string, body?: Json): Promise<T> {

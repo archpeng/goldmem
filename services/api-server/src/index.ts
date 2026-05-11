@@ -1,13 +1,12 @@
-import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ConfirmReminderRequestSchema,
+  CreateFeedbackRequestSchema,
   CreateFamilyReminderRequestSchema,
-  CreateTextNoteRequestSchema,
-  QueryMemoryRequestSchema,
+  ElderTurnRequestSchema,
 } from "@goldmem/memory-schema";
 import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "@goldmem/memory-kernel";
 import { DefaultPermissionEngine } from "@goldmem/permission-engine";
@@ -21,6 +20,7 @@ import {
   type ContextLinkStore,
   type DebugTraceStore,
   type EventStore,
+  type FeedbackStore,
   type NotificationIntentStore,
   type ReminderStore,
 } from "@goldmem/memory-store";
@@ -29,9 +29,7 @@ import { GraphitiTemporalMemoryStore, NullTemporalMemoryStore, type TemporalMemo
 
 export const apiRouteContract = {
   elder: {
-    createTextNote: "POST /elder/text-notes",
-    createVoiceNote: "POST /elder/voice-notes",
-    queryMemory: "POST /elder/query",
+    turn: "POST /elder/turn",
     listEvents: "GET /elder/events",
     listReminders: "GET /elder/reminders",
     confirmReminder: "POST /elder/reminders/:id/confirm",
@@ -64,6 +62,7 @@ export type ApiServerDeps = {
   reminderStore: ReminderStore;
   reminderEngine: DefaultReminderEngine;
   familyTaskStore: FamilyTaskStore;
+  feedbackStore: FeedbackStore;
   auditLog: AuditLog;
   debugTraceStore?: DebugTraceStore;
   notificationIntentStore?: NotificationIntentStore;
@@ -72,35 +71,44 @@ export type ApiServerDeps = {
 
 export function buildServer(deps: ApiServerDeps): FastifyInstance {
   const server = Fastify({ logger: true });
-  void server.register(multipart);
 
   server.get("/health", async () => ({
     ok: true,
     ...(deps.healthCheck ? await deps.healthCheck() : {}),
   }));
 
-  server.post("/elder/text-notes", async (request) => {
-    const input = CreateTextNoteRequestSchema.parse(request.body);
-    return deps.kernel.ingestText(input);
+  server.post("/elder/turn", async (request) => {
+    const input = ElderTurnRequestSchema.parse(request.body);
+    return deps.kernel.elderTurn(input);
   });
 
-  server.post("/elder/voice-notes", async (request) => {
-    const file = await request.file();
-    if (!file) throw new Error("Missing voice note file");
-    const fields = file.fields as Record<string, { value?: unknown }>;
-    const elderId = String(fields.elderId?.value ?? "");
-    const tenantId = String(fields.tenantId?.value ?? "tenant-mvp");
-    const buffer = await file.toBuffer();
-    return deps.kernel.ingestVoice({
-      tenantId,
-      elderId,
-      audio: new Uint8Array(buffer),
+  server.post("/elder/feedback", async (request) => {
+    const input = CreateFeedbackRequestSchema.parse(request.body);
+    const traceId = input.traceId ?? randomUUID();
+    const feedback = await deps.feedbackStore.create({
+      tenantId: input.tenantId,
+      elderId: input.elderId,
+      actorUserId: input.actorUserId,
+      sourceId: input.sourceId,
+      eventId: input.eventId,
+      feedbackType: input.feedbackType,
+      correction: input.correction,
     });
-  });
-
-  server.post("/elder/query", async (request) => {
-    const input = QueryMemoryRequestSchema.parse(request.body);
-    return deps.kernel.queryMemory(input);
+    await deps.auditLog.record({
+      type: "feedback_created",
+      tenantId: feedback.tenantId,
+      elderId: feedback.elderId,
+      sourceId: feedback.sourceId,
+      traceId,
+      payload: {
+        traceId,
+        feedbackId: feedback.id,
+        feedbackType: feedback.feedbackType,
+        actorUserId: feedback.actorUserId,
+        eventId: feedback.eventId,
+      },
+    });
+    return feedback;
   });
 
   server.get("/elder/events", async (request) => {
@@ -270,9 +278,9 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     eventStore: postgres.eventStore,
     contextLinkStore: postgres.contextLinkStore,
     reminderEngine,
-    familyReminderCommandStore: postgres.familyReminderCommandStore,
-    familyTaskStore: postgres.familyTaskStore,
-    riskFlagStore: postgres.riskFlagStore,
+      familyReminderCommandStore: postgres.familyReminderCommandStore,
+      familyTaskStore: postgres.familyTaskStore,
+      riskFlagStore: postgres.riskFlagStore,
     semanticMemory: new HttpSemanticMemoryStore({ baseUrl: mem0BaseUrl, apiKey: process.env.MEM0_API_KEY }),
     personalContextStore: postgres.personalContextStore,
     modelGateway,
@@ -291,6 +299,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       reminderStore: postgres.reminderStore,
       reminderEngine,
       familyTaskStore: postgres.familyTaskStore,
+      feedbackStore: postgres.feedbackStore,
       auditLog: postgres.auditLog,
       debugTraceStore: postgres.debugTraceStore,
       notificationIntentStore: postgres.notificationIntentStore,

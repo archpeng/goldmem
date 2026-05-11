@@ -7,7 +7,7 @@ import {
   type MemorySource,
   type ParsedMemoryQuery,
 } from "@goldmem/memory-schema";
-import type { RetrievedEvidence } from "@goldmem/model-gateway";
+import { ModelGatewayError, type RetrievedEvidence } from "@goldmem/model-gateway";
 import {
   buildTemporalGroupId,
   type TemporalEvidence,
@@ -106,12 +106,14 @@ export class QueryOrchestrator {
       return answer;
     }
 
-    const generatedAnswer = MemoryAnswerSchema.parse(await this.deps.modelGateway.generateMemoryAnswer({
+    const generatedAnswer = await this.generateAnswerWithFallback({
+      tenantId,
+      elderId: input.elderId,
       query: input.query,
       parsedQuery,
       evidence,
-      responseStyle: "elder_friendly_voice",
-    }));
+      traceId,
+    });
     const answer: MemoryAnswer = {
       ...generatedAnswer,
       traceId,
@@ -128,6 +130,42 @@ export class QueryOrchestrator {
     });
 
     return answer;
+  }
+
+  private async generateAnswerWithFallback(input: {
+    tenantId: string;
+    elderId: string;
+    query: string;
+    parsedQuery: ParsedMemoryQuery;
+    evidence: RetrievedEvidence[];
+    traceId: string;
+  }): Promise<MemoryAnswer> {
+    try {
+      return MemoryAnswerSchema.parse(await this.deps.modelGateway.generateMemoryAnswer({
+        query: input.query,
+        parsedQuery: input.parsedQuery,
+        evidence: input.evidence,
+        responseStyle: "elder_friendly_voice",
+      }));
+    } catch (error) {
+      if (!(error instanceof ModelGatewayError) || error.code !== "schema_validation_error") throw error;
+      const answer = buildEvidenceBoundFallbackAnswer(input.traceId, input.evidence);
+      await this.deps.auditLog.record({
+        type: "memory_query_answer_generation_failed",
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        traceId: input.traceId,
+        payload: {
+          traceId: input.traceId,
+          query: input.query,
+          failureType: "answer_schema_validation_error",
+          errorMessage: error.message,
+          fallbackUsed: true,
+          evidenceCount: input.evidence.length,
+        },
+      });
+      return answer;
+    }
   }
 
   private async searchTemporalFactsSafely(input: {
@@ -247,4 +285,21 @@ export class QueryOrchestrator {
 
     return mergeRetrievedEvidence([...evidence, ...linkedEvidence]);
   }
+}
+
+function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
+  const top = evidence[0];
+  const confidence = top ? clampScore(top.score) : 0;
+  const matchedSources = evidenceBoundMatchedSources([], evidence);
+  return {
+    traceId,
+    answerText: top
+      ? `我找到了相关记忆：${top.summary}`
+      : "我没有找到可以回答这件事的记忆。",
+    confidence,
+    matchedSources,
+    retrievedEvidence: evidence,
+    suggestedActions: [],
+    safetyNote: "回答来自已找到的记忆依据；如果不确定，可以再补充一句说明。",
+  };
 }

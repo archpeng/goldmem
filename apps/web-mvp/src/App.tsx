@@ -1,30 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Brain, Check, Database, GitBranch, HelpCircle, RefreshCw, Save, Search, ShieldCheck, Sparkles, Users, X } from "lucide-react";
-import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { ReactNode } from "react";
+import { Bell, Check, Clock, Mic, Pencil, RefreshCw, Search, Send, Sparkles } from "lucide-react";
+import type { DebugTrace, ElderTurnResult, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 import {
-  confirmFamilyTask,
   confirmReminder,
-  createTextNote,
   getDebugTrace,
   listMvpData,
-  queryMemory,
-  rejectFamilyTask,
-  requestFamilyTaskInfo,
-  type IngestResult,
+  sendElderTurn,
+  sendFeedback,
   type MvpLists,
 } from "./lib/api.js";
-import {
-  copy,
-  translateEventType,
-  translateRiskLevel,
-  translateStatus,
-  translateUrgency,
-  translateVisibility,
-} from "./lib/copy.js";
+import { copy, translateRiskLevel } from "./lib/copy.js";
 import { Alert } from "./components/ui/alert.js";
-import { Badge, type BadgeProps } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card.js";
 import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
 
@@ -34,75 +22,76 @@ type RequestState = {
   error?: string;
 };
 
+type ChatTurn = {
+  id: string;
+  text: string;
+  result?: ElderTurnResult;
+};
+
+const DEFAULT_ELDER_ID = "elder-mvp";
+const DEFAULT_ACTOR_ID = "elder-mvp";
+
 export function App() {
-  const [elderId, setElderId] = useState("elder-mvp");
-  const [actorUserId, setActorUserId] = useState("elder-mvp");
-  const [familyActorUserId, setFamilyActorUserId] = useState("family-mvp");
-  const [transcript, setTranscript] = useState<string>(copy.capture.defaultTranscript);
-  const [query, setQuery] = useState<string>(copy.recall.defaultQuestion);
-  const [confirmTimes, setConfirmTimes] = useState<Record<string, string>>({});
-  const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
-  const [answer, setAnswer] = useState<MemoryAnswer | null>(null);
+  const [elderId, setElderId] = useState(DEFAULT_ELDER_ID);
+  const [actorUserId, setActorUserId] = useState(DEFAULT_ACTOR_ID);
+  const [inputText, setInputText] = useState<string>(copy.conversation.defaultInput);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [familyTasks, setFamilyTasks] = useState<FamilyTask[]>([]);
+  const [confirmTimes, setConfirmTimes] = useState<Record<string, string>>({});
   const [debugTraceId, setDebugTraceId] = useState("");
   const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const [state, setState] = useState<RequestState>({ loading: false });
 
-  const canRefresh = elderId.trim().length > 0;
-  const mergedEvents = useMemo(() => mergeEvents(events, ingestResult?.events ?? []), [events, ingestResult]);
+  const today = useMemo(() => buildTodaySnapshot(events, reminders, familyTasks, new Date()), [events, reminders, familyTasks]);
 
   useEffect(() => {
-    if (!canRefresh) return;
-    void refreshLists(elderId, setLists, setState);
-  }, [canRefresh, elderId]);
+    void refreshLists(elderId, setLists, setState, false);
+  }, [elderId]);
 
-  async function handleIngest() {
-    await runRequest(setState, copy.status.memorySaved, async () => {
-      const result = await createTextNote({ elderId, transcript });
-      setIngestResult(result);
+  async function handleSubmit() {
+    const text = inputText.trim();
+    if (!text) return;
+    const id = crypto.randomUUID();
+    setTurns((current) => [...current, { id, text }]);
+    await runRequest(setState, copy.status.turnCompleted, async () => {
+      const result = await sendElderTurn({ elderId, text });
+      setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, result } : turn)));
+      setDebugTraceId(result.traceId);
+      setInputText("");
+      setIsListening(false);
       await refreshLists(elderId, setLists, setState, false);
-    });
-  }
-
-  async function handleQuery() {
-    await runRequest(setState, copy.status.queryAnswered, async () => {
-      const result = await queryMemory({ elderId, query });
-      setAnswer(result);
     });
   }
 
   async function handleConfirmReminder(reminder: Reminder) {
     await runRequest(setState, copy.status.reminderConfirmed, async () => {
-      const localValue = confirmTimes[reminder.id];
       await confirmReminder({
         reminderId: reminder.id,
         actorUserId,
-        remindAt: reminder.remindAt ?? toIso(localValue),
+        remindAt: reminder.remindAt ?? toIso(confirmTimes[reminder.id]),
       });
       await refreshLists(elderId, setLists, setState, false);
     });
   }
 
-  async function handleConfirmFamilyTask(task: FamilyTask) {
-    await runRequest(setState, copy.status.familyTaskConfirmed, async () => {
-      await confirmFamilyTask({ taskId: task.id, actorUserId: familyActorUserId });
-      await refreshLists(elderId, setLists, setState, false);
-    });
-  }
-
-  async function handleRejectFamilyTask(task: FamilyTask) {
-    await runRequest(setState, "家属任务已拒绝。", async () => {
-      await rejectFamilyTask({ taskId: task.id, actorUserId: familyActorUserId });
-      await refreshLists(elderId, setLists, setState, false);
-    });
-  }
-
-  async function handleRequestFamilyTaskInfo(task: FamilyTask) {
-    await runRequest(setState, "已标记需要补充信息。", async () => {
-      await requestFamilyTaskInfo({ taskId: task.id, actorUserId: familyActorUserId });
-      await refreshLists(elderId, setLists, setState, false);
+  async function handleSendAnswerFeedback(answer: MemoryAnswer, correctionText: string) {
+    const firstEvidence = answer.retrievedEvidence[0];
+    const firstSource = answer.matchedSources[0] ?? firstEvidence;
+    await runRequest(setState, copy.status.feedbackSaved, async () => {
+      await sendFeedback({
+        elderId,
+        actorUserId,
+        sourceId: firstSource?.sourceId,
+        eventId: firstEvidence?.eventId,
+        feedbackType: "answer_wrong",
+        correction: {
+          answerText: answer.answerText,
+          correctionText: correctionText.trim(),
+        },
+      });
     });
   }
 
@@ -119,274 +108,314 @@ export function App() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8">
-      <header className="grid gap-5 pb-5 lg:grid-cols-[minmax(280px,1fr)_minmax(420px,680px)] lg:items-end">
-        <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-600">
-            <ShieldCheck className="h-4 w-4" />
-            Kernel MVP
-          </div>
-          <h1 className="text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">{copy.appTitle}</h1>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-slate-600">{copy.appDescription}</p>
-        </div>
-        <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
-          <Field label={copy.identity.elderId}>
-            <Input value={elderId} onChange={(event) => setElderId(event.target.value)} />
-          </Field>
-          <Field label={copy.identity.elderActor}>
-            <Input value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
-          </Field>
-          <Field label={copy.identity.familyActor}>
-            <Input value={familyActorUserId} onChange={(event) => setFamilyActorUserId(event.target.value)} />
-          </Field>
-        </section>
-      </header>
-
-      {state.message || state.error ? (
-        <Alert className="mb-4" variant={state.error ? "destructive" : "default"}>
-          {state.error ?? state.message}
-        </Alert>
-      ) : null}
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-        <Card>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleIngest();
-            }}
-          >
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Brain className="h-5 w-5 text-slate-500" />
-                <CardTitle>{copy.capture.title}</CardTitle>
-              </div>
-              <Button disabled={state.loading || !transcript.trim() || !elderId.trim()} type="submit">
-                <Save className="h-4 w-4" />
-                {copy.capture.action}
-              </Button>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <Textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} rows={7} />
-              {ingestResult ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-sm font-medium text-slate-950">{copy.capture.latestSummary}</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{ingestResult.summary}</p>
-                </div>
-              ) : null}
-            </CardContent>
-          </form>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Search className="h-5 w-5 text-slate-500" />
-              <CardTitle>{copy.recall.title}</CardTitle>
-            </div>
-            <Button disabled={state.loading || !query.trim() || !elderId.trim()} onClick={() => void handleQuery()}>
-              <Search className="h-4 w-4" />
-              {copy.recall.action}
-            </Button>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} />
-            {answer ? <AnswerCard answer={answer} /> : null}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card>
-          <CardHeader>
+    <main className="min-h-screen bg-[#f4f7f5] px-3 py-4 text-slate-950 sm:px-5">
+      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 px-5 pb-4 pt-5">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle>{copy.events.title}</CardTitle>
-              <CardDescription>从 PostgreSQL 事实源读取的最近记忆。</CardDescription>
+              <p className="text-base font-medium text-emerald-700">{copy.appKicker}</p>
+              <h1 className="mt-1 text-3xl font-semibold leading-tight tracking-normal text-slate-950">{copy.appTitle}</h1>
             </div>
             <Button
-              disabled={state.loading || !elderId.trim()}
+              aria-label={copy.events.refresh}
+              className="h-12 w-12 shrink-0 rounded-full"
+              disabled={state.loading}
+              size="icon"
               variant="secondary"
               onClick={() => void refreshLists(elderId, setLists, setState)}
             >
-              <RefreshCw className="h-4 w-4" />
-              {copy.events.refresh}
+              <RefreshCw className="h-5 w-5" />
             </Button>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {mergedEvents.length ? mergedEvents.map((event) => <EventCard event={event} key={event.id} />) : <Empty label={copy.events.empty} />}
-          </CardContent>
-        </Card>
+          </div>
+          <p className="mt-3 text-lg leading-8 text-slate-600">{copy.appDescription}</p>
+        </header>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-slate-500" />
-              <CardTitle>{copy.reminders.title}</CardTitle>
-            </div>
-            <Badge variant="default">{reminders.length}</Badge>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {reminders.length ? (
-              reminders.map((reminder) => (
-                <ReminderCard
-                  confirmTime={confirmTimes[reminder.id] ?? ""}
-                  key={reminder.id}
+        {state.message || state.error ? (
+          <Alert className="mx-4 mt-4 text-base leading-7" variant={state.error ? "destructive" : "default"}>
+            {state.error ?? state.message}
+          </Alert>
+        ) : null}
+
+        <section className="flex-1 overflow-y-auto px-4 py-4 pb-44">
+          <TodaySnapshot snapshot={today} />
+
+          <div className="mt-4 grid gap-4">
+            {turns.length === 0 ? (
+              <EmptyConversation onPickExample={setInputText} />
+            ) : (
+              turns.map((turn) => (
+                <TurnCard
+                  confirmTimes={confirmTimes}
+                  key={turn.id}
                   loading={state.loading}
-                  reminder={reminder}
-                  onConfirm={() => void handleConfirmReminder(reminder)}
-                  onTimeChange={(value) => setConfirmTimes((current) => ({ ...current, [reminder.id]: value }))}
+                  turn={turn}
+                  onConfirmReminder={handleConfirmReminder}
+                  onSendFeedback={handleSendAnswerFeedback}
+                  onTimeChange={(id, value) => setConfirmTimes((current) => ({ ...current, [id]: value }))}
                 />
               ))
-            ) : (
-              <Empty label={copy.reminders.empty} />
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-slate-500" />
-              <CardTitle>{copy.familyTasks.title}</CardTitle>
-            </div>
-            <Badge variant="default">{familyTasks.length}</Badge>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {familyTasks.length ? (
-              familyTasks.map((task) => (
-                <FamilyTaskCard
-                  key={task.id}
-                  loading={state.loading}
-                  task={task}
-                  onConfirm={() => void handleConfirmFamilyTask(task)}
-                  onReject={() => void handleRejectFamilyTask(task)}
-                  onNeedsMoreInfo={() => void handleRequestFamilyTaskInfo(task)}
-                />
-              ))
-            ) : (
-              <Empty label={copy.familyTasks.empty} />
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      {import.meta.env.DEV ? (
-        <section className="mt-4">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>调试链路</CardTitle>
-                <CardDescription>按 traceId 读取只读 audit 链路。</CardDescription>
-              </div>
-              <Button disabled={state.loading || !debugTraceId.trim()} onClick={() => void handleLoadDebugTrace()}>
-                <Search className="h-4 w-4" />
-                查询
-              </Button>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <Input value={debugTraceId} onChange={(event) => setDebugTraceId(event.target.value)} placeholder="traceId" />
-              {debugTrace ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  <p className="font-medium text-slate-950">{debugTrace.traceId}</p>
-                  <p className="mt-1">audit {debugTrace.auditTrail.length} 条</p>
-                  <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-white p-3 text-xs leading-5">
-                    {JSON.stringify(debugTrace, null, 2)}
-                  </pre>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+          {import.meta.env.DEV ? (
+            <DevPanel
+              actorUserId={actorUserId}
+              debugTrace={debugTrace}
+              debugTraceId={debugTraceId}
+              elderId={elderId}
+              loading={state.loading}
+              onActorChange={setActorUserId}
+              onDebugTraceIdChange={setDebugTraceId}
+              onElderChange={setElderId}
+              onLoadTrace={handleLoadDebugTrace}
+            />
+          ) : null}
         </section>
-      ) : null}
+
+        <form
+          className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[430px] border-t border-slate-200 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur sm:absolute sm:inset-x-auto sm:w-[430px]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit();
+          }}
+        >
+          <div className="grid gap-3">
+            <Textarea
+              aria-label={copy.conversation.inputLabel}
+              className="min-h-20 resize-none rounded-2xl text-lg leading-8"
+              placeholder={copy.conversation.placeholder}
+              value={inputText}
+              onChange={(event) => setInputText(event.target.value)}
+            />
+            <div className="grid grid-cols-[3.5rem_1fr] gap-3">
+              <Button
+                aria-label={copy.conversation.voiceAction}
+                className={`h-14 rounded-full ${isListening ? "bg-red-600 text-white hover:bg-red-700" : ""}`}
+                disabled={state.loading}
+                size="icon"
+                type="button"
+                variant={isListening ? "default" : "secondary"}
+                onClick={() => setIsListening((current) => !current)}
+              >
+                <Mic className="h-6 w-6" />
+              </Button>
+              <Button className="h-14 rounded-2xl text-lg" disabled={state.loading || !inputText.trim()} type="submit">
+                <Send className="h-5 w-5" />
+                {state.loading ? copy.conversation.thinking : copy.conversation.send}
+              </Button>
+            </div>
+            {isListening ? <p className="text-center text-base font-medium text-red-700">{copy.conversation.listening}</p> : null}
+          </div>
+        </form>
+      </div>
     </main>
   );
 }
 
-function Field({ children, label }: { children: React.ReactNode; label: string }) {
+function TodaySnapshot({ snapshot }: { snapshot: TodaySnapshotData }) {
   return (
-    <label className="grid gap-1.5 text-sm font-medium text-slate-600">
-      {label}
-      {children}
-    </label>
+    <section className="rounded-2xl bg-emerald-950 px-5 py-5 text-white">
+      <p className="text-base text-emerald-100">{copy.today.kicker}</p>
+      <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-normal">
+        {snapshot.pendingCount ? copy.today.hasActions : copy.today.noActions}
+      </h2>
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        <Metric icon={<Bell className="h-5 w-5" />} label={copy.today.needsConfirmation} value={snapshot.pendingCount} />
+        <Metric icon={<Clock className="h-5 w-5" />} label={copy.today.todayReminders} value={snapshot.todayReminderCount} />
+        <Metric icon={<Sparkles className="h-5 w-5" />} label={copy.today.recentMemories} value={snapshot.recentMemoryCount} />
+      </div>
+    </section>
   );
 }
 
-function AnswerCard({ answer }: { answer: MemoryAnswer }) {
+function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <p className="text-base leading-7 text-slate-950">{answer.answerText}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Badge variant="warning">
-          {copy.recall.confidence} {formatPercent(answer.confidence)}
-        </Badge>
-        {answer.matchedSources.length ? <Badge>{copy.recall.matchedSources}</Badge> : null}
+    <div className="rounded-xl bg-white/10 px-3 py-3">
+      <div className="flex items-center gap-1 text-emerald-100">{icon}</div>
+      <p className="mt-2 text-2xl font-semibold">{value}</p>
+      <p className="text-sm leading-5 text-emerald-100">{label}</p>
+    </div>
+  );
+}
+
+function EmptyConversation({ onPickExample }: { onPickExample: (value: string) => void }) {
+  const examples = [copy.conversation.exampleRecord, copy.conversation.exampleRecall, copy.conversation.exampleMixed];
+  return (
+    <section className="grid gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
+      <p className="text-xl font-semibold leading-8 text-slate-950">{copy.conversation.emptyTitle}</p>
+      <p className="text-lg leading-8 text-slate-600">{copy.conversation.emptyBody}</p>
+      <div className="grid gap-2">
+        {examples.map((example) => (
+          <Button className="h-auto justify-start rounded-xl px-4 py-3 text-left text-base leading-7" key={example} type="button" variant="secondary" onClick={() => onPickExample(example)}>
+            {example}
+          </Button>
+        ))}
       </div>
-      {answer.retrievedEvidence.length ? (
-        <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
-          <p className="text-xs font-medium uppercase text-slate-500">{copy.recall.evidenceSources}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {Array.from(new Set(answer.retrievedEvidence.map((item) => item.retrievalSource))).map((source) => (
-              <EvidenceSourceBadge key={source} source={source} />
-            ))}
-          </div>
+    </section>
+  );
+}
+
+function TurnCard({
+  confirmTimes,
+  loading,
+  turn,
+  onConfirmReminder,
+  onSendFeedback,
+  onTimeChange,
+}: {
+  confirmTimes: Record<string, string>;
+  loading: boolean;
+  turn: ChatTurn;
+  onConfirmReminder: (reminder: Reminder) => void | Promise<void>;
+  onSendFeedback: (answer: MemoryAnswer, correctionText: string) => void | Promise<void>;
+  onTimeChange: (id: string, value: string) => void;
+}) {
+  return (
+    <article className="grid gap-3">
+      <div className="ml-auto max-w-[86%] rounded-2xl bg-emerald-700 px-4 py-3 text-lg leading-8 text-white">
+        {turn.text}
+      </div>
+      {turn.result ? (
+        <div className="grid gap-3">
+          <p className="mr-auto max-w-[92%] rounded-2xl bg-slate-100 px-4 py-3 text-lg leading-8 text-slate-900">{turn.result.message}</p>
+          {turn.result.ingestResult ? (
+            <IngestResultCard
+              confirmTimes={confirmTimes}
+              loading={loading}
+              result={turn.result.ingestResult}
+              onConfirmReminder={onConfirmReminder}
+              onTimeChange={onTimeChange}
+            />
+          ) : null}
+          {turn.result.answer ? <AnswerCard answer={turn.result.answer} loading={loading} onSendFeedback={onSendFeedback} /> : null}
+        </div>
+      ) : (
+        <p className="mr-auto rounded-2xl bg-slate-100 px-4 py-3 text-lg leading-8 text-slate-600">{copy.conversation.thinking}</p>
+      )}
+    </article>
+  );
+}
+
+function IngestResultCard({
+  confirmTimes,
+  loading,
+  result,
+  onConfirmReminder,
+  onTimeChange,
+}: {
+  confirmTimes: Record<string, string>;
+  loading: boolean;
+  result: NonNullable<ElderTurnResult["ingestResult"]>;
+  onConfirmReminder: (reminder: Reminder) => void | Promise<void>;
+  onTimeChange: (id: string, value: string) => void;
+}) {
+  const cards = result.elderFacingCards.length
+    ? result.elderFacingCards
+    : result.events.map((event) => ({
+      title: event.title,
+      summary: event.summary,
+      needsConfirmation: event.status === "needs_review",
+      riskLevel: event.riskLevel,
+    }));
+
+  return (
+    <section className="grid gap-3 rounded-2xl border border-emerald-100 bg-white p-4">
+      <div className="flex items-center gap-2 text-emerald-700">
+        <Check className="h-5 w-5" />
+        <h3 className="text-xl font-semibold">{copy.capture.understoodTitle}</h3>
+      </div>
+      {cards.length ? cards.map((card) => (
+        <div className="rounded-xl bg-emerald-50 px-4 py-3" key={`${card.title}:${card.summary}`}>
+          <p className="text-lg font-semibold leading-7 text-slate-950">{card.title}</p>
+          <p className="mt-1 text-lg leading-8 text-slate-700">{card.summary}</p>
+          {card.riskLevel !== "normal" ? (
+            <p className="mt-2 text-base leading-7 text-amber-800">{copy.risk.attention}：{translateRiskLevel(card.riskLevel)}</p>
+          ) : null}
+        </div>
+      )) : (
+        <p className="text-lg leading-8 text-slate-700">{result.summary}</p>
+      )}
+      {result.reminderCandidates.length ? (
+        <div className="grid gap-3">
+          <p className="text-base font-medium text-slate-600">{copy.capture.reminderCandidates}</p>
+          {result.reminderCandidates.map((reminder) => (
+            <ReminderCard
+              confirmTime={confirmTimes[reminder.id] ?? ""}
+              key={reminder.id}
+              loading={loading}
+              reminder={reminder}
+              onConfirm={() => void onConfirmReminder(reminder)}
+              onTimeChange={(value) => onTimeChange(reminder.id, value)}
+            />
+          ))}
         </div>
       ) : null}
-      {answer.matchedSources.length ? (
-        <ul className="mt-3 grid gap-2 text-sm leading-6 text-slate-600">
-          {answer.matchedSources.map((source) => (
-            <li className="rounded-md border border-slate-200 bg-white px-3 py-2" key={`${source.sourceId}:${source.summary}`}>
-              <div className="mb-1">
-                <EvidenceSourceBadge source={source.retrievalSource ?? "postgres"} />
-              </div>
-              {source.summary}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </article>
+    </section>
   );
 }
 
-function EvidenceSourceBadge({ source }: { source: "postgres" | "mem0" | "context_link" | "graphiti" }) {
-  if (source === "context_link") {
-    return (
-      <Badge className="gap-1" variant="warning">
-        <GitBranch className="h-3.5 w-3.5" />
-        {copy.recall.contextLinkEvidence}
-      </Badge>
-    );
-  }
+function AnswerCard({
+  answer,
+  loading,
+  onSendFeedback,
+}: {
+  answer: MemoryAnswer;
+  loading: boolean;
+  onSendFeedback: (answer: MemoryAnswer, correctionText: string) => void | Promise<void>;
+}) {
+  const [isCorrecting, setIsCorrecting] = useState(false);
+  const [correctionText, setCorrectionText] = useState("");
+  const evidence = selectTrustEvidence(answer);
+  const noEvidence = answer.confidence === 0 || (answer.matchedSources.length === 0 && answer.retrievedEvidence.length === 0);
 
-  if (source === "graphiti") {
-    return (
-      <Badge className="gap-1" variant="warning">
-        <Brain className="h-3.5 w-3.5" />
-        {copy.recall.graphitiEvidence}
-      </Badge>
-    );
-  }
-
-  const isMem0 = source === "mem0";
-  const Icon = isMem0 ? Sparkles : Database;
   return (
-    <Badge className="gap-1" variant={isMem0 ? "default" : "secondary"}>
-      <Icon className="h-3.5 w-3.5" />
-      {isMem0 ? copy.recall.mem0Evidence : copy.recall.postgresEvidence}
-    </Badge>
-  );
-}
-
-function EventCard({ event }: { event: MemoryEvent }) {
-  return (
-    <article className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <h3 className="text-base font-semibold leading-6 text-slate-950">{event.title}</h3>
-      <p className="mt-1 text-sm leading-6 text-slate-600">{event.summary}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Badge>{translateEventType(event.type)}</Badge>
-        <Badge variant={riskVariant(event.riskLevel)}>{translateRiskLevel(event.riskLevel)}</Badge>
-        <Badge>{translateStatus(event.status)}</Badge>
+    <section className="grid gap-4 rounded-2xl border border-sky-100 bg-white p-4">
+      <div className="flex items-center gap-2 text-sky-700">
+        <Search className="h-5 w-5" />
+        <h3 className="text-xl font-semibold">{noEvidence ? copy.recall.missingTitle : recallStateLabel(answer)}</h3>
       </div>
-    </article>
+      <p className="text-2xl font-semibold leading-9 text-slate-950">{noEvidence ? copy.recall.noEvidenceBody : answer.answerText}</p>
+      {evidence.length ? (
+        <div className="grid gap-2">
+          <p className="text-base font-medium text-slate-600">{copy.recall.basis}</p>
+          {evidence.map((item) => (
+            <div className="rounded-xl bg-slate-50 px-4 py-3" key={`${item.sourceId}:${item.summary}`}>
+              <p className="text-sm font-medium text-slate-500">{trustEvidenceLabel(item.retrievalSource)}</p>
+              <p className="mt-1 text-lg leading-8 text-slate-800">{item.summary}</p>
+              <p className="mt-1 text-sm text-slate-500">{formatDate(item.createdAt)}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {!noEvidence && (isCorrecting ? (
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSendFeedback(answer, correctionText);
+          }}
+        >
+          <label className="grid gap-2 text-base font-medium text-slate-700">
+            {copy.recall.correctionLabel}
+            <Textarea
+              className="min-h-28 rounded-xl text-lg leading-8"
+              placeholder={copy.recall.correctionPlaceholder}
+              value={correctionText}
+              onChange={(event) => setCorrectionText(event.target.value)}
+            />
+          </label>
+          <Button className="h-12 rounded-xl text-base" disabled={loading || !correctionText.trim()} type="submit">
+            <Send className="h-4 w-4" />
+            {copy.recall.sendCorrection}
+          </Button>
+        </form>
+      ) : (
+        <Button className="h-12 rounded-xl text-base" variant="secondary" onClick={() => setIsCorrecting(true)}>
+          <Pencil className="h-4 w-4" />
+          {copy.recall.correct}
+        </Button>
+      ))}
+    </section>
   );
 }
 
@@ -404,83 +433,178 @@ function ReminderCard({
   onTimeChange: (value: string) => void;
 }) {
   return (
-    <article className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+    <article className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
       <div>
-        <h3 className="text-base font-semibold leading-6 text-slate-950">{reminder.title}</h3>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{reminder.reason}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Badge>{translateStatus(reminder.status)}</Badge>
-          <Badge variant={reminder.remindAt ? "secondary" : "warning"}>
-            {reminder.remindAt ? formatDate(reminder.remindAt) : copy.reminders.timeNeeded}
-          </Badge>
-        </div>
+        <p className="text-base font-medium text-amber-800">{reminder.remindAt ? copy.reminders.readyToConfirm : copy.reminders.timeNeeded}</p>
+        <h4 className="mt-2 text-xl font-semibold leading-7 text-slate-950">{reminder.title}</h4>
+        <p className="mt-2 text-lg leading-8 text-slate-700">{reminder.reason}</p>
+        {reminder.remindAt ? <p className="mt-2 text-base font-medium text-slate-600">{formatDate(reminder.remindAt)}</p> : null}
       </div>
       {!reminder.remindAt ? (
-        <Input
-          aria-label={`${reminder.title} 的提醒时间`}
-          type="datetime-local"
-          value={confirmTime}
-          onChange={(event) => onTimeChange(event.target.value)}
-        />
+        <div className="grid gap-3">
+          <div className="grid grid-cols-3 gap-2">
+            {quickReminderTimes().map((item) => (
+              <Button
+                className="h-12 rounded-xl text-sm sm:text-base"
+                key={item.label}
+                type="button"
+                variant={confirmTime === item.value ? "default" : "secondary"}
+                onClick={() => onTimeChange(item.value)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <Input
+            aria-label={`${reminder.title} 的提醒时间`}
+            className="h-14 rounded-xl text-lg"
+            type="datetime-local"
+            value={confirmTime}
+            onChange={(event) => onTimeChange(event.target.value)}
+          />
+        </div>
       ) : null}
-      <Button disabled={loading || reminder.status === "confirmed" || (!reminder.remindAt && !confirmTime)} onClick={onConfirm}>
-        <Check className="h-4 w-4" />
+      <Button className="h-14 rounded-xl text-lg" disabled={loading || reminder.status === "confirmed" || (!reminder.remindAt && !confirmTime)} onClick={onConfirm}>
+        <Check className="h-5 w-5" />
         {copy.reminders.confirm}
       </Button>
     </article>
   );
 }
 
-function FamilyTaskCard({
+function DevPanel({
+  actorUserId,
+  debugTrace,
+  debugTraceId,
+  elderId,
   loading,
-  task,
-  onConfirm,
-  onReject,
-  onNeedsMoreInfo,
+  onActorChange,
+  onDebugTraceIdChange,
+  onElderChange,
+  onLoadTrace,
 }: {
+  actorUserId: string;
+  debugTrace: DebugTrace | null;
+  debugTraceId: string;
+  elderId: string;
   loading: boolean;
-  task: FamilyTask;
-  onConfirm: () => void;
-  onReject: () => void;
-  onNeedsMoreInfo: () => void;
+  onActorChange: (value: string) => void;
+  onDebugTraceIdChange: (value: string) => void;
+  onElderChange: (value: string) => void;
+  onLoadTrace: () => void | Promise<void>;
 }) {
   return (
-    <article className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div>
-        <h3 className="text-base font-semibold leading-6 text-slate-950">{task.title}</h3>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{task.summary}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Badge variant={task.urgency === "high" ? "danger" : task.urgency === "medium" ? "warning" : "secondary"}>
-            {translateUrgency(task.urgency)}
-          </Badge>
-          <Badge>{translateVisibility(task.visibility)}</Badge>
-          <Badge>{translateStatus(task.status)}</Badge>
-        </div>
+    <details className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+      <summary className="cursor-pointer text-base font-medium text-slate-700">开发工具</summary>
+      <div className="mt-4 grid gap-3">
+        <Field label="老人 ID">
+          <Input value={elderId} onChange={(event) => onElderChange(event.target.value)} />
+        </Field>
+        <Field label="老人操作人">
+          <Input value={actorUserId} onChange={(event) => onActorChange(event.target.value)} />
+        </Field>
+        <Field label="traceId">
+          <Input value={debugTraceId} onChange={(event) => onDebugTraceIdChange(event.target.value)} />
+        </Field>
+        <Button disabled={loading || !debugTraceId.trim()} variant="secondary" onClick={() => void onLoadTrace()}>
+          查询调试链路
+        </Button>
+        {debugTrace ? (
+          <pre className="max-h-72 overflow-auto rounded-xl bg-white p-3 text-xs leading-5">
+            {JSON.stringify(debugTrace, null, 2)}
+          </pre>
+        ) : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Button disabled={loading || task.status !== "pending"} onClick={onConfirm}>
-          <Check className="h-4 w-4" />
-          {copy.familyTasks.confirm}
-        </Button>
-        <Button disabled={loading || task.status !== "pending"} variant="secondary" onClick={onNeedsMoreInfo}>
-          <HelpCircle className="h-4 w-4" />
-          补充
-        </Button>
-        <Button disabled={loading || task.status !== "pending"} variant="secondary" onClick={onReject}>
-          <X className="h-4 w-4" />
-          拒绝
-        </Button>
-      </div>
-    </article>
+    </details>
   );
 }
 
-function Empty({ label }: { label: string }) {
+function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+    <label className="grid gap-1.5 text-sm font-medium text-slate-600">
       {label}
-    </div>
+      {children}
+    </label>
   );
+}
+
+type TodaySnapshotData = {
+  pendingCount: number;
+  todayReminderCount: number;
+  recentMemoryCount: number;
+};
+
+function buildTodaySnapshot(events: MemoryEvent[], reminders: Reminder[], familyTasks: FamilyTask[], now: Date): TodaySnapshotData {
+  return {
+    pendingCount: reminders.filter(needsReminderConfirmation).length + familyTasks.filter((task) => task.status === "pending").length,
+    todayReminderCount: reminders.filter((reminder) => isActiveReminder(reminder) && reminder.remindAt && isSameLocalDay(new Date(reminder.remindAt), now)).length,
+    recentMemoryCount: dedupeRecentMemories(events).length,
+  };
+}
+
+function needsReminderConfirmation(reminder: Reminder): boolean {
+  return (
+    reminder.confirmationRequired ||
+    !reminder.remindAt ||
+    reminder.status === "candidate" ||
+    reminder.status === "pending_elder_confirm" ||
+    reminder.status === "pending_family_confirm"
+  );
+}
+
+function isActiveReminder(reminder: Reminder): boolean {
+  return !["done", "cancelled", "expired"].includes(reminder.status);
+}
+
+function dedupeRecentMemories(events: MemoryEvent[]): MemoryEvent[] {
+  const seen = new Set<string>();
+  return events
+    .filter((event) => event.status === "active")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .filter((event) => {
+      const key = `${event.title}:${event.summary}`.replace(/\s+/g, "").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+function selectTrustEvidence(answer: MemoryAnswer) {
+  const items = answer.matchedSources.length ? answer.matchedSources : answer.retrievedEvidence;
+  return items.slice(0, 3);
+}
+
+function recallStateLabel(answer: MemoryAnswer): string {
+  if (answer.confidence >= 0.65 && answer.retrievedEvidence.some((item) => item.retrievalSource === "postgres" || item.retrievalSource === "mem0")) {
+    return copy.recall.certainTitle;
+  }
+  return copy.recall.possibleTitle;
+}
+
+function trustEvidenceLabel(source: "postgres" | "mem0" | "context_link" | "graphiti" | undefined): string {
+  if (source === "context_link") return copy.recall.contextLinkEvidence;
+  if (source === "graphiti") return copy.recall.graphitiEvidence;
+  return copy.recall.recordedEvidence;
+}
+
+function quickReminderTimes(): Array<{ label: string; value: string }> {
+  const now = new Date();
+  return [
+    { label: copy.reminders.quickTimes.morning, value: toDateTimeLocalValue(now, 7) },
+    { label: copy.reminders.quickTimes.noon, value: toDateTimeLocalValue(now, 12) },
+    { label: copy.reminders.quickTimes.evening, value: toDateTimeLocalValue(now, 19) },
+  ];
+}
+
+function toDateTimeLocalValue(base: Date, hour: number): string {
+  const value = new Date(base);
+  value.setHours(hour, 0, 0, 0);
+  if (value.getTime() < base.getTime()) value.setDate(value.getDate() + 1);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}T${String(hour).padStart(2, "0")}:00`;
 }
 
 async function refreshLists(
@@ -490,6 +614,17 @@ async function refreshLists(
   showStatus = true,
 ) {
   if (!elderId.trim()) return;
+  if (!showStatus) {
+    try {
+      setLists(await listMvpData(elderId));
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
   await runRequest(setState, copy.status.refreshed, async () => {
     setLists(await listMvpData(elderId));
   }, showStatus);
@@ -513,19 +648,9 @@ async function runRequest(
   }
 }
 
-function mergeEvents(...groups: MemoryEvent[][]): MemoryEvent[] {
-  const byId = new Map<string, MemoryEvent>();
-  for (const event of groups.flat()) byId.set(event.id, event);
-  return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
 function toIso(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return new Date(value).toISOString();
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
 }
 
 function formatDate(value: string): string {
@@ -537,8 +662,6 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function riskVariant(riskLevel: string): BadgeProps["variant"] {
-  if (riskLevel === "fraud_risk" || riskLevel === "financial") return "danger";
-  if (riskLevel === "medical" || riskLevel === "sensitive") return "warning";
-  return "secondary";
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }

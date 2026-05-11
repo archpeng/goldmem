@@ -6,10 +6,11 @@ const actorUserId = process.env.MVP_ACTOR_USER_ID ?? "elder-mvp";
 
 await request("GET", "/health");
 
-const ingest = await request("POST", "/elder/text-notes", {
+const ingestTurn = await request("POST", "/elder/turn", {
   elderId,
-  transcript: process.env.MVP_TRANSCRIPT ?? "I bought vegetables at the market and need to call my daughter tomorrow morning.",
+  text: process.env.MVP_TRANSCRIPT ?? "I bought vegetables at the market and need to call my daughter tomorrow morning.",
 });
+const ingest = (ingestTurn as Json).ingestResult;
 console.log("ingest", pick(ingest, ["sourceId", "summary"]));
 
 const reminders = await request("GET", `/elder/reminders?elderId=${encodeURIComponent(elderId)}`) as Json[];
@@ -25,10 +26,11 @@ if (firstReminder?.id) {
   console.log("confirmed", pick(confirmed, ["id", "status", "confirmedBy"]));
 }
 
-const answer = await request("POST", "/elder/query", {
+const answerTurn = await request("POST", "/elder/turn", {
   elderId,
-  query: process.env.MVP_QUERY ?? "What did I buy?",
+  text: process.env.MVP_QUERY ?? "What did I buy?",
 });
+const answer = (answerTurn as Json).answer;
 console.log("query", pick(answer, ["answerText", "confidence"]));
 
 async function request(method: string, path: string, body?: Json): Promise<unknown> {

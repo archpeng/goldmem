@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
-import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 describe("api-server", () => {
-  it("handles elder text ingest, query, reminder list, and family task endpoints", async () => {
+  it("handles elder turn, reminder list, and family task endpoints", async () => {
     const deps = createDeps();
     const server = buildServer(deps);
 
@@ -14,27 +14,44 @@ describe("api-server", () => {
     expect(health.statusCode).toBe(200);
     expect(health.json().ok).toBe(true);
 
-    const ingest = await server.inject({
+    const recordTurn = await server.inject({
       method: "POST",
-      url: "/elder/text-notes",
+      url: "/elder/turn",
       payload: {
         elderId: "elder-1",
-        transcript: "I bought vegetables.",
+        text: "I bought vegetables.",
       },
     });
-    expect(ingest.statusCode).toBe(200);
-    expect(ingest.json().sourceId).toBe("source-1");
+    expect(recordTurn.statusCode).toBe(200);
+    expect(recordTurn.json().turnType).toBe("record");
+    expect(recordTurn.json().ingestResult.sourceId).toBe("source-1");
 
-    const query = await server.inject({
+    const recallTurn = await server.inject({
       method: "POST",
-      url: "/elder/query",
+      url: "/elder/turn",
       payload: {
         elderId: "elder-1",
-        query: "What did I buy?",
+        text: "What did I buy?",
       },
     });
-    expect(query.statusCode).toBe(200);
-    expect(query.json().answerText).toContain("vegetables");
+    expect(recallTurn.statusCode).toBe(200);
+    expect(recallTurn.json().turnType).toBe("recall");
+    expect(recallTurn.json().answer.answerText).toContain("vegetables");
+
+    const feedback = await server.inject({
+      method: "POST",
+      url: "/elder/feedback",
+      payload: {
+        elderId: "elder-1",
+        actorUserId: "elder-1",
+        sourceId: "source-1",
+        feedbackType: "answer_wrong",
+        correction: { query: "What did I buy?", expected: "青菜" },
+      },
+    });
+    expect(feedback.statusCode).toBe(200);
+    expect(feedback.json().feedbackType).toBe("answer_wrong");
+    expect(deps.auditRecords.some((record) => record.type === "feedback_created")).toBe(true);
 
     const reminders = await server.inject({
       method: "GET",
@@ -214,6 +231,36 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         retrievedEvidence: [],
         suggestedActions: [],
       }),
+      elderTurn: async (input): Promise<ElderTurnResult> => {
+        if (input.text.includes("?")) {
+          return {
+            traceId: "trace-turn-query",
+            turnType: "recall",
+            message: "You bought vegetables.",
+            answer: {
+              traceId: "trace-query",
+              answerText: "You bought vegetables.",
+              confidence: 0.9,
+              matchedSources: [],
+              retrievedEvidence: [],
+              suggestedActions: [],
+            },
+          };
+        }
+        return {
+          traceId: "trace-turn-ingest",
+          turnType: "record",
+          message: "我帮你记住了。",
+          ingestResult: {
+            traceId: "trace-ingest",
+            sourceId: "source-1",
+            summary: "Summary",
+            events: [],
+            reminderCandidates: [],
+            elderFacingCards: [],
+          },
+        };
+      },
       createFamilyReminder: async (input) => {
         auditRecords.push({ type: "family_reminder_created" });
         return {
@@ -274,6 +321,16 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         confirmedBy: input.actorUserId,
         confirmedAt: "2026-05-09T12:01:00.000Z",
       }),
+    },
+    feedbackStore: {
+      create: async (input) => {
+        const feedback: Feedback = {
+          ...input,
+          id: "feedback-1",
+          createdAt: "2026-05-09T12:00:00.000Z",
+        };
+        return feedback;
+      },
     },
     auditLog: {
       record: async (input) => {

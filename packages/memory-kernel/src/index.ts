@@ -1,13 +1,16 @@
 import {
   DEFAULT_TENANT_ID,
   type CreateFamilyReminderRequest,
+  type ElderTurnPlan,
+  type ElderTurnResult,
   type MemoryAnswer,
   type MemoryEvent,
   type MemorySource,
+  type PersonalContext,
   type Reminder,
 } from "@goldmem/memory-schema";
 import { randomUUID } from "node:crypto";
-import type { ModelGateway } from "@goldmem/model-gateway";
+import { ModelGatewayError, type ModelGateway } from "@goldmem/model-gateway";
 import type { TemporalMemoryStore } from "@goldmem/temporal-memory";
 import type {
   AuditLog,
@@ -71,6 +74,14 @@ export type QueryMemoryInput = {
   tenantId?: string;
   elderId: string;
   query: string;
+  now?: string;
+  traceId?: string;
+};
+
+export type ElderTurnInput = {
+  tenantId?: string;
+  elderId: string;
+  text: string;
   now?: string;
   traceId?: string;
 };
@@ -145,5 +156,137 @@ export class ElderMemoryKernel {
 
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {
     return this.queryOrchestrator.queryMemory(input, input.traceId ?? randomUUID());
+  }
+
+  async elderTurn(input: ElderTurnInput): Promise<ElderTurnResult> {
+    const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
+    const traceId = input.traceId ?? randomUUID();
+    const now = input.now ?? new Date().toISOString();
+    const context = await this.deps.personalContextStore.buildContext({
+      tenantId,
+      elderId: input.elderId,
+      queryText: input.text,
+    });
+    const plan = await this.planElderTurnSafely({
+      tenantId,
+      elderId: input.elderId,
+      text: input.text,
+      now,
+      traceId,
+      context,
+    });
+
+    let result: ElderTurnResult;
+    if (plan.intent === "record") {
+      const ingestResult = await this.ingestText({
+        tenantId,
+        elderId: input.elderId,
+        transcript: plan.recordText ?? input.text,
+        traceId,
+      });
+      result = {
+        traceId,
+        turnType: "record",
+        message: "我帮你记住了。",
+        ingestResult,
+      };
+    } else if (plan.intent === "recall") {
+      const answer = await this.queryMemory({
+        tenantId,
+        elderId: input.elderId,
+        query: plan.queryText ?? input.text,
+        now,
+        traceId,
+      });
+      result = {
+        traceId,
+        turnType: "recall",
+        message: answer.answerText,
+        answer,
+      };
+    } else if (plan.intent === "record_and_recall") {
+      const ingestResult = await this.ingestText({
+        tenantId,
+        elderId: input.elderId,
+        transcript: plan.recordText ?? input.text,
+        traceId,
+      });
+      const answer = await this.queryMemory({
+        tenantId,
+        elderId: input.elderId,
+        query: plan.queryText ?? input.text,
+        now,
+        traceId,
+      });
+      result = {
+        traceId,
+        turnType: "record_and_recall",
+        message: "我先帮你记住了，也找到了相关记忆。",
+        ingestResult,
+        answer,
+      };
+    } else {
+      result = {
+        traceId,
+        turnType: "clarify",
+        message: plan.clarifyingQuestion ?? "您想让我记住这件事，还是帮您查以前的记忆？",
+      };
+    }
+
+    await this.deps.auditLog.record({
+      type: "elder_turn",
+      tenantId,
+      elderId: input.elderId,
+      traceId,
+      payload: {
+        traceId,
+        text: input.text,
+        plan,
+        turnType: result.turnType,
+        wroteMemory: Boolean(result.ingestResult),
+        queriedMemory: Boolean(result.answer),
+      },
+    });
+
+    return result;
+  }
+
+  private async planElderTurnSafely(input: {
+    tenantId: string;
+    elderId: string;
+    text: string;
+    now: string;
+    traceId: string;
+    context: PersonalContext;
+  }): Promise<ElderTurnPlan> {
+    try {
+      return await this.deps.modelGateway.planElderTurn({
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        text: input.text,
+        now: input.now,
+        context: input.context,
+      });
+    } catch (error) {
+      if (!(error instanceof ModelGatewayError) || error.code !== "schema_validation_error") throw error;
+      await this.deps.auditLog.record({
+        type: "elder_turn_plan_failed",
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        traceId: input.traceId,
+        payload: {
+          traceId: input.traceId,
+          text: input.text,
+          failureType: "turn_schema_validation_error",
+          errorMessage: error.message,
+          fallbackUsed: true,
+        },
+      });
+      return {
+        intent: "clarify",
+        confidence: 0,
+        clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
+      };
+    }
   }
 }

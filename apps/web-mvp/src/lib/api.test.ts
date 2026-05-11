@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   confirmFamilyTask,
   confirmReminder,
-  createTextNote,
   getDebugTrace,
   listMvpData,
-  queryMemory,
   rejectFamilyTask,
   requestFamilyTaskInfo,
+  sendElderTurn,
+  sendFeedback,
 } from "./api.js";
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -18,17 +18,17 @@ beforeEach(() => {
 });
 
 describe("web MVP api adapter", () => {
-  it("posts text notes through the API proxy", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", sourceId: "source-1", summary: "已保存", events: [], reminderCandidates: [], elderFacingCards: [] }));
+  it("posts elder turns through the API proxy", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", turnType: "record", message: "已保存", ingestResult: { traceId: "trace-1", sourceId: "source-1", summary: "已保存", events: [], reminderCandidates: [], elderFacingCards: [] } }));
 
-    await expect(createTextNote({ elderId: "elder-1", transcript: "我买了青菜。" })).resolves.toMatchObject({
-      sourceId: "source-1",
+    await expect(sendElderTurn({ elderId: "elder-1", text: "我买了青菜。" })).resolves.toMatchObject({
+      turnType: "record",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/elder/text-notes", expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("/api/elder/turn", expect.objectContaining({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ elderId: "elder-1", transcript: "我买了青菜。" }),
+      body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。" }),
     }));
   });
 
@@ -40,19 +40,19 @@ describe("web MVP api adapter", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/debug/traces/trace-1", expect.any(Object));
   });
 
-  it("queries memory and lists MVP data with encoded elder ids", async () => {
+  it("sends recall turns and lists MVP data with encoded elder ids", async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ answerText: "您买了青菜。", confidence: 0.9, matchedSources: [], retrievedEvidence: [], suggestedActions: [] }))
+      .mockResolvedValueOnce(jsonResponse({ traceId: "trace-1", turnType: "recall", message: "您买了青菜。", answer: { answerText: "您买了青菜。", confidence: 0.9, matchedSources: [], retrievedEvidence: [], suggestedActions: [] } }))
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([]));
 
-    await expect(queryMemory({ elderId: "elder 1", query: "我买了什么？" })).resolves.toMatchObject({
-      answerText: "您买了青菜。",
+    await expect(sendElderTurn({ elderId: "elder 1", text: "我买了什么？" })).resolves.toMatchObject({
+      answer: expect.objectContaining({ answerText: "您买了青菜。" }),
     });
     await expect(listMvpData("elder 1")).resolves.toEqual({ events: [], reminders: [], familyTasks: [] });
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/query", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/turn", expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/elder/events?elderId=elder%201", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/elder/reminders?elderId=elder%201", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/elders/elder%201/tasks", expect.any(Object));
@@ -84,10 +84,40 @@ describe("web MVP api adapter", () => {
     }));
   });
 
+  it("sends elder feedback through the feedback route", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "feedback-1", feedbackType: "answer_wrong" }));
+
+    await expect(sendFeedback({
+      elderId: "elder-1",
+      actorUserId: "elder-1",
+      sourceId: "source-1",
+      feedbackType: "answer_wrong",
+      correction: { correctionText: "不是青菜" },
+    })).resolves.toMatchObject({ feedbackType: "answer_wrong" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/elder/feedback", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        tenantId: "tenant-mvp",
+        elderId: "elder-1",
+        actorUserId: "elder-1",
+        sourceId: "source-1",
+        feedbackType: "answer_wrong",
+        correction: { correctionText: "不是青菜" },
+      }),
+    }));
+  });
+
   it("maps backend failures to Chinese user-facing messages", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ message: "Cannot confirm reminder without remindAt" }, 400));
 
     await expect(confirmReminder({ reminderId: "reminder-1", actorUserId: "elder-1" })).rejects.toThrow("请先补充提醒时间。");
+  });
+
+  it("hides raw route failures from elder-facing copy", async () => {
+    fetchMock.mockImplementation(async () => new Response("", { status: 500 }));
+
+    await expect(listMvpData("elder-1")).rejects.toThrow("暂时连不上记忆服务，请稍后再试。");
   });
 });
 
