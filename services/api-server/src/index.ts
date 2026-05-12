@@ -57,7 +57,6 @@ export type ApiServerDeps = {
   eventStore: EventStore;
   contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
-  reminderEngine: DefaultReminderEngine;
   familyTaskStore: FamilyTaskStore;
   feedbackStore: FeedbackStore;
   auditLog: AuditLog;
@@ -127,31 +126,14 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
   server.post("/elder/reminders/:id/confirm", async (request) => {
     const params = request.params as { id: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const traceId = input.traceId ?? randomUUID();
-    const before = await deps.reminderStore.get({ tenantId: input.tenantId, reminderId: params.id });
-    const reminder = await deps.reminderEngine.confirmReminder({
+    return deps.kernel.confirmReminder({
       tenantId: input.tenantId,
       reminderId: params.id,
       actorUserId: input.actorUserId,
       remindAt: input.remindAt,
       timezone: input.timezone,
+      traceId: input.traceId,
     });
-    await deps.auditLog.record({
-      type: "reminder_confirmed",
-      tenantId: reminder.tenantId,
-      elderId: reminder.elderId,
-      sourceId: reminder.sourceId,
-      traceId,
-      payload: {
-        traceId,
-        reminderId: reminder.id,
-        actorUserId: input.actorUserId,
-        previousStatus: before?.status,
-        status: reminder.status,
-        confirmedAt: reminder.confirmedAt,
-      },
-    });
-    return reminder;
   });
 
   server.get("/family/elders/:elderId/pending-tasks", async (request) => {
@@ -169,52 +151,37 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
   server.post("/family/tasks/:taskId/confirm", async (request) => {
     const params = request.params as { taskId: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const traceId = input.traceId ?? randomUUID();
-    const task = await deps.familyTaskStore.confirm({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
-    await deps.auditLog.record({
-      type: "family_task_confirmed",
-      tenantId: task.tenantId,
-      elderId: task.elderId,
-      traceId,
-      payload: {
-        traceId,
-        taskId: task.id,
-        actorUserId: input.actorUserId,
-        status: task.status,
-        confirmedAt: task.confirmedAt,
-      },
+    return deps.kernel.updateFamilyTaskStatus({
+      tenantId: input.tenantId,
+      taskId: params.taskId,
+      actorUserId: input.actorUserId,
+      action: "confirm",
+      traceId: input.traceId,
     });
-    return task;
   });
 
   server.post("/family/tasks/:taskId/reject", async (request) => {
     const params = request.params as { taskId: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const traceId = input.traceId ?? randomUUID();
-    const task = await deps.familyTaskStore.reject({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
-    await deps.auditLog.record({
-      type: "family_task_rejected",
-      tenantId: task.tenantId,
-      elderId: task.elderId,
-      traceId,
-      payload: { traceId, taskId: task.id, actorUserId: input.actorUserId, status: task.status },
+    return deps.kernel.updateFamilyTaskStatus({
+      tenantId: input.tenantId,
+      taskId: params.taskId,
+      actorUserId: input.actorUserId,
+      action: "reject",
+      traceId: input.traceId,
     });
-    return task;
   });
 
   server.post("/family/tasks/:taskId/needs-more-info", async (request) => {
     const params = request.params as { taskId: string };
     const input = ConfirmReminderRequestSchema.parse(request.body);
-    const traceId = input.traceId ?? randomUUID();
-    const task = await deps.familyTaskStore.requestMoreInfo({ tenantId: input.tenantId, taskId: params.taskId, actorUserId: input.actorUserId });
-    await deps.auditLog.record({
-      type: "family_task_needs_more_info",
-      tenantId: task.tenantId,
-      elderId: task.elderId,
-      traceId,
-      payload: { traceId, taskId: task.id, actorUserId: input.actorUserId, status: task.status },
+    return deps.kernel.updateFamilyTaskStatus({
+      tenantId: input.tenantId,
+      taskId: params.taskId,
+      actorUserId: input.actorUserId,
+      action: "needs_more_info",
+      traceId: input.traceId,
     });
-    return task;
   });
 
   server.post("/family/reminders", async (request) => {
@@ -298,7 +265,6 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       eventStore: postgres.eventStore,
       contextLinkStore: postgres.contextLinkStore,
       reminderStore: postgres.reminderStore,
-      reminderEngine,
       familyTaskStore: postgres.familyTaskStore,
       feedbackStore: postgres.feedbackStore,
       auditLog: postgres.auditLog,

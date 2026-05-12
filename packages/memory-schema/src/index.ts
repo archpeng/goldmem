@@ -41,6 +41,15 @@ export const RelationEnrichmentIntentSchema = z.enum([
   "caregiver_context",
   "long_term_pattern",
 ]);
+export const RelationQueryIntentSchema = z.enum([
+  "none",
+  "temporal_change",
+  "conflict_resolution",
+  "same_matter_link",
+  "safety_chain",
+  "caregiver_context",
+  "long_term_pattern",
+]);
 
 export const EvidenceRefSchema = z.object({
   sourceId: z.string().min(1),
@@ -380,6 +389,8 @@ export const ParsedMemoryQuerySchema = z.object({
     .default([]),
   eventTypes: z.array(EventTypeSchema).default([]),
   safetyTags: z.array(QuerySafetyTagSchema).default([]),
+  requiresTemporalEvidence: z.boolean().default(false),
+  relationQueryIntent: RelationQueryIntentSchema.default("none"),
   requiresSourceEvidence: z.boolean(),
 });
 export type ParsedMemoryQuery = z.infer<typeof ParsedMemoryQuerySchema>;

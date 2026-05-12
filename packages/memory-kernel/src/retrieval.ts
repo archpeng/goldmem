@@ -115,57 +115,16 @@ export function mergeRetrievedEvidence(evidence: RetrievedEvidence[]): Retrieved
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, 12);
 }
 
-export function shouldSearchTemporalMemory(query: string, parsedQuery: ParsedMemoryQuery): boolean {
-  const normalized = query.toLowerCase();
-  const relationTerms = [
-    "后来",
-    "改过",
-    "现在",
-    "以前",
-    "上次",
-    "确认过",
-    "是不是还是",
-    "有没有变化",
-    "有没有改",
-    "怎么改",
-    "改期",
-    "经常",
-    "反复",
-    "关联",
-    "一回事",
-    "同一件事",
-    "同一回事",
-    "同一个",
-    "是不是同",
-    "谁确认",
-    "安全吗",
-    "安全不",
-    "诈骗",
-    "陌生人",
-    "身份证",
-    "验证码",
-    "补贴",
-    "风险",
-    "转账",
-    "current",
-    "changed",
-    "change",
-    "history",
-    "confirmed",
-    "rescheduled",
-    "related",
-    "trend",
-    "safe",
-    "scam",
-    "fraud",
-    "identity",
-    "verification code",
-    "risk",
-  ];
-  if (relationTerms.some((term) => normalized.includes(term))) return true;
-
-  const temporalTypes = new Set(["medication", "appointment", "health", "finance", "family", "object"]);
-  return parsedQuery.entities.length > 0 && parsedQuery.eventTypes.some((type) => temporalTypes.has(type));
+export function shouldSearchTemporalMemory(_query: string, parsedQuery: ParsedMemoryQuery): boolean {
+  if (parsedQuery.requiresTemporalEvidence || parsedQuery.relationQueryIntent !== "none") return true;
+  return parsedQuery.safetyTags.some((tag) => (
+    tag === "medical" ||
+    tag === "medication" ||
+    tag === "financial" ||
+    tag === "fraud" ||
+    tag === "identity" ||
+    tag === "privacy"
+  ));
 }
 
 function scoreStructuredEvent(event: MemoryEvent, parsedQuery: ParsedMemoryQuery, query: string): number {

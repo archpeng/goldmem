@@ -29,6 +29,12 @@ import type { ReminderEngine } from "@goldmem/reminder-engine";
 import type { RiskEngine } from "@goldmem/risk-engine";
 import type { PermissionEngine } from "@goldmem/permission-engine";
 import { createFamilyReminderCommand } from "./family-reminders.js";
+import {
+  confirmReminderCommand,
+  updateFamilyTaskStatusCommand,
+  type ConfirmReminderInput,
+  type UpdateFamilyTaskStatusInput,
+} from "./elder-commands.js";
 import { appendProviderTimings, consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { QueryOrchestrator } from "./query-orchestrator.js";
@@ -90,6 +96,7 @@ export type ElderTurnInput = {
 };
 
 export type CreateFamilyReminderInput = CreateFamilyReminderRequest;
+export type { ConfirmReminderInput, UpdateFamilyTaskStatusInput };
 
 export type ElderMemoryKernelDeps = {
   sourceStore: SourceStore;
@@ -155,6 +162,14 @@ export class ElderMemoryKernel {
 
   async createFamilyReminder(input: CreateFamilyReminderInput): Promise<Reminder> {
     return createFamilyReminderCommand(this.deps, input, input.traceId ?? randomUUID());
+  }
+
+  async confirmReminder(input: ConfirmReminderInput): Promise<Reminder> {
+    return confirmReminderCommand(this.deps, input);
+  }
+
+  async updateFamilyTaskStatus(input: UpdateFamilyTaskStatusInput) {
+    return updateFamilyTaskStatusCommand(this.deps, input);
   }
 
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {

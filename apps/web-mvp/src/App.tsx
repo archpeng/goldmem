@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Mic, RefreshCw, Send } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Mic, RefreshCw } from "lucide-react";
 import type { DebugTrace, MemoryAnswer, Reminder } from "@goldmem/memory-schema";
 import {
   confirmReminder,
@@ -11,9 +11,6 @@ import {
 } from "./lib/api.js";
 import { copy } from "./lib/copy.js";
 import { buildTaskItems, toIso } from "./lib/elder-view-model.js";
-import { Alert } from "./components/ui/alert.js";
-import { Button } from "./components/ui/button.js";
-import { Textarea } from "./components/ui/textarea.js";
 import { DevPanel } from "./components/dev-panel.js";
 import { LatestAnswer, TaskList } from "./components/elder-task-list.js";
 
@@ -29,14 +26,16 @@ const DEFAULT_ACTOR_ID = "elder-mvp";
 export function App() {
   const [elderId, setElderId] = useState(DEFAULT_ELDER_ID);
   const [actorUserId, setActorUserId] = useState(DEFAULT_ACTOR_ID);
-  const [inputText, setInputText] = useState("");
   const [latestAnswer, setLatestAnswer] = useState<MemoryAnswer | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [confirmTimes, setConfirmTimes] = useState<Record<string, string>>({});
   const [debugTraceId, setDebugTraceId] = useState("");
   const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
   const [state, setState] = useState<RequestState>({ loading: false });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   const now = useMemo(() => new Date(), [reminders]);
   const taskItems = useMemo(() => buildTaskItems(reminders, now), [reminders, now]);
@@ -45,17 +44,46 @@ export function App() {
     void refreshLists(elderId, setLists, setState, false);
   }, [elderId]);
 
-  async function handleSubmit() {
-    const text = inputText.trim();
-    if (!text) return;
+  async function handleSubmit(text: string) {
+    if (!text.trim()) return;
     await runRequest(setState, copy.status.turnCompleted, async () => {
-      const result = await sendElderTurn({ elderId, text });
+      const result = await sendElderTurn({ elderId, text: text.trim() });
       setLatestAnswer(result.answer ?? null);
       setDebugTraceId(result.traceId);
-      setInputText("");
+      setTranscript("");
       setIsListening(false);
       await refreshLists(elderId, setLists, setState, false);
     });
+  }
+
+  function handleMicClick() {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognition = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const rec = new SpeechRecognition();
+    rec.lang = "zh-CN";
+    rec.interimResults = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (event: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = Array.from(event.results).map((r: any) => r[0].transcript).join("");
+      setTranscript(text);
+    };
+    rec.onend = () => {
+      setIsListening(false);
+      setTranscript((current) => {
+        if (current.trim()) void handleSubmit(current);
+        return current;
+      });
+    };
+    recognitionRef.current = rec;
+    rec.start();
+    setIsListening(true);
   }
 
   async function handleConfirmReminder(reminder: Reminder) {
@@ -115,33 +143,29 @@ export function App() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-slate-100">
-        <header className="px-5 pb-2 pt-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h1 className="text-[2rem] font-bold leading-tight tracking-normal text-slate-950">{copy.appTitle}</h1>
-            </div>
-            <Button
-              aria-label={copy.events.refresh}
-              className="h-10 w-10 shrink-0 rounded-full bg-white text-slate-950 shadow-none hover:bg-slate-50"
-              disabled={state.loading}
-              size="icon"
-              variant="secondary"
-              onClick={() => void refreshLists(elderId, setLists, setState)}
-            >
-              <RefreshCw className="h-5 w-5" />
-            </Button>
-          </div>
-        </header>
+    <main className="min-h-screen bg-[#efefef] text-slate-950">
+      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#efefef]">
+        {/* 顶部汇总卡片 */}
+        <div className="mx-4 mt-6 rounded-2xl bg-white px-5 py-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{copy.tasks.title}</p>
+          <p className="mt-1 text-[2.5rem] font-bold leading-none tracking-tight text-slate-950">{taskItems.length}</p>
+          {state.message || state.error ? (
+            <p className={`mt-2 flex items-center gap-1.5 text-xs ${state.error ? "text-red-500" : "text-slate-400"}`}>
+              <RefreshCw className="h-3 w-3" />
+              {state.error ?? state.message}
+            </p>
+          ) : null}
+          <button
+            className="mt-4 w-full rounded-xl bg-slate-950 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+            disabled={state.loading}
+            type="button"
+            onClick={() => void refreshLists(elderId, setLists, setState)}
+          >
+            {state.loading ? copy.conversation.thinking : copy.events.refresh}
+          </button>
+        </div>
 
-        {state.message || state.error ? (
-          <Alert className="mx-4 mt-3 rounded-2xl bg-white text-base leading-7 shadow-none" variant={state.error ? "destructive" : "default"}>
-            {state.error ?? state.message}
-          </Alert>
-        ) : null}
-
-        <section className="flex-1 overflow-y-auto px-4 py-3 pb-40">
+        <section className="flex-1 overflow-y-auto px-4 py-3 pb-28">
           <TaskList
             confirmTimes={confirmTimes}
             items={taskItems}
@@ -169,41 +193,26 @@ export function App() {
           ) : null}
         </section>
 
-        <form
-          className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[430px] border-t border-slate-200 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur sm:absolute sm:inset-x-auto sm:w-[430px]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSubmit();
-          }}
-        >
-          <div className="grid gap-2">
-            <Textarea
-              aria-label={copy.conversation.inputLabel}
-              className="min-h-16 resize-none rounded-2xl bg-slate-100 text-lg leading-7 shadow-none"
-              placeholder={copy.conversation.placeholder}
-              value={inputText}
-              onChange={(event) => setInputText(event.target.value)}
-            />
-            <div className="grid grid-cols-[3.25rem_1fr] gap-2">
-              <Button
-                aria-label={copy.conversation.voiceAction}
-                className={`h-12 rounded-full shadow-none ${isListening ? "bg-slate-950 text-white hover:bg-slate-800" : "bg-slate-100 text-slate-950 hover:bg-slate-200"}`}
-                disabled={state.loading}
-                size="icon"
-                type="button"
-                variant={isListening ? "default" : "secondary"}
-                onClick={() => setIsListening((current) => !current)}
-              >
-                <Mic className="h-6 w-6" />
-              </Button>
-              <Button className="h-12 rounded-2xl bg-slate-950 text-base shadow-none hover:bg-slate-800" disabled={state.loading || !inputText.trim()} type="submit">
-                <Send className="h-5 w-5" />
-                {state.loading ? copy.conversation.thinking : copy.conversation.send}
-              </Button>
-            </div>
-            {isListening ? <p className="text-center text-base font-medium text-slate-700">{copy.conversation.listening}</p> : null}
+        {/* 浮动语音按钮 */}
+        <div className="fixed bottom-0 inset-x-0 z-20 mx-auto w-full max-w-[430px] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:absolute sm:inset-x-auto sm:w-[430px]">
+          {isListening && transcript ? (
+            <p className="mb-3 px-5 text-center text-sm font-light italic text-slate-500">{transcript}</p>
+          ) : null}
+          {isListening ? (
+            <p className="mb-3 text-center text-xs text-slate-400">{copy.conversation.listening}</p>
+          ) : null}
+          <div className="flex justify-center">
+            <button
+              aria-label={copy.conversation.voiceAction}
+              className={`h-14 w-14 rounded-full shadow-lg transition-all ${isListening ? "bg-slate-950 text-white scale-110" : "bg-white text-slate-950 hover:bg-slate-50"} ${state.loading ? "opacity-50" : ""}`}
+              disabled={state.loading}
+              type="button"
+              onClick={handleMicClick}
+            >
+              <Mic className="mx-auto h-6 w-6" />
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </main>
   );

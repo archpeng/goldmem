@@ -279,6 +279,29 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
           createdAt: "2026-05-09T12:00:00.000Z",
         };
       },
+      confirmReminder: async (input) => {
+        auditRecords.push({ type: "reminder_confirmed" });
+        return {
+          ...reminder,
+          status: "confirmed",
+          confirmedBy: input.actorUserId,
+          remindAt: input.remindAt ?? reminder.remindAt,
+        };
+      },
+      updateFamilyTaskStatus: async (input) => {
+        const status = input.action === "confirm"
+          ? "confirmed"
+          : input.action === "reject"
+            ? "rejected"
+            : "needs_more_info";
+        auditRecords.push({ type: `family_task_${status}` });
+        return {
+          ...task,
+          status,
+          confirmedBy: input.actorUserId,
+          confirmedAt: "2026-05-09T12:01:00.000Z",
+        };
+      },
     } as ApiServerDeps["kernel"],
     eventStore: {
       create: async (input) => ({ ...input, id: "event-2", createdAt: event.createdAt }),
@@ -290,15 +313,6 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
       listByElder: async () => [reminder],
       update: async (_id, patch) => ({ ...reminder, ...patch }),
     },
-    reminderEngine: {
-      createCandidate: async (input) => ({ ...input, id: "reminder-2", status: "pending_family_confirm", createdAt: reminder.createdAt }),
-      confirmReminder: async (input) => ({
-        ...reminder,
-        status: "confirmed",
-        confirmedBy: input.actorUserId,
-        remindAt: input.remindAt ?? reminder.remindAt,
-      }),
-    } as ApiServerDeps["reminderEngine"],
     familyTaskStore: {
       create: async (input) => ({ ...task, ...input }),
       listByElder: async () => [task],

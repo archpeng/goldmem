@@ -9,6 +9,23 @@ const marker = `goldmem-graphiti-smoke-${Date.now()}`;
 const health = await request<Record<string, unknown>>("GET", "/health");
 if (health.ok !== true) throw new Error(`Graphiti health check failed: ${JSON.stringify(health)}`);
 
+await requestFailure("POST", "/add_episode", 422, {
+  name: `${groupId}:invalid-time:${marker}`,
+  episode_body: { source: { id: `source-invalid-${marker}`, transcript: "invalid time should fail" }, events: [] },
+  source: "json",
+  source_description: "GoldMem invalid datetime probe",
+  reference_time: "not-a-date",
+  group_id: groupId,
+  metadata: {
+    tenantId,
+    elderId,
+    groupId,
+    sourceIds: [`source-invalid-${marker}`],
+    eventIds: [],
+    episodeType: "datetime_validation_probe",
+  },
+});
+
 await request("POST", "/add_episode", {
   name: `${groupId}:smoke:${marker}`,
   episode_body: {
@@ -67,6 +84,19 @@ async function request<T = unknown>(method: string, path: string, body?: Record<
   const text = await response.text();
   if (!response.ok) throw new Error(`${method} ${path} failed: ${response.status} ${text}`);
   return (text ? JSON.parse(text) : {}) as T;
+}
+
+async function requestFailure(method: string, path: string, status: number, body: Record<string, unknown>): Promise<void> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      ...(process.env.GRAPHITI_API_KEY ? { "x-api-key": process.env.GRAPHITI_API_KEY } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  if (response.status !== status) throw new Error(`${method} ${path} expected ${status}, got ${response.status}: ${text}`);
 }
 
 function requiredEnv(name: string): string {

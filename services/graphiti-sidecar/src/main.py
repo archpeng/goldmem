@@ -2,7 +2,7 @@ import json
 import os
 import hashlib
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import asyncpg
@@ -385,8 +385,8 @@ def parse_datetime(value: str) -> datetime:
     normalized = value.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(normalized)
-    except ValueError:
-        return datetime.now(timezone.utc)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=f"Invalid datetime: {value}") from error
 
 
 def tokenize(value: str) -> set[str]:

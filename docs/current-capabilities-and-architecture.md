@@ -10,10 +10,10 @@ GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 - 模型生成 `MemoryPlan`，Kernel 进行 schema 校验、风险约束、权限约束和确定性落库。
 - PostgreSQL 保存业务 truth：source、event、reminder、risk flag、family task、context link、feedback、audit、Graphiti retry job。
 - pgvector semantic recall index 作为低延迟召回索引，写入 PostgreSQL 派生摘要和 embedding。
-- Graphiti 作为长期关系/时间记忆核心路径，通过 sidecar 写入 curated temporal episode，并通过 Postgres provenance 对齐 source/event。
+- Graphiti 作为后台长期关系/时间记忆核心路径，通过 sidecar 写入 curated temporal episode，并通过 Postgres provenance 对齐 source/event。
 - Query 通过 PostgreSQL、pgvector semantic recall、Graphiti 合并证据后生成答案；无 evidence 时不编造答案。
 - 提醒确认、家属任务确认、风险 review 均由确定性 engine/store/API path 控制。
-- Graphiti 写失败会进入 retry job，并通过 audit 和 ingest result 暴露。
+- Graphiti 在 ingest 后进入后台队列；入队失败会通过 audit 和 ingest result 暴露。
 - Web MVP 提供中文优先的单页控制台：保存记忆、询问回忆、查看事件/提醒/家属任务、确认提醒/任务。
 
 ## 2. 模块职责
@@ -95,15 +95,9 @@ sequenceDiagram
   Kernel->>Kernel: schema + risk + permission guardrails
   Kernel->>PG: create events/reminders/risk/tasks/context links
   Kernel->>Semantic: index canonical summary embedding
-  Kernel->>Graphiti: add curated temporal episode
-  alt Graphiti write succeeds
-    Graphiti-->>Kernel: written
-    Kernel->>PG: audit memory_ingest
-  else Graphiti write fails
-    Kernel->>PG: enqueue temporal retry job
-    Kernel->>PG: audit graphiti_enqueue_failed
-    Kernel->>PG: audit memory_ingest with failed temporal status
-  end
+  Kernel->>PG: decide/enqueue temporal job when relation value or safety requires it
+  Kernel->>PG: audit memory_ingest with queued/not_needed/failed temporal status
+  Note over PG,Graphiti: background worker later writes curated temporal episode
   Kernel-->>API: ingest result + temporalMemory status
   API-->>Client: elder-facing cards / candidates
 ```
@@ -115,8 +109,8 @@ sequenceDiagram
 - medication/medical/financial/fraud/identity/password 等风险由 `risk-engine` 约束。
 - visibility 与 family sharing 由 `permission-engine` 约束。
 - reminder candidate 由 `reminder-engine` 管理，ambiguous time 不会自动确认。
-- Graphiti 写入发生在 PostgreSQL truth 已存在之后，因此 episode 带稳定 `sourceId/eventId`。
-- Graphiti 写失败不回滚 PostgreSQL truth，但必须 retry/audit/response-visible。
+- Graphiti 入队发生在 PostgreSQL truth 已存在之后，因此后台 episode 带稳定 `sourceId/eventId`。
+- Graphiti 后台写失败不回滚 PostgreSQL truth，但必须 retry/audit-visible。
 
 ## 5. Query / Recall 流程
 
@@ -171,6 +165,7 @@ Graphiti 当前不是可选展示层，而是长期关系记忆核心路径：
 
 - `packages/temporal-memory` 定义 `TemporalMemoryStore` 和 `GraphitiTemporalMemoryStore`。
 - `services/graphiti-sidecar` 包装 `graphiti-core`，提供 REST contract。
+- Ingest 实时路径只做 `queued/not_needed/failed` 决策；Graphiti episode 写入由后台 job 完成。
 - sidecar 使用独立 Neo4j，不混用 semantic recall index 内部 Neo4j。
 - sidecar 写 episode 时同时持久化 `graphiti_episode_provenance`。
 - Graphiti search 结果标记为 `origin=graphiti_raw`，provenance readback 标记为 `origin=provenance_fallback`。
@@ -180,7 +175,9 @@ Graphiti 当前不是可选展示层，而是长期关系记忆核心路径：
 
 ```mermaid
 flowchart TB
-  Kernel[Kernel temporal writer] --> Episode[Curated temporal episode]
+  Kernel[Kernel enqueue decision] --> Job[(temporal_memory_jobs)]
+  Job --> Worker[background temporal worker]
+  Worker --> Episode[Curated temporal episode]
   Episode --> Sidecar[Graphiti sidecar]
   Sidecar --> Neo4j[(Graphiti Neo4j)]
   Sidecar --> Prov[(graphiti_episode_provenance)]

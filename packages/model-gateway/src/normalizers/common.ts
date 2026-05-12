@@ -56,6 +56,7 @@ export const QUERY_INTENTS = [
   "unknown",
 ] as const;
 export const QUERY_SAFETY_TAGS = ["medical", "medication", "financial", "fraud", "identity", "privacy"] as const;
+export const RELATION_QUERY_INTENTS = ["none", ...RELATION_ENRICHMENT_INTENTS] as const;
 
 export function asRecord(value: unknown): JsonRecord {
   return isRecord(value) ? value : {};

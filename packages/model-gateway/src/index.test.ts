@@ -3,6 +3,7 @@ import { ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedM
 import type { GenerateMemoryAnswerInput, GenerateMemoryPlanInput, PlanElderTurnInput } from "./index.js";
 import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
 import { normalizeMemoryPlanResult } from "./normalizers/memory-plan.js";
+import { normalizeParsedMemoryQueryResult } from "./normalizers/query.js";
 import { normalizeElderTurnPlanResult } from "./normalizers/turn-plan.js";
 
 describe("model-gateway normalization", () => {
@@ -76,6 +77,30 @@ describe("model-gateway normalization", () => {
     expect(parsed.matchedSources).toEqual([
       expect.objectContaining({ sourceId: "source-1", summary: "模型摘要。", retrievalSource: "postgres" }),
     ]);
+  });
+
+  it("normalizes structured temporal query intent without keyword fallback", () => {
+    const normalized = normalizeParsedMemoryQueryResult(
+      {
+        intent: "recall_event",
+        relationQueryIntent: "temporal_change",
+        eventTypes: ["medication"],
+        safetyTags: ["medication"],
+        requiresSourceEvidence: true,
+      },
+      {
+        tenantId: "tenant-mvp",
+        elderId: "elder-1",
+        query: "这个药现在怎么吃？",
+        now: "2026-05-09T12:00:00.000Z",
+        context: emptyContext(),
+      },
+    );
+
+    expect(normalized).toEqual(expect.objectContaining({
+      requiresTemporalEvidence: true,
+      relationQueryIntent: "temporal_change",
+    }));
   });
 
   it("fails schema validation when required event evidence is missing", () => {
@@ -321,6 +346,8 @@ function parsedQuery(): ParsedMemoryQuery {
   return {
     intent: "recall_event",
     requiresSourceEvidence: true,
+    requiresTemporalEvidence: false,
+    relationQueryIntent: "none",
     eventTypes: ["shopping"],
     safetyTags: [],
     entities: [],

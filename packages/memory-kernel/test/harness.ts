@@ -232,6 +232,8 @@ class FakeModelGateway implements ModelGateway {
   parsedQuery: ParsedMemoryQuery = {
     intent: "unknown",
     requiresSourceEvidence: true,
+    requiresTemporalEvidence: false,
+    relationQueryIntent: "none",
     eventTypes: [],
     safetyTags: [],
     entities: [],

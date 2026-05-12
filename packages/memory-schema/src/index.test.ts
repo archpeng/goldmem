@@ -188,6 +188,8 @@ describe("memory-schema safety contracts", () => {
         end: "2026-05-11T23:59:59.999Z",
       },
       requiresSourceEvidence: true,
+      requiresTemporalEvidence: false,
+      relationQueryIntent: "none",
     })).toThrow();
   });
 });

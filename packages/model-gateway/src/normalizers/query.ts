@@ -14,12 +14,15 @@ import {
   optionalIso,
   QUERY_SAFETY_TAGS,
   QUERY_INTENTS,
+  RELATION_QUERY_INTENTS,
   stringValue,
 } from "./common.js";
 import type { JsonRecord } from "./common.js";
 
 export function normalizeParsedMemoryQueryResult(raw: unknown, input: ParseMemoryQueryInput): unknown {
   const record = asRecord(raw);
+
+  const relationQueryIntent = enumValue(record.relationQueryIntent, RELATION_QUERY_INTENTS, "none");
 
   return {
     ...record,
@@ -28,6 +31,8 @@ export function normalizeParsedMemoryQueryResult(raw: unknown, input: ParseMemor
     entities: arrayValue(record.entities).map(normalizeQueryEntity).filter(isRecord),
     eventTypes: normalizeQueryEventTypes(record.eventTypes, input.query),
     safetyTags: normalizeSafetyTags(record.safetyTags),
+    requiresTemporalEvidence: booleanValue(record.requiresTemporalEvidence, relationQueryIntent !== "none"),
+    relationQueryIntent,
     requiresSourceEvidence: booleanValue(record.requiresSourceEvidence, true),
   };
 }
