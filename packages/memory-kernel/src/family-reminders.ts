@@ -21,6 +21,7 @@ export async function createFamilyReminderCommand(
     sourceId: "__pending_family_source__",
     title: input.title,
     description: input.description,
+    timeText: input.remindAt ?? "未提到时间",
     remindAt: input.remindAt,
     timeConfidence: input.remindAt ? 1 : 0,
     confirmationRequired: true,

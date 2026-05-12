@@ -81,6 +81,7 @@ function event(input: Partial<MemoryPlan["events"][number]>): MemoryPlan["events
     type: "general",
     title: "Event",
     summary: "Event summary.",
+    timeText: "未提到时间",
     timeConfidence: 0.8,
     entities: [],
     importance: 0.5,

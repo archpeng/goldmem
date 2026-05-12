@@ -27,8 +27,15 @@ export const RISK_TYPES = [
 export const SEVERITIES = ["low", "medium", "high"] as const;
 export const FAMILY_TASK_TYPES = ["reminder_confirm", "risk_review", "memory_correction", "general_review"] as const;
 export const URGENCIES = ["low", "medium", "high"] as const;
-export const MEMORY_UPDATE_TARGETS = ["semantic_memory", "wiki_page"] as const;
+export const MEMORY_UPDATE_TARGETS = ["wiki_page"] as const;
 export const MEMORY_UPDATE_OPERATIONS = ["add", "append", "replace_section", "create"] as const;
+export const EVENT_ACTIONS = [
+  "none",
+  "create_reminder_candidate",
+  "update_existing_reminder_candidate",
+  "needs_clarification",
+  "family_review",
+] as const;
 export const UNCERTAINTY_ACTIONS = ["ask_elder", "ask_family", "leave_unresolved", "review_later"] as const;
 export const CONTEXT_LINK_TYPES = ["possibly_related", "fills_missing_time"] as const;
 export const CONTEXT_LINK_STATUSES = ["active", "needs_confirmation", "rejected"] as const;

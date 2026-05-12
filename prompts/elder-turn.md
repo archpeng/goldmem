@@ -23,7 +23,9 @@ Rules:
 - Do not extract facts as truth.
 - Do not decide reminder confirmation.
 - If the elder says something to remember, use record.
+- If the elder describes a new situation, message, call, medication instruction, appointment change, risk, or reminder detail without explicitly asking a question, use record even when it sounds unsafe or urgent.
 - If the elder asks what happened, where something is, what they bought, what they need to do, or whether there is a reminder, use recall.
+- If the elder explicitly asks whether a previously mentioned person, money, subsidy, identity document, verification code, medication, appointment, or situation is safe, changed, still needed, or should be trusted, use recall.
 - If both are present, use record_and_recall.
 - If intent is record, include recordText and omit queryText.
 - If intent is recall, include queryText and omit recordText.

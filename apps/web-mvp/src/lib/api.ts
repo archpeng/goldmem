@@ -12,7 +12,10 @@ const requestTimeoutMs = 60_000;
 export async function sendElderTurn(input: { elderId: string; text: string }): Promise<ElderTurnResult> {
   return request<ElderTurnResult>("/elder/turn", {
     method: "POST",
-    body: input,
+    body: {
+      ...input,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
   });
 }
 

@@ -30,8 +30,13 @@ export class MemoryPlanApplier {
     timings.eventWritesMs = Date.now() - eventWritesStartedAt;
 
     const reminderWritesStartedAt = Date.now();
-    for (const draft of plan.reminderCandidates) {
-      const relatedEvent = typeof draft.relatedEventIndex === "number" ? events[draft.relatedEventIndex] : undefined;
+    for (const decision of plan.eventActionDecisions) {
+      if (decision.action !== "create_reminder_candidate" && decision.action !== "update_existing_reminder_candidate") {
+        continue;
+      }
+      const draft = plan.reminderCandidates[decision.reminderCandidateIndex ?? -1];
+      if (!draft) continue;
+      const relatedEvent = events[decision.eventIndex];
       const reminder = await this.deps.reminderEngine.createCandidate({
         ...draft,
         tenantId: plan.tenantId,
@@ -45,23 +50,12 @@ export class MemoryPlanApplier {
         await this.deps.familyTaskStore.create({
           elderId: plan.elderId,
           tenantId: plan.tenantId,
-          title: `Confirm reminder: ${draft.title}`,
+          title: `确认提醒：${draft.title}`,
           summary: draft.reason,
           type: "reminder_confirm",
           urgency: draft.timeConfidence < 0.7 ? "medium" : "low",
           visibility: "shared_summary",
           relatedEventId: relatedEvent?.id,
-        });
-      }
-
-      if (typeof draft.relatedEventIndex === "number" && draft.relatedEventIndex >= events.length) {
-        await this.deps.auditLog.record({
-          type: "memory_plan_warning",
-          tenantId: plan.tenantId,
-          elderId: plan.elderId,
-          sourceId: plan.sourceId,
-          traceId,
-          payload: { traceId, warning: "Reminder relatedEventIndex out of range", reminder: draft },
         });
       }
     }
@@ -147,7 +141,9 @@ export class MemoryPlanApplier {
       return undefined;
     }
 
-    const status = draft.confidence >= 0.8 && draft.status === "active" ? "active" : "needs_confirmation";
+    const status = draft.reminderId
+      ? "needs_confirmation"
+      : draft.confidence >= 0.8 && draft.status === "active" ? "active" : "needs_confirmation";
     const link = await this.deps.contextLinkStore.create({
       tenantId: plan.tenantId,
       elderId: plan.elderId,
@@ -167,7 +163,7 @@ export class MemoryPlanApplier {
         elderId: plan.elderId,
         title: draft.type === "fills_missing_time" ? "确认提醒时间关联" : "确认记忆上下文关联",
         summary: draft.reason,
-        type: draft.type === "fills_missing_time" && draft.reminderId ? "reminder_confirm" : "general_review",
+        type: draft.reminderId ? "reminder_confirm" : "general_review",
         urgency: "medium",
         visibility: "shared_summary",
         relatedEventId: fromEvent.id,
@@ -225,15 +221,6 @@ export class MemoryPlanApplier {
       });
     }
 
-    for (const update of plan.memoryUpdates.filter((item) => item.target === "semantic_memory")) {
-      await this.addSemanticMemory(plan, traceId, update.content, {
-        ...update.metadata,
-        tenantId: plan.tenantId,
-        elderId: plan.elderId,
-        sourceId: plan.sourceId,
-        traceId,
-      });
-    }
   }
 
   private async addSemanticMemory(

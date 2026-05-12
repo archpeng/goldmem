@@ -24,7 +24,9 @@ export class PostgresReminderStore implements ReminderStore {
       eventId: reminder.eventId,
       title: reminder.title,
       description: reminder.description,
+      timeText: reminder.timeText,
       remindAt: reminder.remindAt ? new Date(reminder.remindAt) : null,
+      timeConfidence: reminder.timeConfidence,
       status: reminder.status,
       confirmationRequired: reminder.confirmationRequired,
       confidence: reminder.confidence,
@@ -58,6 +60,8 @@ export class PostgresReminderStore implements ReminderStore {
       .update(schema.reminders)
       .set({
         remindAt: input.patch.remindAt ? new Date(input.patch.remindAt) : undefined,
+        timeText: input.patch.timeText,
+        timeConfidence: input.patch.timeConfidence,
         status: input.patch.status,
         confirmedBy: input.patch.confirmedBy,
         confirmedAt: input.patch.confirmedAt ? new Date(input.patch.confirmedAt) : undefined,

@@ -2,6 +2,7 @@ import { MemoryPlanSchema, type MemorySource, type PersonalContext } from "@gold
 import { isString } from "./guards.js";
 import { MemoryPlanApplier } from "./ingest-plan-applier.js";
 import { IngestTemporalWriter } from "./ingest-temporal-writer.js";
+import { enforceMemoryPlanCompleteness } from "./memory-plan-completeness.js";
 import { appendProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import type { ElderMemoryKernelDeps, IngestResult } from "./index.js";
 
@@ -38,6 +39,11 @@ export class IngestOrchestrator {
         sourceId: source.id,
         transcript: source.transcript,
         createdAt: source.createdAt,
+        timeContext: {
+          createdAt: source.createdAt,
+          localCreatedAt: source.localCreatedAt,
+          timezone: source.metadata?.timezone ?? "Asia/Shanghai",
+        },
         context,
       });
       timings.generateMemoryPlanMs = Date.now() - generateMemoryPlanStartedAt;
@@ -63,8 +69,17 @@ export class IngestOrchestrator {
       );
       timings.permissionMs = Date.now() - permissionStartedAt;
 
+      const completenessGateStartedAt = Date.now();
+      const completePlan = await enforceMemoryPlanCompleteness({
+        plan: permissionedPlan,
+        context,
+        traceId,
+        auditLog: this.deps.auditLog,
+      });
+      timings.completenessGateMs = Date.now() - completenessGateStartedAt;
+
       const applyPlanStartedAt = Date.now();
-      const applied = await this.planApplier.apply(permissionedPlan, context, traceId);
+      const applied = await this.planApplier.apply(completePlan, context, traceId);
       timings.applyPlanMs = Date.now() - applyPlanStartedAt;
       timings.applyPlan = applied.timings;
       appendProviderTimings(timings, this.deps.modelGateway);
@@ -82,7 +97,7 @@ export class IngestOrchestrator {
         traceId,
         payload: {
           traceId,
-          plan: permissionedPlan,
+          plan: completePlan,
           result: {
             eventIds: applied.events.map((event) => event.id),
             reminderIds: applied.reminderCandidates.map((reminder) => reminder.id),
@@ -97,7 +112,7 @@ export class IngestOrchestrator {
       return {
         traceId,
         sourceId: source.id,
-        summary: permissionedPlan.summary,
+        summary: completePlan.summary,
         events: applied.events,
         reminderCandidates: applied.reminderCandidates,
         elderFacingCards: applied.events.map((event) => ({

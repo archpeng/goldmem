@@ -75,10 +75,16 @@ for (const [file, maxLines] of [
 }
 
 const semanticStore = await readFile("packages/memory-store/src/postgres-semantic-memory.ts", "utf8");
-if (!/semantic_memories/.test(semanticStore) || !/provider:\s*"semantic"/.test(semanticStore)) {
+if (!/semantic_memories/.test(semanticStore)) {
   violations.push({
     file: "packages/memory-store/src/postgres-semantic-memory.ts",
     reason: "Semantic recall must use the pgvector-backed semantic_memories index.",
+  });
+}
+if (/provider\s*:/.test(semanticStore)) {
+  violations.push({
+    file: "packages/memory-store/src/postgres-semantic-memory.ts",
+    reason: "Semantic recall store results must not expose provider-specific fields.",
   });
 }
 
@@ -108,6 +114,12 @@ if (!/metadata\.summary/.test(retrieval)) {
   violations.push({
     file: "packages/memory-kernel/src/retrieval.ts",
     reason: "Semantic evidence must prefer PostgreSQL-derived metadata.summary.",
+  });
+}
+if (/summary:\s*(?:typeof\s+result\.metadata\.summary[\s\S]{0,120})?\?\s*result\.memory/.test(retrieval)) {
+  violations.push({
+    file: "packages/memory-kernel/src/retrieval.ts",
+    reason: "Semantic evidence must not fall back to provider/index memory text.",
   });
 }
 if (!/retrievalSource:\s*"semantic"/.test(retrieval)) {

@@ -32,6 +32,11 @@ export type GenerateMemoryPlanInput = {
   sourceId: string;
   elderId: string;
   createdAt: string;
+  timeContext: {
+    createdAt: string;
+    localCreatedAt?: string;
+    timezone: string;
+  };
   context: PersonalContext;
 };
 
@@ -66,7 +71,7 @@ export type RetrievedEvidence = {
   transcriptQuote?: string;
   score: number;
   canPlayAudio: boolean;
-  retrievalSource: "postgres" | "semantic" | "context_link" | "graphiti";
+  retrievalSource: "postgres" | "semantic" | "context_link" | "graphiti" | "graphiti_provenance";
 };
 
 export type EmbedTextInput = {

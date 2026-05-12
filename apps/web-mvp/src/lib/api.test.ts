@@ -25,7 +25,7 @@ describe("web MVP api adapter", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/elder/turn", expect.objectContaining({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。" }),
+      body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。", timezone: "Asia/Shanghai" }),
     }));
   });
 

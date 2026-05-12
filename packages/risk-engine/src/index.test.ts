@@ -63,6 +63,7 @@ function planWithEvents(riskLevels: Array<MemoryPlan["events"][number]["riskLeve
       type: "general",
       title: `Event ${index + 1}`,
       summary: `Event ${index + 1} summary.`,
+      timeText: "未提到时间",
       timeConfidence: 0.8,
       entities: [],
       importance: 0.5,
@@ -97,6 +98,7 @@ function basePlan(input: Partial<MemoryPlan>): MemoryPlan {
 function reminder(input: Partial<MemoryPlan["reminderCandidates"][number]>): MemoryPlan["reminderCandidates"][number] {
   return {
     title: "Reminder",
+    timeText: input.timeText ?? "未提到时间",
     remindAt: input.remindAt,
     timeConfidence: input.timeConfidence ?? 0.9,
     confirmationRequired: false,

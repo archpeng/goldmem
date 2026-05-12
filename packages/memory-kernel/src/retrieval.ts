@@ -48,13 +48,13 @@ export function mergeEvidence(
   }));
 
   const semanticEvidence: RetrievedEvidence[] = semanticResults.flatMap((result) => {
-    if (typeof result.metadata?.sourceId !== "string") return [];
+    if (typeof result.metadata?.sourceId !== "string" || typeof result.metadata.summary !== "string") return [];
     return [
       {
         sourceId: result.metadata.sourceId,
         eventId: typeof result.metadata.eventId === "string" ? result.metadata.eventId : undefined,
         createdAt: typeof result.metadata.createdAt === "string" ? result.metadata.createdAt : new Date().toISOString(),
-        summary: typeof result.metadata.summary === "string" ? result.metadata.summary : result.memory,
+        summary: result.metadata.summary,
         score: result.score ?? 0.5,
         canPlayAudio: true,
         retrievalSource: "semantic" as const,
@@ -72,7 +72,7 @@ export function mergeEvidence(
         summary: result.fact,
         score: result.score,
         canPlayAudio: true,
-        retrievalSource: "graphiti" as const,
+        retrievalSource: result.origin === "provenance_fallback" ? "graphiti_provenance" as const : "graphiti" as const,
       },
     ];
   });
@@ -110,6 +110,11 @@ export function shouldSearchTemporalMemory(query: string, parsedQuery: ParsedMem
     "经常",
     "反复",
     "关联",
+    "一回事",
+    "同一件事",
+    "同一回事",
+    "同一个",
+    "是不是同",
     "谁确认",
     "安全吗",
     "安全不",

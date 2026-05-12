@@ -41,6 +41,50 @@ describe("memory-schema safety contracts", () => {
     })).toThrow();
   });
 
+  it("accepts explicit event action decisions in MemoryPlan", () => {
+    const parsed = MemoryPlanSchema.parse({
+      tenantId: "tenant-mvp",
+      sourceId: "source-1",
+      elderId: "elder-1",
+      summary: "老人要去社区医院复查。",
+      events: [{
+        type: "appointment",
+        title: "社区医院复查",
+        summary: "老人下周三下午三点要去社区医院复查血压。",
+        timeText: "下周三下午三点",
+        timeConfidence: 0.8,
+        entities: [],
+        importance: 0.7,
+        confidence: 0.8,
+        riskLevel: "medical",
+        requiresConfirmation: true,
+        evidence: [{ sourceId: "source-1", quote: "下周三下午三点要去社区医院复查血压" }],
+      }],
+      reminderCandidates: [{
+        title: "社区医院复查血压",
+        timeText: "下周三下午三点",
+        timeConfidence: 0.8,
+        relatedEventIndex: 0,
+        confirmationRequired: true,
+        suggestedConfirmers: [{ role: "family" }],
+        confidence: 0.8,
+        reason: "医疗复查提醒需要待确认。",
+      }],
+      eventActionDecisions: [{
+        eventIndex: 0,
+        action: "create_reminder_candidate",
+        reminderCandidateIndex: 0,
+        reason: "这是一个未来医疗复查事项。",
+        confidence: 0.8,
+        evidence: [{ sourceId: "source-1", quote: "下周三下午三点要去社区医院复查血压" }],
+      }],
+      modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+      confidence: 0.8,
+    });
+
+    expect(parsed.eventActionDecisions[0]?.action).toBe("create_reminder_candidate");
+  });
+
   it("requires retrieval evidence and bounded source metadata for answers", () => {
     expect(() => MemoryAnswerSchema.parse({
       answerText: "您买了青菜。",

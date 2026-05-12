@@ -20,7 +20,7 @@
     "mvp:verify": "pnpm typecheck && pnpm test && pnpm test:postgres && pnpm test:graphiti && pnpm build && pnpm lint && pnpm eval && pnpm architecture:check",
     "mvp:smoke": "tsx scripts/mvp-smoke.ts",
     "e2e:golden": "tsx scripts/golden-e2e.ts",
-    "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json tsx scripts/golden-e2e.ts",
+    "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json GOLDEN_E2E_GRAPHITI_MODE=required tsx scripts/golden-e2e.ts",
     "e2e:graphiti": "GOLDEN_E2E_FIXTURE=e2e/golden-graphiti.json GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts",
     "graphiti:smoke": "tsx scripts/graphiti-smoke.ts",
     "graphiti:consolidate": "tsx scripts/graphiti-consolidate.ts",

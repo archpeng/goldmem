@@ -3,7 +3,6 @@ import {
   MemoryAnswerSchema,
   ParsedMemoryQuerySchema,
   type MemoryAnswer,
-  type MemoryContextLink,
   type MemorySource,
   type ParsedMemoryQuery,
 } from "@goldmem/memory-schema";
@@ -101,11 +100,18 @@ export class QueryOrchestrator {
     const retrieval = {
       postgresCount: structuredEvents.length,
       semanticCount: semanticResults.length,
-      semanticMetadataCount: semanticResults.filter((result) => typeof result.metadata?.sourceId === "string").length,
-      semanticUnlinkedCount: semanticResults.filter((result) => typeof result.metadata?.sourceId !== "string").length,
-      semanticSignalCount: semanticResults.filter((result) => result.retrievalSignals).length,
+      semanticMetadataCount: semanticResults.filter((result) => (
+        typeof result.metadata?.sourceId === "string" && typeof result.metadata.summary === "string"
+      )).length,
+      semanticUnlinkedCount: semanticResults.filter((result) => (
+        typeof result.metadata?.sourceId !== "string" || typeof result.metadata.summary !== "string"
+      )).length,
       graphitiCount: temporalResults.length,
       graphitiAlignedCount: alignedTemporalResults.length,
+      graphitiRawCount: temporalResults.filter((result) => result.origin === "graphiti_raw").length,
+      graphitiRawAlignedCount: alignedTemporalResults.filter((result) => result.origin === "graphiti_raw").length,
+      graphitiProvenanceCount: temporalResults.filter((result) => result.origin === "provenance_fallback").length,
+      graphitiProvenanceAlignedCount: alignedTemporalResults.filter((result) => result.origin === "provenance_fallback").length,
       contextLinkCount: evidence.filter((item) => item.retrievalSource === "context_link").length,
       evidenceCount: evidence.length,
     };
@@ -145,6 +151,7 @@ export class QueryOrchestrator {
     timings.totalMs = Date.now() - startedAt;
     const answer: MemoryAnswer = {
       ...generatedAnswer,
+      answerText: ensureContextLinkAnswerFidelity(generatedAnswer.answerText, evidence),
       traceId,
       retrievedEvidence: evidence,
       matchedSources: evidenceBoundMatchedSources(generatedAnswer.matchedSources, evidence),
@@ -234,7 +241,7 @@ export class QueryOrchestrator {
         groupId: buildTemporalGroupId({ tenantId: input.tenantId, elderId: input.elderId }),
         query: input.query,
         entities: input.parsedQuery.entities.map((entity) => ({ name: entity.name, type: entity.type })),
-        timeRange: input.parsedQuery.timeRange,
+        timeRange: sanitizeTemporalTimeRange(input.parsedQuery.timeRange),
         limit: 10,
       });
     } catch (error) {
@@ -342,24 +349,23 @@ export class QueryOrchestrator {
     ];
     if (linkedEventIds.length === 0) return evidence;
 
-    const linkedEvents = await this.deps.eventStore.getByIds({ tenantId, eventIds: linkedEventIds });
-    const linkByEventId = new Map<string, MemoryContextLink>();
-    for (const link of links) {
-      if (initialEventIds.has(link.toEventId) || initialEventIds.has(link.fromEventId)) {
-        linkByEventId.set(link.fromEventId, link);
-        linkByEventId.set(link.toEventId, link);
-      }
-    }
+    const eventsById = new Map(
+      (await this.deps.eventStore.getByIds({ tenantId, eventIds: linkedEventIds }))
+        .map((event) => [event.id, event]),
+    );
 
-    const linkedEvidence: RetrievedEvidence[] = linkedEvents.flatMap((event) => {
-      const link = linkByEventId.get(event.id);
-      if (!link) return [];
+    const linkedEvidence: RetrievedEvidence[] = links.flatMap((link) => {
+      if (!initialEventIds.has(link.toEventId) && !initialEventIds.has(link.fromEventId)) return [];
+      const fromEvent = eventsById.get(link.fromEventId);
+      const toEvent = eventsById.get(link.toEventId);
+      if (!fromEvent || !toEvent) return [];
+      const statusText = link.status === "active" ? "已建立" : "待确认";
       return [
         {
-          sourceId: event.sourceId,
-          eventId: event.id,
-          createdAt: event.createdAt,
-          summary: `${event.summary}（上下文关联：${link.reason}；状态：${link.status === "active" ? "已建立" : "待确认"}）`,
+          sourceId: fromEvent.sourceId,
+          eventId: fromEvent.id,
+          createdAt: fromEvent.createdAt,
+          summary: `原事项：${toEvent.summary}；补充信息：${fromEvent.summary}；关系：${link.reason}；状态：${statusText}`,
           score: clampScore(link.confidence * 0.85),
           canPlayAudio: true,
           retrievalSource: "context_link" as const,
@@ -369,6 +375,49 @@ export class QueryOrchestrator {
 
     return mergeRetrievedEvidence([...evidence, ...linkedEvidence]);
   }
+}
+
+function ensureContextLinkAnswerFidelity(answerText: string, evidence: RetrievedEvidence[]): string {
+  const contextEvidence = evidence.find(
+    (item) => item.retrievalSource === "context_link" && item.summary.includes("原事项：") && item.summary.includes("补充信息："),
+  );
+  if (!contextEvidence) return answerText;
+
+  const anchor = extractBetween(contextEvidence.summary, "原事项：", "；补充信息：");
+  const detail = extractBetween(contextEvidence.summary, "补充信息：", "；关系：");
+  if (hasEvidenceTermOverlap(answerText, anchor) && hasEvidenceTermOverlap(answerText, detail)) return answerText;
+  return `${answerText} 补充说明：${contextEvidence.summary}`;
+}
+
+function extractBetween(value: string, start: string, end: string): string {
+  const startIndex = value.indexOf(start);
+  if (startIndex < 0) return "";
+  const contentStart = startIndex + start.length;
+  const endIndex = value.indexOf(end, contentStart);
+  return value.slice(contentStart, endIndex < 0 ? undefined : endIndex);
+}
+
+function hasEvidenceTermOverlap(answerText: string, evidenceText: string): boolean {
+  const answerTerms = new Set(cjkTerms(answerText));
+  const evidenceTerms = cjkTerms(evidenceText);
+  if (evidenceTerms.length === 0) return true;
+  let matches = 0;
+  for (const term of evidenceTerms) {
+    if (answerTerms.has(term)) matches += 1;
+    if (matches >= 2) return true;
+  }
+  return false;
+}
+
+function cjkTerms(value: string): string[] {
+  const chars = [...value].filter((char) => /[\p{Script=Han}]/u.test(char));
+  const terms = new Set<string>();
+  for (const size of [2, 3]) {
+    for (let index = 0; index <= chars.length - size; index += 1) {
+      terms.add(chars.slice(index, index + size).join(""));
+    }
+  }
+  return [...terms];
 }
 
 function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
@@ -386,4 +435,11 @@ function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEv
     suggestedActions: [],
     safetyNote: "回答来自已找到的记忆依据；如果不确定，可以再补充一句说明。",
   };
+}
+
+function sanitizeTemporalTimeRange(
+  timeRange: ParsedMemoryQuery["timeRange"],
+): { start: string; end: string } | undefined {
+  if (!timeRange) return undefined;
+  return { start: timeRange.start, end: timeRange.end };
 }

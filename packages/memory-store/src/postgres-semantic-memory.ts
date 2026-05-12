@@ -56,14 +56,12 @@ export class PostgresSemanticMemoryStore implements SemanticMemoryStore {
   }): Promise<MemoryRecallResult[]> {
     assertEmbedding(input.embedding);
     const result = await this.pool.query<{
-      id: string;
       memory: string;
       metadata_json: Record<string, unknown> | null;
       score: number;
     }>(
       `
         select
-          id,
           memory,
           metadata_json,
           1 - (embedding <=> $3::vector) as score
@@ -79,9 +77,6 @@ export class PostgresSemanticMemoryStore implements SemanticMemoryStore {
       memory: row.memory,
       score: row.score,
       metadata: row.metadata_json ?? undefined,
-      provider: "semantic",
-      providerId: row.id,
-      retrievalSignals: { semanticScore: row.score },
     }));
   }
 }

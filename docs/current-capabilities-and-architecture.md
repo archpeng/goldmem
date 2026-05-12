@@ -159,7 +159,8 @@ sequenceDiagram
 
 - `eventTypes` 是 ranking signal，不是硬过滤。
 - semantic recall index result 必须通过 PostgreSQL-derived metadata/sourceId/eventId 对齐后才能进入 final evidence。
-- Graphiti evidence 必须带 source/event/episode alignment，并通过 PostgreSQL tenant/elder/source 验证。
+- Graphiti raw evidence 必须带 source/event/episode alignment，并通过 PostgreSQL tenant/elder/source 验证。
+- Graphiti provenance fallback 只作为可追溯补充证据，进入 final evidence 时标记为 `graphiti_provenance`，不计为 raw Graphiti temporal reasoning。
 - no evidence 时返回无匹配记忆，不生成虚构答案。
 - `matchedSources` 只允许映射到已有 evidence。
 - Graphiti search failure 会 audit，不会无声吞掉。
@@ -172,7 +173,8 @@ Graphiti 当前不是可选展示层，而是长期关系记忆核心路径：
 - `services/graphiti-sidecar` 包装 `graphiti-core`，提供 REST contract。
 - sidecar 使用独立 Neo4j，不混用 semantic recall index 内部 Neo4j。
 - sidecar 写 episode 时同时持久化 `graphiti_episode_provenance`。
-- Graphiti search 结果和 provenance readback 通过 `sourceId/eventId/episodeId` 合并去重。
+- Graphiti search 结果标记为 `origin=graphiti_raw`，provenance readback 标记为 `origin=provenance_fallback`。
+- Kernel 将 raw Graphiti 结果映射为 `retrievalSource=graphiti`，将 provenance readback 映射为 `retrievalSource=graphiti_provenance`。
 - `pnpm test:graphiti` 会读取 `.env`，启动本地 Graphiti profile，执行真实 write/search smoke。
 - `pnpm mvp:verify` 默认包含 Graphiti readback gate。
 

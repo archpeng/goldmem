@@ -189,6 +189,18 @@ set +a
 pnpm e2e:graphiti
 ```
 
+For the context-link golden fixture, keep Graphiti enabled so temporal evidence can participate in relationship and disambiguation queries:
+
+```bash
+set -a
+source .env
+set +a
+pnpm --filter @goldmem/api-server dev
+pnpm e2e:context
+```
+
+`pnpm e2e:context` now fails fast unless the API reports `graphiti: "ok"`.
+
 ## MVP Verification
 
 Run the local non-network verification suite:

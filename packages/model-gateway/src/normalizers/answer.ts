@@ -80,7 +80,7 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
     canPlayAudio: booleanValue(record.canPlayAudio, matched.canPlayAudio),
     retrievalSource: enumValue(
       record.retrievalSource,
-      ["postgres", "semantic", "context_link", "graphiti"] as const,
+      ["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"] as const,
       matched.retrievalSource,
     ),
   };

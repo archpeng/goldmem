@@ -98,6 +98,47 @@ describe("model-gateway normalization", () => {
     expect(() => MemoryPlanSchema.parse(normalized)).toThrow();
   });
 
+  it("normalizes explicit memory plan action decisions without inferring actions", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "老人要去社区医院复查。",
+        events: [{
+          title: "社区医院复查",
+          summary: "老人下周三下午三点要去社区医院复查血压。",
+          timeText: "下周三下午三点",
+          confidence: 0.8,
+          evidence: ["下周三下午三点要去社区医院复查血压"],
+        }],
+        reminderCandidates: [{
+          title: "社区医院复查血压",
+          timeText: "下周三下午三点",
+          confirmationRequired: false,
+          reason: "医疗复查提醒需要待确认。",
+        }],
+        eventActionDecisions: [{
+          eventIndex: "0",
+          action: "create_reminder_candidate",
+          reminderCandidateIndex: "0",
+          reason: "这是一个未来医疗复查事项。",
+          confidence: "high",
+          evidence: ["下周三下午三点要去社区医院复查血压"],
+        }],
+        modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+        confidence: 0.8,
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(MemoryPlanSchema.parse(normalized).eventActionDecisions[0]).toMatchObject({
+      eventIndex: 0,
+      action: "create_reminder_candidate",
+      reminderCandidateIndex: 0,
+      confidence: 0.9,
+    });
+  });
+
   it("normalizes elder turn routing plans without answering or writing truth", () => {
     const normalized = normalizeElderTurnPlanResult(
       { action: "recall", question: "我买了什么？", confidence: "high" },
@@ -148,6 +189,10 @@ function planInput(): GenerateMemoryPlanInput {
     sourceId: "source-1",
     transcript: "我买了青菜。",
     createdAt: "2026-05-10T09:00:00.000Z",
+    timeContext: {
+      createdAt: "2026-05-10T09:00:00.000Z",
+      timezone: "Asia/Shanghai",
+    },
     context: {
       recentEvents: [],
       semanticCandidateEvents: [],

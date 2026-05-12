@@ -84,6 +84,7 @@ export type ElderTurnInput = {
   elderId: string;
   text: string;
   now?: string;
+  timezone?: string;
   traceId?: string;
 };
 
@@ -192,6 +193,8 @@ export class ElderMemoryKernel {
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
+        localCreatedAt: now,
+        metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
       });
       timings.ingestTextMs = Date.now() - ingestStartedAt;
@@ -223,6 +226,8 @@ export class ElderMemoryKernel {
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
+        localCreatedAt: now,
+        metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
       });
       timings.ingestTextMs = Date.now() - ingestStartedAt;

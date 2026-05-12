@@ -136,12 +136,13 @@ describe("GraphitiTemporalMemoryStore", () => {
   });
 
   it("normalizes only source-aligned Graphiti facts", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
           facts: [
             {
               id: "fact-1",
+              origin: "provenance_fallback",
               fact: "降压药从早饭后改为晚饭后。",
               score: 0.87,
               entity_names: ["降压药"],
@@ -164,11 +165,22 @@ describe("GraphitiTemporalMemoryStore", () => {
       tenantId: "tenant-a",
       elderId: "elder-a",
       query: "这个药后来有没有改过？",
+      timeRange: {
+        start: "2026-05-10T00:00:00.000Z",
+        end: "2026-05-11T00:00:00.000Z",
+        confidence: 0.5,
+      } as never,
     });
 
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.timeRange).toEqual({
+      start: "2026-05-10T00:00:00.000Z",
+      end: "2026-05-11T00:00:00.000Z",
+    });
     expect(facts).toEqual([
       expect.objectContaining({
         retrievalSource: "graphiti",
+        origin: "provenance_fallback",
         sourceId: "source-1",
         eventId: "event-1",
         episodeId: "episode-1",

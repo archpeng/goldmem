@@ -59,6 +59,7 @@ export const MemorySourceSchema = z.object({
       language: z.string().optional(),
       locationHint: z.string().optional(),
       appVersion: z.string().optional(),
+      timezone: z.string().optional(),
     })
     .optional(),
 });
@@ -76,7 +77,7 @@ export const MemoryEventDraftSchema = z.object({
   type: EventTypeSchema,
   title: z.string().min(1),
   summary: z.string().min(1),
-  timeText: z.string().optional(),
+  timeText: z.string().min(1),
   eventTimeStart: ISODateTimeSchema.optional(),
   eventTimeEnd: ISODateTimeSchema.optional(),
   timeConfidence: z.number().min(0).max(1),
@@ -93,7 +94,7 @@ export type MemoryEventDraft = z.infer<typeof MemoryEventDraftSchema>;
 export const ReminderCandidateDraftSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  timeText: z.string().optional(),
+  timeText: z.string().min(1),
   remindAt: ISODateTimeSchema.optional(),
   timeConfidence: z.number().min(0).max(1),
   relatedEventIndex: z.number().int().nonnegative().optional(),
@@ -110,6 +111,23 @@ export const ReminderCandidateDraftSchema = z.object({
   reason: z.string().min(1),
 });
 export type ReminderCandidateDraft = z.infer<typeof ReminderCandidateDraftSchema>;
+
+export const EventActionDecisionSchema = z.object({
+  eventIndex: z.number().int().nonnegative(),
+  action: z.enum([
+    "none",
+    "create_reminder_candidate",
+    "update_existing_reminder_candidate",
+    "needs_clarification",
+    "family_review",
+  ]),
+  reminderCandidateIndex: z.number().int().nonnegative().optional(),
+  targetReminderId: z.string().min(1).optional(),
+  reason: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  evidence: z.array(EvidenceRefSchema).min(1),
+});
+export type EventActionDecision = z.infer<typeof EventActionDecisionSchema>;
 
 export const RiskFlagSchema = z.object({
   type: z.enum([
@@ -216,7 +234,7 @@ export const DebugTraceSchema = z.object({
 export type DebugTrace = z.infer<typeof DebugTraceSchema>;
 
 export const MemoryUpdateDraftSchema = z.object({
-  target: z.enum(["semantic_memory", "wiki_page"]),
+  target: z.literal("wiki_page"),
   path: z.string().optional(),
   operation: z.enum(["add", "append", "replace_section", "create"]),
   content: z.string().min(1),
@@ -251,6 +269,7 @@ export const MemoryPlanSchema = z.object({
   summary: z.string().min(1),
   events: z.array(MemoryEventDraftSchema).default([]),
   reminderCandidates: z.array(ReminderCandidateDraftSchema).default([]),
+  eventActionDecisions: z.array(EventActionDecisionSchema).default([]),
   riskFlags: z.array(RiskFlagSchema).default([]),
   familyTasks: z.array(FamilyConfirmationTaskDraftSchema).default([]),
   contextLinks: z.array(ContextLinkDraftSchema).default([]),
@@ -300,7 +319,9 @@ export const ReminderSchema = z.object({
   eventId: z.string().optional(),
   title: z.string().min(1),
   description: z.string().optional(),
+  timeText: z.string().optional(),
   remindAt: ISODateTimeSchema.optional(),
+  timeConfidence: z.number().min(0).max(1).optional(),
   status: ReminderStatusSchema,
   confirmationRequired: z.boolean(),
   confidence: z.number().min(0).max(1),
@@ -352,7 +373,7 @@ export const MemoryAnswerSchema = z.object({
         createdAt: ISODateTimeSchema,
         summary: z.string().min(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti"]).optional(),
+        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"]).optional(),
       }),
     )
     .default([]),
@@ -366,7 +387,7 @@ export const MemoryAnswerSchema = z.object({
         transcriptQuote: z.string().optional(),
         score: z.number().min(0).max(1),
         canPlayAudio: z.boolean(),
-        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti"]),
+        retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"]),
       }),
     )
     .default([]),
@@ -400,6 +421,7 @@ export const ElderTurnRequestSchema = z.object({
   elderId: z.string().min(1),
   text: z.string().min(1),
   now: ISODateTimeSchema.optional(),
+  timezone: z.string().min(1).optional(),
   traceId: z.string().min(1).optional(),
 });
 export type ElderTurnRequest = z.infer<typeof ElderTurnRequestSchema>;

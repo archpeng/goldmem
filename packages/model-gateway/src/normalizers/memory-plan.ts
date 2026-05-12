@@ -7,6 +7,7 @@ import {
   CONTEXT_LINK_TYPES,
   ENTITY_TYPES,
   enumValue,
+  EVENT_ACTIONS,
   EVENT_TYPES,
   FAMILY_TASK_TYPES,
   inferEntityType,
@@ -52,6 +53,9 @@ export function normalizeMemoryPlanResult(
     reminderCandidates: arrayValue(record.reminderCandidates)
       .map((reminder) => normalizeReminderDraft(reminder, events.length))
       .filter(isRecord),
+    eventActionDecisions: arrayValue(record.eventActionDecisions)
+      .map((decision) => normalizeEventActionDecision(decision, input, events.length))
+      .filter(isRecord),
     riskFlags: arrayValue(record.riskFlags).map((risk) => normalizeRiskFlag(risk, input)).filter(isRecord),
     familyTasks: arrayValue(record.familyTasks).map(normalizeFamilyTask).filter(isRecord),
     contextLinks: arrayValue(record.contextLinks)
@@ -66,6 +70,23 @@ export function normalizeMemoryPlanResult(
       promptVersion: stringValue(asRecord(record.modelInfo).promptVersion, promptVersion),
     },
     confidence: numberValue(record.confidence, 0.5),
+  };
+}
+
+function normalizeEventActionDecision(raw: unknown, input: GenerateMemoryPlanInput, eventCount: number): JsonRecord | undefined {
+  const record = asRecord(raw);
+  const eventIndex = integerValue(record.eventIndex);
+  if (eventIndex === undefined || eventIndex >= eventCount) return undefined;
+
+  return {
+    ...record,
+    eventIndex,
+    action: enumValue(record.action, EVENT_ACTIONS, "none"),
+    reminderCandidateIndex: integerValue(record.reminderCandidateIndex),
+    targetReminderId: optionalString(record.targetReminderId),
+    reason: stringValue(record.reason, "Model action decision for this event."),
+    confidence: numberValue(record.confidence, 0.5),
+    evidence: normalizeEvidenceRefs(record.evidence, input, true),
   };
 }
 
@@ -157,7 +178,7 @@ function normalizeMemoryUpdate(raw: unknown): JsonRecord | undefined {
 
   return {
     ...record,
-    target: enumValue(record.target, MEMORY_UPDATE_TARGETS, "semantic_memory"),
+    target: enumValue(record.target, MEMORY_UPDATE_TARGETS, "wiki_page"),
     path: optionalString(record.path),
     operation: enumValue(record.operation, MEMORY_UPDATE_OPERATIONS, "add"),
     content,

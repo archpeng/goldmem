@@ -37,9 +37,9 @@ export function recallStateLabel(answer: MemoryAnswer): string {
   return copy.recall.possibleTitle;
 }
 
-export function trustEvidenceLabel(source: "postgres" | "semantic" | "context_link" | "graphiti" | undefined): string {
+export function trustEvidenceLabel(source: "postgres" | "semantic" | "context_link" | "graphiti" | "graphiti_provenance" | undefined): string {
   if (source === "context_link") return copy.recall.contextLinkEvidence;
-  if (source === "graphiti") return copy.recall.graphitiEvidence;
+  if (source === "graphiti" || source === "graphiti_provenance") return copy.recall.graphitiEvidence;
   return copy.recall.recordedEvidence;
 }
 

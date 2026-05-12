@@ -76,6 +76,7 @@ export type CurrentFactsInput = TemporalGroupRef & {
 
 export type TemporalEvidence = {
   retrievalSource: "graphiti";
+  origin: "graphiti_raw" | "provenance_fallback";
   sourceId?: string;
   eventId?: string;
   episodeId?: string;
@@ -225,7 +226,7 @@ export class GraphitiTemporalMemoryStore implements TemporalMemoryStore {
         tenantId: input.tenantId,
         elderId: input.elderId,
         entities: input.entities,
-        timeRange: input.timeRange,
+        timeRange: sanitizeTimeRange(input.timeRange),
       }),
     });
     return normalizeTemporalEvidence(result);
@@ -240,7 +241,7 @@ export class GraphitiTemporalMemoryStore implements TemporalMemoryStore {
         elderId: input.elderId,
         entityName: input.entityName,
         entityType: input.entityType,
-        timeRange: input.timeRange,
+        timeRange: sanitizeTimeRange(input.timeRange),
         limit: input.limit,
       }),
     });
@@ -360,6 +361,7 @@ function normalizeTemporalEvidence(result: unknown): TemporalEvidence[] {
     if (!sourceId || !fact) return [];
     return [{
       retrievalSource: "graphiti" as const,
+      origin: temporalEvidenceOriginValue(item.origin ?? metadata?.origin),
       sourceId,
       eventId: stringValue(item.eventId ?? item.event_id ?? metadata?.eventId ?? metadata?.event_id)
         ?? firstStringValue(metadata?.eventIds ?? metadata?.event_ids),
@@ -374,6 +376,15 @@ function normalizeTemporalEvidence(result: unknown): TemporalEvidence[] {
       metadata,
     }];
   });
+}
+
+function sanitizeTimeRange(timeRange: TemporalTimeRange | undefined): TemporalTimeRange | undefined {
+  if (!timeRange) return undefined;
+  return { start: timeRange.start, end: timeRange.end };
+}
+
+function temporalEvidenceOriginValue(value: unknown): TemporalEvidence["origin"] {
+  return value === "provenance_fallback" ? "provenance_fallback" : "graphiti_raw";
 }
 
 function normalizeTimelineItems(result: unknown): TimelineItem[] {

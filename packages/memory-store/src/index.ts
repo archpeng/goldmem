@@ -129,17 +129,6 @@ export type MemoryRecallResult = {
   memory: string;
   score?: number;
   metadata?: Record<string, unknown>;
-  provider?: "semantic" | string;
-  providerId?: string;
-  retrievalSignals?: {
-    semanticScore?: number;
-    keywordScore?: number;
-    entityScore?: number;
-    rerankScore?: number;
-  };
-  entities?: string[];
-  relations?: unknown[];
-  raw?: unknown;
 };
 
 export interface SemanticMemoryStore {
@@ -159,8 +148,6 @@ export interface SemanticMemoryStore {
     limit?: number;
   }): Promise<MemoryRecallResult[]>;
 }
-
-export type MemoryRecallStore = SemanticMemoryStore;
 
 export interface PersonalContextStore {
   buildContext(input: { tenantId: string; elderId: string; queryText: string }): Promise<PersonalContext>;

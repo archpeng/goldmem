@@ -78,13 +78,19 @@ describePostgres("PostgresStores integration", () => {
       sourceId: source.id,
       eventId: firstEvent.id,
       title: "提醒买菜",
+      timeText: "明天上午九点",
       remindAt: "2026-05-11T09:00:00.000Z",
+      timeConfidence: 0.8,
       status: "pending_family_confirm",
       confirmationRequired: true,
       confidence: 0.8,
       reason: "需要确认提醒。",
     });
-    expect(ReminderSchema.parse(await stores.reminderStore.get({ tenantId: source.tenantId, reminderId: reminder.id })).id).toBe(reminder.id);
+    expect(ReminderSchema.parse(await stores.reminderStore.get({ tenantId: source.tenantId, reminderId: reminder.id }))).toMatchObject({
+      id: reminder.id,
+      timeText: "明天上午九点",
+      timeConfidence: 0.8,
+    });
 
     const link = await stores.contextLinkStore.create({
       tenantId: source.tenantId,
@@ -259,7 +265,7 @@ describePostgres("PostgresStores integration", () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.provider).toBe("semantic");
+    expect(results[0]?.score).toBeGreaterThan(0.99);
     expect(results[0]?.metadata).toMatchObject({
       tenantId: "tenant-store",
       elderId: "elder-semantic",

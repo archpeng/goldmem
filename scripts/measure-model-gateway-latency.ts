@@ -50,6 +50,7 @@ for (const model of models) {
       sourceId: "source-latency",
       transcript: "我把蓝色钥匙放在门口鞋柜上了。",
       createdAt: now,
+      timeContext: { createdAt: now, timezone: "Asia/Shanghai" },
       context,
     })),
     parseMemoryQueryMs: await measure(() => gateway.parseMemoryQuery({

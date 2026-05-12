@@ -51,6 +51,54 @@ describe("buildMemorySourceTemporalEpisode", () => {
     });
   });
 
+  it("includes structured reminder and context-link time provenance", () => {
+    const episode = buildMemorySourceTemporalEpisode({
+      tenantId: "tenant-1",
+      elderId: "elder-1",
+      source,
+      events: [event],
+      reminders: [{
+        id: "reminder-1",
+        tenantId: "tenant-1",
+        elderId: "elder-1",
+        sourceId: "source-1",
+        eventId: "event-1",
+        title: "医院复查",
+        timeText: "周五下午",
+        remindAt: "2026-05-15T07:00:00.000Z",
+        timeConfidence: 0.6,
+        status: "pending_family_confirm",
+        confirmationRequired: true,
+        confidence: 0.8,
+        reason: "医疗复查提醒需要确认。",
+        createdAt: "2026-05-11T10:00:02.000Z",
+      }],
+      contextLinks: [{
+        id: "link-1",
+        tenantId: "tenant-1",
+        elderId: "elder-1",
+        fromEventId: "event-1",
+        toEventId: "event-prior",
+        reminderId: "reminder-1",
+        type: "fills_missing_time",
+        status: "needs_confirmation",
+        confidence: 0.7,
+        reason: "可能补充了已有复查提醒的时间。",
+        evidence: [{ sourceId: "source-1", quote: "周五下午" }],
+        createdAt: "2026-05-11T10:00:03.000Z",
+      }],
+    });
+
+    expect(episode.content).toMatchObject({
+      reminders: [{ id: "reminder-1", timeText: "周五下午", timeConfidence: 0.6 }],
+      contextLinks: [{ id: "link-1", reminderId: "reminder-1", type: "fills_missing_time" }],
+    });
+    expect(episode.metadata?.temporalAnchors).toMatchObject({
+      reminderIds: ["reminder-1"],
+      contextLinkIds: ["link-1"],
+    });
+  });
+
   it("surfaces NullTemporalMemoryStore as a missing Graphiti dependency", async () => {
     await expect(
       writeMemorySourceTemporalEpisode({

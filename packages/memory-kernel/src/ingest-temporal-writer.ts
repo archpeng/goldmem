@@ -13,6 +13,7 @@ export class IngestTemporalWriter {
       source,
       events: applied.events,
       reminders: applied.reminderCandidates,
+      contextLinks: applied.contextLinks,
       riskFlags: applied.riskFlags,
       metadata: { writeMode: "production_ingest", traceId },
     });

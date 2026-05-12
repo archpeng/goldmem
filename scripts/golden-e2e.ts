@@ -25,8 +25,8 @@ const GoldenCaseSchema = z.object({
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
-      allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti"])).default(["postgres", "semantic", "context_link"]),
-      expectedEvidenceSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti"])).default([]),
+      allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default(["postgres", "semantic", "context_link"]),
+      expectedEvidenceSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default([]),
       requiresSemantic: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),
     }),
@@ -73,14 +73,22 @@ const fixturePath = process.env.GOLDEN_E2E_FIXTURE ?? join(process.cwd(), "e2e",
 const requestTimeoutMs = Number(process.env.GOLDEN_E2E_TIMEOUT_MS ?? 600_000);
 const fixture = GoldenCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
 const semanticJudge = createSemanticJudge();
+const graphitiMode = process.env.GOLDEN_E2E_GRAPHITI_MODE
+  ?? (fixturePath.includes("graphiti") || fixturePath.includes("context-links") ? "required" : "optional");
 
 const health = await request<Json>("GET", "/health");
 assert(health.ok === true, "API health check failed");
 assert(health.semanticMemory === "pgvector", "Semantic recall index must be pgvector for golden E2E");
 const expectedApiModel = process.env.GOLDEN_E2E_API_MODEL ?? "gpt-4.1-mini";
 assert(health.model === expectedApiModel, `Golden E2E requires API model ${expectedApiModel}; current API model is ${String(health.model)}`);
-if (fixturePath.includes("graphiti")) {
-  assert(health.graphiti === "ok", "Graphiti must be healthy for Graphiti golden E2E");
+if (graphitiMode === "required") {
+  assert(health.graphiti === "ok", "Graphiti must be healthy for this golden E2E fixture");
+}
+if (graphitiMode === "disabled") {
+  assert(
+    health.graphiti === "missing_config",
+    `This golden fixture must run against a Graphiti-disabled API; current API graphiti health is ${String(health.graphiti)}`,
+  );
 }
 
 const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();

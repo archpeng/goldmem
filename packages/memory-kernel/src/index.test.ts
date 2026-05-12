@@ -81,6 +81,14 @@ describe("ElderMemoryKernel", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Needs a reminder but time is unclear.",
+        events: [
+          buildEvent({
+            title: "Take a walk",
+            summary: "The elder asked to be reminded to take a walk later.",
+            type: "general",
+            timeConfidence: 0.3,
+          }),
+        ],
         reminderCandidates: [
           buildReminderCandidate({
             title: "Take a walk",
@@ -88,6 +96,14 @@ describe("ElderMemoryKernel", () => {
             remindAt: undefined,
             timeConfidence: 0.3,
             confirmationRequired: false,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "create_reminder_candidate",
+            reminderCandidateIndex: 0,
+            reason: "The transcript asks for a reminder.",
           }),
         ],
       }),
@@ -100,7 +116,294 @@ describe("ElderMemoryKernel", () => {
 
     expect(result.reminderCandidates[0]?.status).toBe("pending_family_confirm");
     expect(result.reminderCandidates[0]?.confirmationRequired).toBe(true);
+    expect(result.reminderCandidates[0]?.timeText).toBe("later");
+    expect(result.reminderCandidates[0]?.timeConfidence).toBe(0.3);
     expect(harness.familyTasks.tasks[0]?.type).toBe("reminder_confirm");
+  });
+
+  it("rejects reminder actions when the model omits actionable time text", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Reminder action without time text.",
+        events: [
+          buildEvent({
+            title: "社区医院复查",
+            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            type: "appointment",
+            timeText: "下周三下午三点",
+          }),
+        ],
+        reminderCandidates: [
+          buildReminderCandidate({
+            title: "社区医院复查血压",
+            timeText: "未提到时间",
+            confirmationRequired: true,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "create_reminder_candidate",
+            reminderCandidateIndex: 0,
+          }),
+        ],
+      }),
+    );
+
+    await expect(harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下周三下午三点我要去社区医院复查血压。",
+    })).rejects.toThrow("reminderCandidate missing actionable timeText");
+  });
+
+  it("fails visibly when an event has no action decision", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Appointment without a decision.",
+        events: [
+          buildEvent({
+            title: "社区医院复查",
+            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            type: "appointment",
+          }),
+        ],
+        eventActionDecisions: [],
+      }),
+    );
+
+    await expect(harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下周三下午三点我要去社区医院复查血压。",
+    })).rejects.toThrow("MemoryPlan completeness gate failed");
+
+    expect(harness.eventStore.events).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_completeness_failed")).toBe(true);
+  });
+
+  it("rejects orphan reminder candidates that bypass event action decisions", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Reminder candidate without action.",
+        events: [
+          buildEvent({
+            title: "社区医院复查",
+            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            type: "appointment",
+          }),
+        ],
+        reminderCandidates: [
+          buildReminderCandidate({
+            title: "社区医院复查",
+            confirmationRequired: true,
+          }),
+        ],
+      }),
+    );
+
+    await expect(harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下周三下午三点我要去社区医院复查血压。",
+    })).rejects.toThrow("orphan reminderCandidate");
+  });
+
+  it("forces confirmation for medical reminder actions", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Medical appointment reminder.",
+        events: [
+          buildEvent({
+            title: "社区医院复查血压",
+            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            type: "appointment",
+            riskLevel: "medical",
+            requiresConfirmation: false,
+          }),
+        ],
+        reminderCandidates: [
+          buildReminderCandidate({
+            title: "社区医院复查血压",
+            timeText: "下周三下午三点",
+            confirmationRequired: false,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "create_reminder_candidate",
+            reminderCandidateIndex: 0,
+            reason: "这是一个需要待确认的医疗复查提醒候选。",
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "下周三下午三点我要去社区医院复查血压。",
+    });
+
+    expect(result.reminderCandidates[0]).toMatchObject({
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+    });
+    expect(harness.familyTasks.tasks.some((task) => task.type === "reminder_confirm")).toBe(true);
+  });
+
+  it("creates a pending update candidate without mutating the existing reminder", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Reminder update candidate.",
+        events: [
+          buildEvent({
+            title: "复查改期",
+            summary: "女儿确认社区医院复查改到下周一上午九点。",
+            type: "appointment",
+          }),
+        ],
+        reminderCandidates: [
+          buildReminderCandidate({
+            title: "社区医院复查改到下周一上午九点",
+            timeText: "下周一上午九点",
+            confirmationRequired: false,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "update_existing_reminder_candidate",
+            reminderCandidateIndex: 0,
+            targetReminderId: "reminder-prior",
+            reason: "这条输入在更新一个已有的复查提醒。",
+          }),
+        ],
+        contextLinks: [
+          {
+            fromEventIndex: 0,
+            toEventId: "event-prior",
+            reminderId: "reminder-prior",
+            type: "fills_missing_time",
+            confidence: 0.9,
+            status: "needs_confirmation",
+            reason: "这条输入在更新已有复查提醒的时间。",
+            evidence: [evidence()],
+          },
+        ],
+      }),
+    );
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-prior",
+      sourceId: "source-prior",
+      title: "社区医院复查",
+      summary: "原始社区医院复查提醒。",
+    }));
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      recentEvents: [
+        {
+          eventId: "event-prior",
+          sourceId: "source-prior",
+          title: "社区医院复查",
+          summary: "原始社区医院复查提醒。",
+          createdAt: now,
+        },
+      ],
+      openReminders: [
+        {
+          reminderId: "reminder-prior",
+          eventId: "event-prior",
+          title: "社区医院复查",
+          reason: "原始复查提醒。",
+          status: "pending_family_confirm",
+        },
+      ],
+    };
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "社区医院复查改到下周一上午九点。",
+    });
+
+    expect(result.reminderCandidates).toHaveLength(1);
+    expect(result.reminderCandidates[0]).toMatchObject({
+      title: "社区医院复查改到下周一上午九点",
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+    });
+  });
+
+  it("allows reminder updates through a confirmation-required context link without duplicating reminders", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Added a reminder time detail.",
+        events: [
+          buildEvent({
+            title: "下午三点提醒",
+            summary: "老人补充说大约下午三点提醒一下。",
+            type: "general",
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "update_existing_reminder_candidate",
+            targetReminderId: "reminder-prior",
+            reason: "这条输入补充已有提醒的时间。",
+          }),
+        ],
+        contextLinks: [
+          {
+            fromEventIndex: 0,
+            toEventId: "event-prior",
+            reminderId: "reminder-prior",
+            type: "fills_missing_time",
+            confidence: 0.95,
+            status: "active",
+            reason: "这条下午三点是在补充之前下周一吃面条的提醒时间。",
+            evidence: [evidence()],
+          },
+        ],
+      }),
+    );
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-prior",
+      sourceId: "source-prior",
+      title: "下周一吃当地特色面条",
+      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+    }));
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      recentEvents: [
+        {
+          eventId: "event-prior",
+          sourceId: "source-prior",
+          title: "下周一吃当地特色面条",
+          summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+          createdAt: now,
+        },
+      ],
+      openReminders: [
+        {
+          reminderId: "reminder-prior",
+          eventId: "event-prior",
+          title: "下周一吃面条提醒",
+          reason: "时间不明确，需要确认。",
+          status: "pending_family_confirm",
+        },
+      ],
+    };
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "大约下午三点提醒我一下。",
+    });
+
+    expect(result.reminderCandidates).toHaveLength(0);
+    expect(harness.contextLinkStore.links[0]).toMatchObject({
+      reminderId: "reminder-prior",
+      type: "fills_missing_time",
+      status: "needs_confirmation",
+    });
+    expect(harness.familyTasks.tasks.some((task) => task.type === "reminder_confirm")).toBe(true);
   });
 
   it("guards medication risk and persists the risk flag", async () => {
@@ -256,10 +559,16 @@ describe("ElderMemoryKernel", () => {
     expect(harness.audit.records.at(-1)?.type).toBe("memory_ingest");
   });
 
-  it("audits out-of-range reminder event references", async () => {
+  it("rejects reminder actions with mismatched event references", async () => {
     const harness = createHarness(
       buildPlan({
         summary: "Reminder references a missing event.",
+        events: [
+          buildEvent({
+            title: "Call daughter",
+            summary: "The elder asked to be reminded to call their daughter.",
+          }),
+        ],
         reminderCandidates: [
           buildReminderCandidate({
             title: "Call daughter",
@@ -267,15 +576,22 @@ describe("ElderMemoryKernel", () => {
             confirmationRequired: false,
           }),
         ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "create_reminder_candidate",
+            reminderCandidateIndex: 0,
+          }),
+        ],
       }),
     );
 
-    await harness.kernel.ingestText({
+    await expect(harness.kernel.ingestText({
       elderId: "elder-1",
       transcript: "Remind me to call my daughter tomorrow.",
-    });
+    })).rejects.toThrow("MemoryPlan completeness gate failed");
 
-    expect(harness.audit.records.some((record) => record.type === "memory_plan_warning")).toBe(true);
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_completeness_failed")).toBe(true);
   });
 
   it("persists medium-confidence context links as confirmation-required relationships", async () => {
@@ -511,13 +827,18 @@ describe("ElderMemoryKernel", () => {
           summary: "The elder bought vegetables at the market.",
           createdAt: now,
         },
-        retrievalSignals: { semanticScore: 0.8, keywordScore: 0.4 },
       },
       {
         memory: "Provider-only semantic result without PostgreSQL metadata must not become final evidence.",
         score: 0.95,
-        provider: "semantic",
-        retrievalSignals: { entityScore: 0.9, rerankScore: 0.85 },
+      },
+      {
+        memory: "Semantic result with source id but no PostgreSQL summary must not become final evidence.",
+        score: 0.9,
+        metadata: {
+          sourceId: "source-1",
+          eventId: "event-semantic-no-summary",
+        },
       },
     ];
 
@@ -534,10 +855,9 @@ describe("ElderMemoryKernel", () => {
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
     expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
       expect.objectContaining({
-        semanticCount: 2,
+        semanticCount: 3,
         semanticMetadataCount: 1,
-        semanticUnlinkedCount: 1,
-        semanticSignalCount: 2,
+        semanticUnlinkedCount: 2,
       }),
     );
 
@@ -713,6 +1033,7 @@ describe("ElderMemoryKernel", () => {
     temporalMemory.facts = [
       {
         retrievalSource: "graphiti",
+        origin: "graphiti_raw",
         sourceId: "source-graphiti",
         eventId: "event-graphiti",
         episodeId: "episode-graphiti",
@@ -746,6 +1067,11 @@ describe("ElderMemoryKernel", () => {
       requiresSourceEvidence: true,
       eventTypes: ["medication"],
       entities: [{ type: "medicine", name: "降压药", confidence: 0.8 }],
+      timeRange: {
+        start: "2026-05-10T00:00:00.000Z",
+        end: "2026-05-11T00:00:00.000Z",
+        confidence: 0.5,
+      },
     };
     harness.model.answer = {
       answerText: "我找到一条长期关系记忆：降压药用法后来改成晚饭后。",
@@ -769,11 +1095,137 @@ describe("ElderMemoryKernel", () => {
         summary: "降压药用法后来从早饭后改成晚饭后。",
       }),
     ]);
+    expect(temporalMemory.searches[0]?.timeRange).toEqual({
+      start: "2026-05-10T00:00:00.000Z",
+      end: "2026-05-11T00:00:00.000Z",
+    });
+    expect(temporalMemory.searches[0]?.timeRange).not.toHaveProperty("confidence");
     expect(harness.audit.records.at(-1)?.payload.retrieval).toMatchObject({
       graphitiCount: 1,
       graphitiAlignedCount: 1,
+      graphitiRawCount: 1,
+      graphitiRawAlignedCount: 1,
       evidenceCount: 1,
     });
+  });
+
+  it("labels Graphiti provenance fallback separately from raw temporal evidence", async () => {
+    const temporalMemory = new RecordingTemporalMemoryStore();
+    temporalMemory.facts = [
+      {
+        retrievalSource: "graphiti",
+        origin: "provenance_fallback",
+        sourceId: "source-provenance",
+        eventId: "event-provenance",
+        episodeId: "episode-provenance",
+        entityNames: ["降压药"],
+        fact: "降压药相关 episode provenance 命中了查询。",
+        validFrom: now,
+        score: 0.72,
+        reason: "Matched Graphiti episode provenance index.",
+      },
+    ];
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }), temporalMemory);
+    harness.sourceStore.sources.push({
+      id: "source-provenance",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "降压药后来改成晚饭后。",
+      createdAt: now,
+    });
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-provenance",
+      sourceId: "source-provenance",
+      type: "medication",
+      title: "降压药用法调整",
+      summary: "降压药后来改成晚饭后。",
+    }));
+    harness.eventStore.searchResults = [];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["medication"],
+      entities: [{ type: "medicine", name: "降压药", confidence: 0.8 }],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "降压药后来有没有改过？",
+      now,
+    });
+
+    expect(answer.retrievedEvidence).toEqual([
+      expect.objectContaining({
+        retrievalSource: "graphiti_provenance",
+        sourceId: "source-provenance",
+        eventId: "event-provenance",
+      }),
+    ]);
+    expect(harness.audit.records.at(-1)?.payload.retrieval).toMatchObject({
+      graphitiCount: 1,
+      graphitiAlignedCount: 1,
+      graphitiProvenanceCount: 1,
+      graphitiProvenanceAlignedCount: 1,
+    });
+  });
+
+  it("queries Graphiti for same-event relationship questions", async () => {
+    const temporalMemory = new RecordingTemporalMemoryStore();
+    temporalMemory.facts = [
+      {
+        retrievalSource: "graphiti",
+        origin: "graphiti_raw",
+        sourceId: "source-meal",
+        eventId: "event-meal",
+        episodeId: "episode-meal",
+        entityNames: ["老街面馆"],
+        fact: "下周三吃饭提醒和医院复查可能是不同事项。",
+        validFrom: now,
+        score: 0.74,
+        reason: "Graphiti matched same-event relationship question.",
+      },
+    ];
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }), temporalMemory);
+    harness.sourceStore.sources.push({
+      id: "source-meal",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "下周三想去老街面馆吃饭。",
+      createdAt: now,
+    });
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-meal",
+      sourceId: "source-meal",
+      type: "general",
+      title: "老街面馆吃饭",
+      summary: "下周三想去老街面馆吃饭。",
+    }));
+    harness.eventStore.searchResults = [];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["general"],
+      entities: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "下周三下午三点那个吃饭提醒和医院复查是一回事吗？",
+      now,
+    });
+
+    expect(temporalMemory.searches).toHaveLength(1);
+    expect(answer.retrievedEvidence).toEqual([
+      expect.objectContaining({
+        retrievalSource: "graphiti",
+        sourceId: "source-meal",
+        eventId: "event-meal",
+      }),
+    ]);
   });
 
   it("does not query Graphiti for simple daily recall", async () => {
@@ -781,6 +1233,7 @@ describe("ElderMemoryKernel", () => {
     temporalMemory.facts = [
       {
         retrievalSource: "graphiti",
+        origin: "graphiti_raw",
         sourceId: "source-graphiti",
         episodeId: "episode-graphiti",
         entityNames: [],
@@ -816,6 +1269,7 @@ describe("ElderMemoryKernel", () => {
     temporalMemory.facts = [
       {
         retrievalSource: "graphiti",
+        origin: "graphiti_raw",
         sourceId: "source-fraud",
         eventId: "event-fraud",
         episodeId: "episode-fraud",
@@ -873,6 +1327,7 @@ describe("ElderMemoryKernel", () => {
     temporalMemory.facts = [
       {
         retrievalSource: "graphiti",
+        origin: "graphiti_raw",
         sourceId: "source-other-tenant",
         eventId: "event-other-tenant",
         episodeId: "episode-other",
@@ -1043,11 +1498,111 @@ describe("ElderMemoryKernel", () => {
         expect.objectContaining({
           eventId: "event-time",
           retrievalSource: "context_link",
+          summary: expect.stringContaining("原事项：老人说下周一"),
+        }),
+        expect.objectContaining({
+          eventId: "event-time",
+          retrievalSource: "context_link",
+          summary: expect.stringContaining("补充信息：老人补充说大约下午三点"),
+        }),
+        expect.objectContaining({
+          eventId: "event-time",
+          retrievalSource: "context_link",
           summary: expect.stringContaining("下午三点"),
         }),
       ]),
     );
-    expect(harness.audit.records.at(-1)?.payload?.retrieval).toMatchObject({ contextLinkCount: 2 });
+    expect(harness.audit.records.at(-1)?.payload?.retrieval).toMatchObject({ contextLinkCount: 1 });
+  });
+
+  it("appends context-link anchor evidence when generated answers omit it", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    const noodleEvent = memoryEvent({
+      id: "event-noodle",
+      sourceId: "source-noodle",
+      title: "下周一吃当地特色面条",
+      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
+    });
+    const timeEvent = memoryEvent({
+      id: "event-time",
+      sourceId: "source-time",
+      title: "下午三点提醒",
+      summary: "老人补充说大约下午三点需要提醒。",
+    });
+    harness.eventStore.events.push(noodleEvent, timeEvent);
+    harness.eventStore.searchResults = [noodleEvent];
+    harness.contextLinkStore.links.push({
+      id: "link-1",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      fromEventId: "event-time",
+      toEventId: "event-noodle",
+      reminderId: "reminder-noodle",
+      type: "fills_missing_time",
+      status: "needs_confirmation",
+      confidence: 0.68,
+      reason: "下午三点可能是补充下周一吃面条提醒的时间，需要确认。",
+      evidence: [evidence()],
+      createdAt: now,
+    });
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "check_reminder",
+      requiresSourceEvidence: true,
+      eventTypes: ["general"],
+      entities: [],
+    };
+    harness.model.answer = {
+      answerText: "有提到时间，像是大约下午三点，但还不算很确定。",
+      confidence: 0.76,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "我下周一出门吃面条有说几点吗？",
+      now,
+    });
+
+    expect(answer.answerText).toContain("补充说明");
+    expect(answer.answerText).toContain("下周一");
+    expect(answer.answerText).toContain("下午三点");
+  });
+
+  it("does not append context-link notes to ordinary PostgreSQL answers", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.eventStore.searchResults = [
+      memoryEvent({
+        id: "event-shopping",
+        sourceId: "source-shopping",
+        title: "买牙膏",
+        summary: "老人说要买牙膏。",
+      }),
+    ];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["shopping"],
+      entities: [],
+    };
+    harness.model.answer = {
+      answerText: "您说要买牙膏。",
+      confidence: 0.8,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "我说要买什么？",
+      now,
+    });
+
+    expect(answer.answerText).toBe("您说要买牙膏。");
   });
 
   it("uses event type as a ranking signal instead of a hard recall filter", async () => {
@@ -1332,13 +1887,17 @@ function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemoryStore = n
 }
 
 function buildPlan(input: Partial<MemoryPlan>): MemoryPlan {
+  const events = input.events ?? [];
   return {
     tenantId: input.tenantId ?? "tenant-mvp",
     sourceId: "source-1",
     elderId: "elder-1",
     summary: input.summary ?? "Summary",
-    events: input.events ?? [],
+    events,
     reminderCandidates: input.reminderCandidates ?? [],
+    eventActionDecisions: "eventActionDecisions" in input
+      ? input.eventActionDecisions ?? []
+      : events.map((_, eventIndex) => buildEventActionDecision({ eventIndex })),
     riskFlags: input.riskFlags ?? [],
     familyTasks: input.familyTasks ?? [],
     contextLinks: input.contextLinks ?? [],
@@ -1354,6 +1913,20 @@ function buildPlan(input: Partial<MemoryPlan>): MemoryPlan {
   };
 }
 
+function buildEventActionDecision(
+  input: Partial<MemoryPlan["eventActionDecisions"][number]>,
+): MemoryPlan["eventActionDecisions"][number] {
+  return {
+    eventIndex: input.eventIndex ?? 0,
+    action: input.action ?? "none",
+    reminderCandidateIndex: input.reminderCandidateIndex,
+    targetReminderId: input.targetReminderId,
+    reason: input.reason ?? "No follow-up action is needed.",
+    confidence: input.confidence ?? 0.8,
+    evidence: input.evidence ?? [evidence()],
+  };
+}
+
 function memoryEvent(input: Partial<MemoryEvent>): MemoryEvent {
   return {
     id: input.id ?? "event-existing",
@@ -1363,7 +1936,7 @@ function memoryEvent(input: Partial<MemoryEvent>): MemoryEvent {
     type: input.type ?? "general",
     title: input.title ?? "Existing event",
     summary: input.summary ?? "Existing event summary.",
-    timeText: input.timeText,
+    timeText: input.timeText ?? "未提到时间",
     eventTimeStart: input.eventTimeStart,
     eventTimeEnd: input.eventTimeEnd,
     timeConfidence: input.timeConfidence ?? 0.7,
@@ -1384,7 +1957,7 @@ function buildEvent(input: Partial<MemoryPlan["events"][number]>): MemoryPlan["e
     type: input.type ?? "general",
     title: input.title ?? "Event",
     summary: input.summary ?? "Event summary.",
-    timeText: input.timeText,
+    timeText: input.timeText ?? "未提到时间",
     eventTimeStart: input.eventTimeStart,
     eventTimeEnd: input.eventTimeEnd,
     timeConfidence: input.timeConfidence ?? 0.8,

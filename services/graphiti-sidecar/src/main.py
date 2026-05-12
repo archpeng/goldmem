@@ -39,7 +39,7 @@ class SearchFactsRequest(BaseModel):
     tenantId: str | None = None
     elderId: str | None = None
     entities: list[dict[str, Any]] | None = None
-    timeRange: dict[str, str] | None = None
+    timeRange: dict[str, Any] | None = None
 
 
 class EntityTimelineRequest(BaseModel):
@@ -136,9 +136,14 @@ async def search_facts(input: SearchFactsRequest) -> dict[str, Any]:
     provenance = await provenance_candidates(input.group_id)
     raw_results = await search_graphiti(input)
     facts = [fact for fact in normalize_search_results(raw_results, provenance) if fact.get("sourceId")]
-    facts = merge_facts([*facts, *provenance_index_search(input, provenance)])
+    provenance_facts = provenance_index_search(input, provenance)
+    facts = merge_facts([*facts, *provenance_facts])
 
-    return {"facts": facts[: input.max_facts or 10]}
+    return {
+        "facts": facts[: input.max_facts or 10],
+        "rawGraphitiCount": len([fact for fact in facts if fact.get("origin") == "graphiti_raw"]),
+        "provenanceFallbackCount": len([fact for fact in facts if fact.get("origin") == "provenance_fallback"]),
+    }
 
 
 @app.post("/entity_timeline", dependencies=[Depends(require_api_key)])
@@ -243,6 +248,7 @@ def normalize_search_results(results: list[Any], provenance: list[dict[str, Any]
         metadata = metadata_for_fact(provenance, fact_text)
         facts.append({
             "id": string_attr(item, "uuid") or string_attr(item, "id"),
+            "origin": "graphiti_raw",
             "fact": fact_text,
             "score": number_attr(item, "score") or 0.7,
             "entity_names": entity_names(item),
@@ -263,7 +269,7 @@ def merge_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             str(fact.get("episodeId") or fact.get("id") or fact.get("fact") or ""),
         ])
         existing = by_key.get(key)
-        if existing is None or float(fact.get("score") or 0) > float(existing.get("score") or 0):
+        if existing is None or fact_rank(fact) > fact_rank(existing):
             by_key[key] = fact
     return sorted(by_key.values(), key=lambda item: float(item.get("score") or 0), reverse=True)
 
@@ -357,6 +363,7 @@ def provenance_index_search(input: SearchFactsRequest, candidates: list[dict[str
         metadata = episode["metadata"]
         output.append({
             "id": episode["name"],
+            "origin": "provenance_fallback",
             "fact": extract_episode_summary(episode["body"]),
             "score": min(1, 0.55 + score * 0.08),
             "entity_names": list(entity_terms(metadata, body_text)),
@@ -367,6 +374,11 @@ def provenance_index_search(input: SearchFactsRequest, candidates: list[dict[str
             "reason": "Matched Graphiti episode provenance index.",
         })
     return sorted(output, key=lambda item: item["score"], reverse=True)
+
+
+def fact_rank(fact: dict[str, Any]) -> tuple[int, float]:
+    origin_priority = 1 if fact.get("origin") == "graphiti_raw" else 0
+    return (origin_priority, float(fact.get("score") or 0))
 
 
 def parse_datetime(value: str) -> datetime:
