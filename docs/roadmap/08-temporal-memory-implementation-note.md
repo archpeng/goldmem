@@ -99,7 +99,7 @@ Graphiti adapter can be implemented without leaking provider-specific graph obje
 1. Add `GraphitiTemporalMemoryStore` adapter.
 2. Make production API startup fail fast when Graphiti config is required but missing.
 3. Wire Graphiti episode writes into ingest after PostgreSQL and semantic recall index writes.
-4. Add `graphiti_write_failed` audit visibility and retry preparation.
+4. Add `graphiti_enqueue_failed` audit visibility and retry preparation.
 5. Add Graphiti evidence to `queryMemory()` with source/event/episode alignment.
 6. Add production Graphiti golden cases.
 7. Add `nightlyGraphitiConsolidation` job.

@@ -190,7 +190,7 @@ If Graphiti is unavailable:
 record source/event/reminder in PostgreSQL
 write semantic memory to semantic recall index
 return elder-facing response with internal temporal write failure status
-record audit with graphiti_write_failed
+record audit with graphiti_enqueue_failed
 queue Graphiti episode for retry when retry queue exists
 ```
 

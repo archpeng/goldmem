@@ -1,46 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "./index.js";
-import type {
-  FamilyTask,
-  ElderTurnPlan,
-  MemoryAnswer,
-  MemoryContextLink,
-  MemoryEvent,
-  MemoryPlan,
-  MemorySource,
-  ParsedMemoryQuery,
-  PersonalContext,
-  Reminder,
-} from "@goldmem/memory-schema";
-import { ModelGatewayError, type GenerateMemoryPlanInput, type ModelGateway, type PlanElderTurnInput, type TranscriptionResult } from "@goldmem/model-gateway";
-import type {
-  AuditLog,
-  ContextLinkStore,
-  CreateContextLinkInput,
-  CreateEventInput,
-  CreateFamilyReminderCommandInput,
-  CreateFamilyReminderCommandResult,
-  CreateReminderInput,
-  CreateRiskFlagInput,
-  CreateSourceInput,
-  EventStore,
-  FamilyReminderCommandStore,
-  FamilyTaskStore,
-  MemoryRecallResult,
-  PersonalContextStore,
-  ReminderStore,
-  RiskFlagStore,
-  SemanticMemoryStore,
-  SourceStore,
-  TemporalMemoryJob,
-  TemporalMemoryJobStore,
-} from "@goldmem/memory-store";
-import { DefaultPermissionEngine } from "@goldmem/permission-engine";
-import { DefaultReminderEngine } from "@goldmem/reminder-engine";
-import { DefaultRiskEngine } from "@goldmem/risk-engine";
-import { NullTemporalMemoryStore, type AddTemporalEpisodeInput, type TemporalEvidence, type TemporalMemoryStore } from "@goldmem/temporal-memory";
-
-const now = "2026-05-09T12:00:00.000Z";
+import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { ModelGatewayError } from "@goldmem/model-gateway";
+import {
+  RecordingTemporalMemoryStore,
+  buildEvent,
+  buildEventActionDecision,
+  buildPlan,
+  buildRelationEnrichmentSignal,
+  buildReminderCandidate,
+  createHarness,
+  emptyContext,
+  evidence,
+  memoryEvent,
+  now,
+} from "../test/harness.js";
 
 describe("ElderMemoryKernel", () => {
   it("ingests a normal daily note without sharing it by default", async () => {
@@ -178,6 +151,81 @@ describe("ElderMemoryKernel", () => {
 
     expect(harness.eventStore.events).toHaveLength(0);
     expect(harness.audit.records.some((record) => record.type === "memory_plan_completeness_failed")).toBe(true);
+  });
+
+  it("repairs silent future appointment events into pending reminder candidates", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Future appointment without reminder action.",
+        events: [
+          buildEvent({
+            title: "社区医院复查改期",
+            summary: "社区医院复查改到下周一上午九点，医保卡还是要带。",
+            type: "appointment",
+            timeText: "下周一上午九点",
+            eventTimeStart: "2099-05-18T01:00:00.000Z",
+            riskLevel: "medical",
+            requiresConfirmation: true,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "none",
+            reason: "The model missed the required reminder action.",
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "社区医院复查改到下周一上午九点，医保卡还是要带。",
+    });
+
+    expect(result.reminderCandidates).toHaveLength(1);
+    expect(result.reminderCandidates[0]).toMatchObject({
+      title: "社区医院复查改期",
+      timeText: "下周一上午九点",
+      remindAt: "2099-05-18T01:00:00.000Z",
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+    });
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_action_obligation_repaired")).toBe(true);
+  });
+
+  it("does not create reminders for past appointment events", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Past appointment.",
+        events: [
+          buildEvent({
+            title: "上周社区医院复查",
+            summary: "老人上周已经去社区医院复查血压。",
+            type: "appointment",
+            timeText: "上周",
+            eventTimeStart: "2020-05-01T01:00:00.000Z",
+            riskLevel: "medical",
+            requiresConfirmation: true,
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "family_review",
+            reason: "Past medical note only needs family review.",
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "上周我已经去社区医院复查血压。",
+    });
+
+    expect(result.reminderCandidates).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_action_obligation_repaired")).toBe(false);
   });
 
   it("rejects orphan reminder candidates that bypass event action decisions", async () => {
@@ -331,7 +379,7 @@ describe("ElderMemoryKernel", () => {
     });
   });
 
-  it("allows reminder updates through a confirmation-required context link without duplicating reminders", async () => {
+  it("repairs reminder updates into pending candidates while keeping context links as evidence", async () => {
     const harness = createHarness(
       buildPlan({
         summary: "Added a reminder time detail.",
@@ -340,6 +388,7 @@ describe("ElderMemoryKernel", () => {
             title: "下午三点提醒",
             summary: "老人补充说大约下午三点提醒一下。",
             type: "general",
+            timeText: "下午三点",
           }),
         ],
         eventActionDecisions: [
@@ -397,7 +446,13 @@ describe("ElderMemoryKernel", () => {
       transcript: "大约下午三点提醒我一下。",
     });
 
-    expect(result.reminderCandidates).toHaveLength(0);
+    expect(result.reminderCandidates).toHaveLength(1);
+    expect(result.reminderCandidates[0]).toMatchObject({
+      title: "下午三点提醒",
+      timeText: "下午三点",
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+    });
     expect(harness.contextLinkStore.links[0]).toMatchObject({
       reminderId: "reminder-prior",
       type: "fills_missing_time",
@@ -499,7 +554,7 @@ describe("ElderMemoryKernel", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Hospital follow-up.",
-        events: [buildEvent({ title: "医院复查", summary: "周五下午去医院复查，需要带医保卡。", type: "appointment" })],
+        events: [buildEvent({ title: "医院复查", summary: "周五下午去医院复查，需要带医保卡。", type: "appointment", riskLevel: "medical" })],
       }),
       temporalMemory,
     );
@@ -510,29 +565,34 @@ describe("ElderMemoryKernel", () => {
       transcript: "周五下午去医院复查，别忘了医保卡。",
     });
 
-    expect(result.temporalMemory.status).toBe("written");
-    expect(temporalMemory.episodes).toEqual([
+    expect(result.temporalMemory.status).toBe("queued");
+    expect(result.temporalMemory.enqueueReason).toBe("hard_risk");
+    expect(temporalMemory.episodes).toHaveLength(0);
+    expect(harness.temporalMemoryJobStore.jobs).toEqual([
       expect.objectContaining({
         tenantId: "tenant-a",
         elderId: "elder-1",
-        groupId: "tenant_tenant-a__elder_elder-1",
-        sourceIds: ["source-1"],
-        eventIds: ["event-1"],
+        sourceId: "source-1",
+        status: "pending",
+        episode: expect.objectContaining({
+          groupId: "tenant_tenant-a__elder_elder-1",
+          sourceIds: ["source-1"],
+          eventIds: ["event-1"],
+        }),
       }),
     ]);
-    expect(harness.audit.records.at(-1)?.payload.result).toMatchObject({ temporalMemory: { status: "written" } });
+    expect(harness.audit.records.some((record) => record.type === "graphiti_enqueue_decision" && record.payload.reason === "hard_risk")).toBe(true);
+    expect(harness.audit.records.at(-1)?.payload.result).toMatchObject({ temporalMemory: { status: "queued", enqueueReason: "hard_risk" } });
   });
 
-  it("surfaces Graphiti write failure without rolling back PostgreSQL truth", async () => {
-    const temporalMemory = new RecordingTemporalMemoryStore();
-    temporalMemory.failAdd = true;
+  it("surfaces Graphiti enqueue failure without rolling back PostgreSQL truth", async () => {
     const harness = createHarness(
       buildPlan({
         summary: "Medication changed.",
         events: [buildEvent({ title: "药物调整", summary: "医生说药物用法可能有调整。", type: "medication", riskLevel: "medical" })],
       }),
-      temporalMemory,
     );
+    harness.temporalMemoryJobStore.failEnqueue = true;
 
     const result = await harness.kernel.ingestText({
       elderId: "elder-1",
@@ -541,22 +601,134 @@ describe("ElderMemoryKernel", () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.temporalMemory.status).toBe("failed");
-    expect(result.temporalMemory.retryQueued).toBe(true);
-    expect(result.temporalMemory.retryJobId).toBe("temporal-job-1");
-    expect(harness.temporalMemoryJobStore.jobs).toEqual([
-      expect.objectContaining({
-        id: "temporal-job-1",
-        tenantId: "tenant-mvp",
-        elderId: "elder-1",
-        sourceId: "source-1",
-        status: "pending",
-        episode: expect.objectContaining({
-          metadata: expect.objectContaining({ traceId: result.traceId }),
-        }),
-      }),
-    ]);
-    expect(harness.audit.records.some((record) => record.type === "graphiti_write_failed" && record.traceId === result.traceId)).toBe(true);
+    expect(result.temporalMemory.errorCode).toBe("graphiti_enqueue_failed");
+    expect(harness.temporalMemoryJobStore.jobs).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "graphiti_enqueue_failed" && record.traceId === result.traceId)).toBe(true);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_ingest");
+  });
+
+  it("skips Graphiti queueing for low-value daily notes", async () => {
+    const temporalMemory = new RecordingTemporalMemoryStore();
+    const harness = createHarness(
+      buildPlan({
+        summary: "Bought vegetables.",
+        events: [buildEvent({ title: "买青菜", summary: "老人买了青菜。", type: "shopping" })],
+      }),
+      temporalMemory,
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "今天买了青菜。",
+    });
+
+    expect(result.temporalMemory.status).toBe("not_needed");
+    expect(temporalMemory.episodes).toHaveLength(0);
+    expect(harness.temporalMemoryJobStore.jobs).toHaveLength(0);
+  });
+
+  it("does not queue Graphiti for ordinary reminder confirmation tasks without relation value", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Ordinary shopping reminder.",
+        events: [buildEvent({ title: "买鸡蛋", summary: "老人明天上午去买鸡蛋。", type: "shopping" })],
+        reminderCandidates: [
+          buildReminderCandidate({
+            title: "买鸡蛋",
+            timeText: "明天上午",
+            relatedEventIndex: 0,
+            confirmationRequired: true,
+            reason: "普通购物提醒需要确认时间。",
+          }),
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "create_reminder_candidate",
+            reminderCandidateIndex: 0,
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "明天上午去买鸡蛋。",
+    });
+
+    expect(result.reminderCandidates).toHaveLength(1);
+    expect(harness.familyTasks.tasks).toHaveLength(1);
+    expect(result.temporalMemory.status).toBe("not_needed");
+    expect(result.temporalMemory.enqueueReason).toBe("not_needed");
+  });
+
+  it("queues Graphiti from valid relation enrichment signals without broad event-type rules", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Meal plan changed.",
+        events: [buildEvent({ title: "面馆时间改了", summary: "吃面改到下周三下午三点。", type: "general" })],
+        relationEnrichmentSignals: [
+          buildRelationEnrichmentSignal({
+            intent: "temporal_change",
+            valueScore: 0.86,
+            confidence: 0.78,
+            relatedEventIndexes: [0],
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "吃面改到下周三下午三点。",
+    });
+
+    expect(result.temporalMemory.status).toBe("queued");
+    expect(result.temporalMemory.enqueueReason).toBe("model_relation_signal");
+    expect(result.temporalMemory.relationSignalIntents).toEqual(["temporal_change"]);
+  });
+
+  it("ignores low-confidence relation signals when no hard Graphiti signal exists", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "One-off call reminder.",
+        events: [buildEvent({ title: "晚上打电话", summary: "老人晚上要给儿子打电话。", type: "general" })],
+        relationEnrichmentSignals: [
+          buildRelationEnrichmentSignal({
+            intent: "same_matter_link",
+            valueScore: 0.4,
+            confidence: 0.5,
+            relatedEventIndexes: [0],
+          }),
+        ],
+      }),
+    );
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "晚上给儿子打电话。",
+    });
+
+    expect(result.temporalMemory.status).toBe("not_needed");
+    expect(result.temporalMemory.enqueueReason).toBe("not_needed");
+    expect(harness.temporalMemoryJobStore.jobs).toHaveLength(0);
+  });
+
+  it("rejects relation enrichment signals with out-of-range indexes", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Bad relation signal.",
+        events: [buildEvent({ title: "普通记录", summary: "普通记录。", type: "general" })],
+        relationEnrichmentSignals: [
+          buildRelationEnrichmentSignal({ relatedEventIndexes: [1] }),
+        ],
+      }),
+    );
+
+    await expect(harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "普通记录。",
+    })).rejects.toThrow("MemoryPlan completeness gate failed");
   });
 
   it("rejects reminder actions with mismatched event references", async () => {
@@ -808,6 +980,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["shopping"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -877,6 +1050,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["shopping"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -919,6 +1093,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["shopping"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answerError = new ModelGatewayError("schema_validation_error", "bad answer shape");
@@ -981,6 +1156,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["shopping"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -1066,6 +1242,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["medication"],
+      safetyTags: [],
       entities: [{ type: "medicine", name: "降压药", confidence: 0.8 }],
       timeRange: {
         start: "2026-05-10T00:00:00.000Z",
@@ -1147,6 +1324,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["medication"],
+      safetyTags: [],
       entities: [{ type: "medicine", name: "降压药", confidence: 0.8 }],
     };
 
@@ -1209,6 +1387,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
 
@@ -1250,6 +1429,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
 
@@ -1303,6 +1483,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -1330,6 +1511,52 @@ describe("ElderMemoryKernel", () => {
     ]);
     expect(answer.answerText).toContain("家人");
     expect(answer.safetyNote).toContain("家人");
+  });
+
+  it("does not trigger query safety from sensitive words without structured risk metadata", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    const event = memoryEvent({
+      id: "event-normal-code",
+      sourceId: "source-normal-code",
+      type: "general",
+      title: "门禁验证码",
+      summary: "老人说门禁验证码贴在冰箱旁边。",
+      riskLevel: "normal",
+    });
+    harness.sourceStore.sources.push({
+      id: "source-normal-code",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "门禁验证码贴在冰箱旁边。",
+      createdAt: now,
+    });
+    harness.eventStore.events.push(event);
+    harness.eventStore.searchResults = [event];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      eventTypes: ["general"],
+      safetyTags: [],
+      entities: [],
+    };
+    harness.model.answer = {
+      answerText: "门禁验证码贴在冰箱旁边。",
+      confidence: 0.8,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "门禁验证码在哪里？",
+      now,
+    });
+
+    expect(answer.answerText).toBe("门禁验证码贴在冰箱旁边。");
+    expect(answer.safetyNote).toBeUndefined();
   });
 
   it("drops Graphiti evidence that cannot be verified against PostgreSQL tenant and elder source records", async () => {
@@ -1371,6 +1598,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["appointment"],
+      safetyTags: [],
       entities: [{ type: "place", name: "社区医院", confidence: 0.8 }],
     };
 
@@ -1405,6 +1633,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
     harness.eventStore.searchResults = [];
@@ -1428,6 +1657,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: [],
+      safetyTags: [],
       entities: [],
     };
 
@@ -1440,7 +1670,7 @@ describe("ElderMemoryKernel", () => {
 
     expect(answer.traceId).toBe("trace-query-no-evidence");
     expect(answer.confidence).toBe(0);
-    expect(answer.safetyNote).toContain("No source evidence");
+    expect(answer.safetyNote).toContain("没有找到可引用的来源依据");
     expect(harness.model.answerCalls).toBe(0);
     expect(harness.audit.records.at(-1)).toMatchObject({
       traceId: "trace-query-no-evidence",
@@ -1486,6 +1716,7 @@ describe("ElderMemoryKernel", () => {
       intent: "check_reminder",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -1545,6 +1776,7 @@ describe("ElderMemoryKernel", () => {
       intent: "check_reminder",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -1581,6 +1813,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["shopping"],
+      safetyTags: [],
       entities: [],
     };
     harness.model.answer = {
@@ -1628,6 +1861,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [{ type: "place", name: "城里", confidence: 0.5 }],
     };
     harness.model.answer = {
@@ -1688,6 +1922,7 @@ describe("ElderMemoryKernel", () => {
       intent: "recall_event",
       requiresSourceEvidence: true,
       eventTypes: ["general"],
+      safetyTags: [],
       entities: [],
       timeRange: {
         start: "2026-05-09T00:00:00.000Z",
@@ -1831,574 +2066,3 @@ describe("ElderMemoryKernel", () => {
     ]);
   });
 });
-
-function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemoryStore = new NullTemporalMemoryStore()) {
-  const sourceStore = new InMemorySourceStore();
-  const eventStore = new InMemoryEventStore();
-  const reminderStore = new InMemoryReminderStore();
-  const audit = new InMemoryAuditLog();
-  const familyReminderCommands = new InMemoryFamilyReminderCommandStore(sourceStore, reminderStore, audit);
-  const familyTasks = new InMemoryFamilyTaskStore();
-  const riskFlags = new InMemoryRiskFlagStore();
-  const contextLinkStore = new InMemoryContextLinkStore(eventStore);
-  const semanticMemory = new InMemorySemanticMemoryStore();
-  const temporalMemoryJobStore = new InMemoryTemporalMemoryJobStore();
-  const personalContextStore = new FakePersonalContextStore();
-  const model = new FakeModelGateway(plan);
-
-  const deps: ElderMemoryKernelDeps = {
-    sourceStore,
-    eventStore,
-    contextLinkStore,
-    reminderEngine: new DefaultReminderEngine(reminderStore),
-    familyReminderCommandStore: familyReminderCommands,
-    familyTaskStore: familyTasks,
-    riskFlagStore: riskFlags,
-    semanticMemory,
-    personalContextStore,
-    modelGateway: model,
-    riskEngine: new DefaultRiskEngine(),
-    permissionEngine: new DefaultPermissionEngine(),
-    auditLog: audit,
-    temporalMemory,
-    temporalMemoryJobStore,
-  };
-
-  return {
-    kernel: new ElderMemoryKernel(deps),
-    sourceStore,
-    eventStore,
-    reminderStore,
-    familyReminderCommands,
-    contextLinkStore,
-    familyTasks,
-    riskFlags,
-    semanticMemory,
-    audit,
-    temporalMemoryJobStore,
-    personalContextStore,
-    model,
-  };
-}
-
-function buildPlan(input: Partial<MemoryPlan>): MemoryPlan {
-  const events = input.events ?? [];
-  return {
-    tenantId: input.tenantId ?? "tenant-mvp",
-    sourceId: "source-1",
-    elderId: "elder-1",
-    summary: input.summary ?? "Summary",
-    events,
-    reminderCandidates: input.reminderCandidates ?? [],
-    eventActionDecisions: "eventActionDecisions" in input
-      ? input.eventActionDecisions ?? []
-      : events.map((_, eventIndex) => buildEventActionDecision({ eventIndex })),
-    riskFlags: input.riskFlags ?? [],
-    familyTasks: input.familyTasks ?? [],
-    contextLinks: input.contextLinks ?? [],
-    memoryUpdates: input.memoryUpdates ?? [],
-    uncertainties: input.uncertainties ?? [],
-    evidence: input.evidence ?? [evidence()],
-    modelInfo: input.modelInfo ?? {
-      provider: "fake",
-      model: "fake-memory-plan",
-      promptVersion: "test",
-    },
-    confidence: input.confidence ?? 0.9,
-  };
-}
-
-function buildEventActionDecision(
-  input: Partial<MemoryPlan["eventActionDecisions"][number]>,
-): MemoryPlan["eventActionDecisions"][number] {
-  return {
-    eventIndex: input.eventIndex ?? 0,
-    action: input.action ?? "none",
-    reminderCandidateIndex: input.reminderCandidateIndex,
-    targetReminderId: input.targetReminderId,
-    reason: input.reason ?? "No follow-up action is needed.",
-    confidence: input.confidence ?? 0.8,
-    evidence: input.evidence ?? [evidence()],
-  };
-}
-
-function memoryEvent(input: Partial<MemoryEvent>): MemoryEvent {
-  return {
-    id: input.id ?? "event-existing",
-    tenantId: input.tenantId ?? "tenant-mvp",
-    elderId: input.elderId ?? "elder-1",
-    sourceId: input.sourceId ?? "source-existing",
-    type: input.type ?? "general",
-    title: input.title ?? "Existing event",
-    summary: input.summary ?? "Existing event summary.",
-    timeText: input.timeText ?? "未提到时间",
-    eventTimeStart: input.eventTimeStart,
-    eventTimeEnd: input.eventTimeEnd,
-    timeConfidence: input.timeConfidence ?? 0.7,
-    entities: input.entities ?? [],
-    importance: input.importance ?? 0.5,
-    confidence: input.confidence ?? 0.8,
-    riskLevel: input.riskLevel ?? "normal",
-    requiresConfirmation: input.requiresConfirmation ?? false,
-    visibility: input.visibility ?? "private",
-    evidence: input.evidence ?? [evidence()],
-    status: input.status ?? "active",
-    createdAt: input.createdAt ?? now,
-  };
-}
-
-function buildEvent(input: Partial<MemoryPlan["events"][number]>): MemoryPlan["events"][number] {
-  return {
-    type: input.type ?? "general",
-    title: input.title ?? "Event",
-    summary: input.summary ?? "Event summary.",
-    timeText: input.timeText ?? "未提到时间",
-    eventTimeStart: input.eventTimeStart,
-    eventTimeEnd: input.eventTimeEnd,
-    timeConfidence: input.timeConfidence ?? 0.8,
-    entities: input.entities ?? [],
-    importance: input.importance ?? 0.5,
-    confidence: input.confidence ?? 0.8,
-    riskLevel: input.riskLevel ?? "normal",
-    requiresConfirmation: input.requiresConfirmation ?? false,
-    visibility: input.visibility ?? "private",
-    evidence: input.evidence ?? [evidence()],
-  };
-}
-
-function buildReminderCandidate(
-  input: Partial<MemoryPlan["reminderCandidates"][number]>,
-): MemoryPlan["reminderCandidates"][number] {
-  return {
-    title: input.title ?? "Reminder",
-    description: input.description,
-    timeText: input.timeText ?? "tomorrow",
-    remindAt: input.remindAt ?? "2026-05-10T09:00:00.000Z",
-    timeConfidence: input.timeConfidence ?? 0.9,
-    relatedEventIndex: input.relatedEventIndex,
-    confirmationRequired: input.confirmationRequired ?? false,
-    suggestedConfirmers: input.suggestedConfirmers ?? [],
-    confidence: input.confidence ?? 0.8,
-    reason: input.reason ?? "The transcript requested a reminder.",
-  };
-}
-
-function evidence() {
-  return {
-    sourceId: "source-1",
-    quote: "source quote",
-    startChar: 0,
-    endChar: 12,
-  };
-}
-
-class FakeModelGateway implements ModelGateway {
-  answerCalls = 0;
-  answerError?: Error;
-  turnError?: Error;
-  lastPlanContext?: PersonalContext;
-  lastTurnInput?: PlanElderTurnInput;
-
-  turnPlan: ElderTurnPlan = {
-    intent: "clarify",
-    confidence: 0.5,
-    clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
-  };
-
-  parsedQuery: ParsedMemoryQuery = {
-    intent: "unknown",
-    requiresSourceEvidence: true,
-    eventTypes: [],
-    entities: [],
-  };
-
-  answer: MemoryAnswer = {
-    answerText: "I found one memory.",
-    confidence: 0.8,
-    matchedSources: [],
-    retrievedEvidence: [],
-    suggestedActions: [],
-  };
-
-  constructor(public plan: MemoryPlan) {}
-
-  async transcribe(): Promise<TranscriptionResult> {
-    return { text: "transcribed text", confidence: 0.9 };
-  }
-
-  async embedText(): Promise<number[]> {
-    return Array.from({ length: 1536 }, (_, index) => (index === 0 ? 1 : 0));
-  }
-
-  async generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan> {
-    this.lastPlanContext = input.context;
-    return this.plan;
-  }
-
-  async planElderTurn(input: PlanElderTurnInput): Promise<ElderTurnPlan> {
-    this.lastTurnInput = input;
-    if (this.turnError) throw this.turnError;
-    return this.turnPlan;
-  }
-
-  async parseMemoryQuery(): Promise<ParsedMemoryQuery> {
-    return this.parsedQuery;
-  }
-
-  async generateMemoryAnswer(): Promise<MemoryAnswer> {
-    this.answerCalls += 1;
-    if (this.answerError) throw this.answerError;
-    return this.answer;
-  }
-}
-
-class FakePersonalContextStore implements PersonalContextStore {
-  context: PersonalContext = emptyContext();
-
-  async buildContext(): Promise<PersonalContext> {
-    return this.context;
-  }
-}
-
-function emptyContext(): PersonalContext {
-  return {
-    recentEvents: [],
-    semanticCandidateEvents: [],
-    openReminders: [],
-    semanticMemories: [],
-    knownEntities: [],
-    familyRelations: [],
-    safetyPolicy: [],
-  };
-}
-
-class InMemorySourceStore implements SourceStore {
-  sources: MemorySource[] = [];
-
-  async saveAudio(): Promise<string> {
-    return "https://example.com/audio.wav";
-  }
-
-  async create(input: CreateSourceInput): Promise<MemorySource> {
-    const source = { ...input, id: `source-${this.sources.length + 1}` };
-    this.sources.push(source);
-    return source;
-  }
-
-  async get(input: { tenantId: string; sourceId: string }): Promise<MemorySource | null> {
-    return this.sources.find((source) => source.tenantId === input.tenantId && source.id === input.sourceId) ?? null;
-  }
-}
-
-class InMemoryEventStore implements EventStore {
-  events: MemoryEvent[] = [];
-  searchResults?: MemoryEvent[];
-
-  async create(input: CreateEventInput): Promise<MemoryEvent> {
-    const event = {
-      ...input,
-      id: `event-${this.events.length + 1}`,
-      createdAt: now,
-    };
-    this.events.push(event);
-    return event;
-  }
-
-  async search(input: Parameters<EventStore["search"]>[0]): Promise<MemoryEvent[]> {
-    return this.searchResults ?? this.events.filter((event) => event.tenantId === input.tenantId && event.elderId === input.elderId);
-  }
-
-  async getByIds(input: { tenantId: string; eventIds: string[] }): Promise<MemoryEvent[]> {
-    return this.events.filter((event) => event.tenantId === input.tenantId && input.eventIds.includes(event.id));
-  }
-}
-
-class InMemoryContextLinkStore implements ContextLinkStore {
-  links: MemoryContextLink[] = [];
-
-  constructor(private readonly eventStore: InMemoryEventStore) {}
-
-  async create(input: CreateContextLinkInput): Promise<MemoryContextLink> {
-    const fromEvent = this.eventStore.events.find((event) => event.id === input.fromEventId);
-    const toEvent = this.eventStore.events.find((event) => event.id === input.toEventId);
-    if (!fromEvent || !toEvent) throw new Error("Context link event reference not found");
-    if (fromEvent.tenantId !== input.tenantId || toEvent.tenantId !== input.tenantId || fromEvent.elderId !== input.elderId || toEvent.elderId !== input.elderId) {
-      throw new Error("Context link events must belong to the same tenant and elder");
-    }
-    const link = { ...input, id: `link-${this.links.length + 1}`, createdAt: now };
-    this.links.push(link);
-    return link;
-  }
-
-  async listByEventIds(input: { tenantId: string; elderId: string; eventIds: string[] }): Promise<MemoryContextLink[]> {
-    const ids = new Set(input.eventIds);
-    return this.links.filter(
-      (link) => link.tenantId === input.tenantId && link.elderId === input.elderId && (ids.has(link.fromEventId) || ids.has(link.toEventId)),
-    );
-  }
-
-  async listByElder(input: { tenantId: string; elderId: string }): Promise<MemoryContextLink[]> {
-    return this.links.filter((link) => link.tenantId === input.tenantId && link.elderId === input.elderId);
-  }
-}
-
-class InMemoryReminderStore implements ReminderStore {
-  reminders: Reminder[] = [];
-
-  async create(input: CreateReminderInput): Promise<Reminder> {
-    const reminder = {
-      ...input,
-      id: `reminder-${this.reminders.length + 1}`,
-      createdAt: now,
-    };
-    this.reminders.push(reminder);
-    return reminder;
-  }
-
-  async get(input: { tenantId: string; reminderId: string }): Promise<Reminder | null> {
-    return this.reminders.find((reminder) => reminder.tenantId === input.tenantId && reminder.id === input.reminderId) ?? null;
-  }
-
-  async listByElder(input: { tenantId: string; elderId: string }): Promise<Reminder[]> {
-    return this.reminders.filter((reminder) => reminder.tenantId === input.tenantId && reminder.elderId === input.elderId);
-  }
-
-  async update(input: { tenantId: string; reminderId: string; patch: Partial<Reminder> }): Promise<Reminder> {
-    const reminder = await this.get(input);
-    if (!reminder) throw new Error(`Reminder not found: ${input.reminderId}`);
-    Object.assign(reminder, input.patch);
-    return reminder;
-  }
-}
-
-class InMemoryFamilyReminderCommandStore implements FamilyReminderCommandStore {
-  failReminderCreate = false;
-  failAudit = false;
-  private readonly commands = new Map<string, CreateFamilyReminderCommandResult>();
-
-  constructor(
-    private readonly sourceStore: InMemorySourceStore,
-    private readonly reminderStore: InMemoryReminderStore,
-    private readonly auditLog: InMemoryAuditLog,
-  ) {}
-
-  async create(input: CreateFamilyReminderCommandInput): Promise<CreateFamilyReminderCommandResult> {
-    const commandKey = input.idempotencyKey
-      ? `${input.source.tenantId}:${input.source.elderId}:${input.idempotencyKey}`
-      : undefined;
-    if (commandKey) {
-      const existing = this.commands.get(commandKey);
-      if (existing) return { ...existing, reused: true };
-    }
-
-    const sourceSnapshot = [...this.sourceStore.sources];
-    const reminderSnapshot = [...this.reminderStore.reminders];
-    const auditSnapshot = [...this.auditLog.records];
-    try {
-      const source = await this.sourceStore.create(input.source);
-      if (this.failReminderCreate) throw new Error("Reminder command create failed");
-      const reminder = await this.reminderStore.create({ ...input.reminder, sourceId: source.id });
-      if (this.failAudit) throw new Error("Reminder command audit failed");
-      await this.auditLog.record({
-        ...input.audit,
-        sourceId: source.id,
-        payload: { ...input.audit.payload, sourceId: source.id, reminderId: reminder.id },
-      });
-
-      const result = { source, reminder, reused: false };
-      if (commandKey) this.commands.set(commandKey, result);
-      return result;
-    } catch (error) {
-      this.sourceStore.sources = sourceSnapshot;
-      this.reminderStore.reminders = reminderSnapshot;
-      this.auditLog.records = auditSnapshot;
-      throw error;
-    }
-  }
-}
-
-class InMemoryFamilyTaskStore implements FamilyTaskStore {
-  tasks: FamilyTask[] = [];
-
-  async create(input: Parameters<FamilyTaskStore["create"]>[0]): Promise<FamilyTask> {
-    const task: FamilyTask = {
-      ...input,
-      id: `task-${this.tasks.length + 1}`,
-      type: input.type as FamilyTask["type"],
-      urgency: input.urgency as FamilyTask["urgency"],
-      visibility: input.visibility as FamilyTask["visibility"],
-      status: "pending",
-      createdAt: now,
-    };
-    this.tasks.push(task);
-    return task;
-  }
-
-  async listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
-    return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId && task.status === "pending");
-  }
-
-  async listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
-    return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId);
-  }
-
-  async confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
-    return this.updateStatus({ ...input, status: "confirmed" });
-  }
-
-  async reject(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
-    return this.updateStatus({ ...input, status: "rejected" });
-  }
-
-  async requestMoreInfo(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
-    return this.updateStatus({ ...input, status: "needs_more_info" });
-  }
-
-  private updateStatus(input: {
-    tenantId: string;
-    taskId: string;
-    actorUserId: string;
-    status: FamilyTask["status"];
-  }): FamilyTask {
-    const task = this.tasks.find((item) => item.tenantId === input.tenantId && item.id === input.taskId);
-    if (!task) throw new Error(`Family task not found: ${input.taskId}`);
-    task.status = input.status;
-    task.confirmedBy = input.actorUserId;
-    task.confirmedAt = now;
-    return task;
-  }
-}
-
-class InMemoryRiskFlagStore implements RiskFlagStore {
-  flags: CreateRiskFlagInput[] = [];
-
-  async create(input: CreateRiskFlagInput) {
-    this.flags.push(input);
-    return { ...input, id: `risk-${this.flags.length}`, createdAt: now };
-  }
-}
-
-class InMemorySemanticMemoryStore implements SemanticMemoryStore {
-  memories: Array<Parameters<SemanticMemoryStore["addMemory"]>[0]> = [];
-  searchResults?: MemoryRecallResult[];
-
-  async addMemory(input: Parameters<SemanticMemoryStore["addMemory"]>[0]): Promise<void> {
-    this.memories.push(input);
-  }
-
-  async searchMemory(input: Parameters<SemanticMemoryStore["searchMemory"]>[0]): Promise<MemoryRecallResult[]> {
-    if (this.searchResults) return this.searchResults;
-    return this.memories
-      .filter((memory) => memory.tenantId === input.tenantId && memory.elderId === input.elderId)
-      .map((memory) => ({
-        memory: memory.memory,
-        metadata: memory.metadata,
-        score: 0.7,
-      }));
-  }
-}
-
-class RecordingTemporalMemoryStore implements TemporalMemoryStore {
-  episodes: AddTemporalEpisodeInput[] = [];
-  facts: TemporalEvidence[] = [];
-  searches: Parameters<TemporalMemoryStore["searchFacts"]>[0][] = [];
-  failAdd = false;
-
-  async addEpisode(input: AddTemporalEpisodeInput): Promise<void> {
-    if (this.failAdd) throw new Error("Graphiti unavailable");
-    this.episodes.push(input);
-  }
-
-  async searchFacts(input: Parameters<TemporalMemoryStore["searchFacts"]>[0]): Promise<TemporalEvidence[]> {
-    this.searches.push(input);
-    return this.facts;
-  }
-
-  async getEntityTimeline() {
-    return [];
-  }
-
-  async getCurrentFacts() {
-    return [];
-  }
-}
-
-class InMemoryTemporalMemoryJobStore implements TemporalMemoryJobStore {
-  jobs: TemporalMemoryJob[] = [];
-
-  async enqueue(input: Parameters<TemporalMemoryJobStore["enqueue"]>[0]): Promise<TemporalMemoryJob> {
-    const nowIso = now;
-    const job: TemporalMemoryJob = {
-      id: `temporal-job-${this.jobs.length + 1}`,
-      tenantId: input.tenantId,
-      elderId: input.elderId,
-      sourceId: input.sourceId,
-      status: "pending",
-      attempts: 0,
-      maxAttempts: input.maxAttempts ?? 5,
-      nextRunAt: input.nextRunAt ?? nowIso,
-      episode: input.episode,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    this.jobs.push(job);
-    return job;
-  }
-
-  async claimDue(input: Parameters<TemporalMemoryJobStore["claimDue"]>[0]): Promise<TemporalMemoryJob[]> {
-    const nowMs = new Date(input.now).getTime();
-    const due = this.jobs
-      .filter((job) => (job.status === "pending" || job.status === "failed") && new Date(job.nextRunAt).getTime() <= nowMs)
-      .slice(0, input.limit);
-    for (const job of due) {
-      job.status = "running";
-      job.lockedAt = input.now;
-      job.updatedAt = input.now;
-    }
-    return due;
-  }
-
-  async markSucceeded(input: Parameters<TemporalMemoryJobStore["markSucceeded"]>[0]): Promise<TemporalMemoryJob> {
-    const job = this.requireJob(input.jobId);
-    job.status = "succeeded";
-    job.lockedAt = undefined;
-    job.lastError = undefined;
-    job.updatedAt = now;
-    return job;
-  }
-
-  async markFailed(input: Parameters<TemporalMemoryJobStore["markFailed"]>[0]): Promise<TemporalMemoryJob> {
-    const job = this.requireJob(input.jobId);
-    job.attempts += 1;
-    job.status = input.dead || job.attempts >= job.maxAttempts ? "dead" : "failed";
-    job.lockedAt = undefined;
-    job.lastError = input.errorMessage;
-    job.nextRunAt = input.nextRunAt;
-    job.updatedAt = now;
-    return job;
-  }
-
-  async stats(input: Parameters<TemporalMemoryJobStore["stats"]>[0] = {}) {
-    const output = { pending: 0, running: 0, succeeded: 0, failed: 0, dead: 0 };
-    for (const job of this.jobs) {
-      if (input?.tenantId && job.tenantId !== input.tenantId) continue;
-      if (input?.elderId && job.elderId !== input.elderId) continue;
-      output[job.status] += 1;
-    }
-    return output;
-  }
-
-  private requireJob(jobId: string): TemporalMemoryJob {
-    const job = this.jobs.find((item) => item.id === jobId);
-    if (!job) throw new Error(`Temporal job not found: ${jobId}`);
-    return job;
-  }
-}
-
-class InMemoryAuditLog implements AuditLog {
-  records: Array<Parameters<AuditLog["record"]>[0]> = [];
-
-  async record(input: Parameters<AuditLog["record"]>[0]): Promise<void> {
-    this.records.push(input);
-  }
-}

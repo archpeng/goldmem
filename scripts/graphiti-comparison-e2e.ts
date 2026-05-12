@@ -3,12 +3,15 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import OpenAI from "openai";
 import { z } from "zod";
+import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import {
   MemoryAnswerSchema,
   type FamilyTask,
   type MemoryEvent,
   type Reminder,
 } from "../packages/memory-schema/src/index.js";
+import { GraphitiTemporalMemoryStore } from "../packages/temporal-memory/src/index.js";
+import { runGraphitiRetryBatch } from "./graphiti-retry.js";
 
 type Json = Record<string, unknown>;
 type EvidenceSource = "postgres" | "semantic" | "context_link" | "graphiti" | "graphiti_provenance";
@@ -59,9 +62,15 @@ const SemanticJudgeResultSchema = z.object({
 
 const enabledBaseUrl = requiredEnv("GRAPHITI_E2E_ENABLED_BASE_URL").replace(/\/$/, "");
 const disabledBaseUrl = requiredEnv("GRAPHITI_E2E_DISABLED_BASE_URL").replace(/\/$/, "");
+const databaseUrl = requiredEnv("DATABASE_URL");
+const graphitiBaseUrl = requiredEnv("GRAPHITI_BASE_URL");
 const fixturePath = process.env.GRAPHITI_E2E_FIXTURE ?? join(process.cwd(), "e2e", "golden-graphiti-core.json");
 const requestTimeoutMs = Number(process.env.GRAPHITI_E2E_TIMEOUT_MS ?? 600_000);
 const modelRetries = Number(process.env.GRAPHITI_E2E_MODEL_RETRIES ?? process.env.GRAPHITI_E2E_PROVIDER_RETRIES ?? 2);
+const graphitiDrainBatches = Number(process.env.GRAPHITI_E2E_DRAIN_BATCHES ?? 20);
+const graphitiDrainBatchSize = Number(process.env.GRAPHITI_E2E_DRAIN_BATCH_SIZE ?? 20);
+const graphitiSearchSettleMs = Number(process.env.GRAPHITI_E2E_SEARCH_SETTLE_MS ?? 1000);
+const graphitiTimeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 60_000);
 const tenantId = process.env.GRAPHITI_E2E_TENANT_ID ?? "tenant-mvp";
 const elderIdBase = process.env.GRAPHITI_E2E_ELDER_ID ?? `graphiti-core-${Date.now()}`;
 const fixture = GraphitiComparisonFixtureSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
@@ -88,7 +97,7 @@ assert(disabledRun.temporalEvidenceQueryCount === 0, `Graphiti disabled run retu
 const failures = [...enabledRun.queryFailures, ...disabledRun.queryFailures];
 
 console.log(JSON.stringify({
-  ok: true,
+  ok: failures.length === 0,
   fixture: fixturePath,
   tenantId,
   enabled: summarizeRun(enabledRun),
@@ -131,11 +140,13 @@ async function runApiScenario(input: {
     const result = await withModelRetry(`[${input.label}] seed ${note.id}`, () => ingestNote(input.baseUrl, input.elderId, note.transcript));
     assert(result.events.length > 0 || result.reminderCandidates.length > 0, `[${input.label}] seed ${note.id} produced no records`);
     if (input.requireGraphitiWrites) {
-      assert(result.temporalMemory?.status === "written", `[${input.label}] seed ${note.id} did not write Graphiti temporal memory`);
+      assert(result.temporalMemory?.status === "queued" || result.temporalMemory?.status === "not_needed", `[${input.label}] seed ${note.id} returned invalid temporal memory status`);
     }
     ingests.set(note.id, result);
     console.log(`[${input.label}] seed ok: ${note.id} source=${result.sourceId} events=${result.events.length} reminders=${result.reminderCandidates.length} temporal=${result.temporalMemory?.status ?? "none"}`);
   }
+
+  if (input.requireGraphitiWrites) await drainGraphitiJobs(input.label);
 
   const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(input.elderId)}`;
   const events = await request<MemoryEvent[]>(input.baseUrl, "GET", `/elder/events?${tenantQuery}`);
@@ -239,7 +250,7 @@ async function ingestNote(baseUrl: string, elderId: string, transcript: string) 
       summary: string;
       events: MemoryEvent[];
       reminderCandidates: Reminder[];
-      temporalMemory?: { status: "written" | "failed"; errorMessage?: string };
+      temporalMemory?: { status: "queued" | "not_needed" | "failed"; errorMessage?: string };
     };
   }>(baseUrl, "POST", "/elder/turn", {
     tenantId,
@@ -248,6 +259,35 @@ async function ingestNote(baseUrl: string, elderId: string, transcript: string) 
   });
   if (!turn.ingestResult) throw new Error("Elder turn did not return ingestResult for seed note");
   return turn.ingestResult;
+}
+
+async function drainGraphitiJobs(label: string): Promise<void> {
+  const postgres = createPostgresStores({ databaseUrl });
+  const temporalMemory = new GraphitiTemporalMemoryStore({
+    baseUrl: graphitiBaseUrl,
+    apiKey: process.env.GRAPHITI_API_KEY,
+    timeoutMs: graphitiTimeoutMs,
+  });
+  try {
+    for (let attempt = 0; attempt < graphitiDrainBatches; attempt += 1) {
+      const stats = await runGraphitiRetryBatch({
+        postgres,
+        temporalMemory,
+        batchSize: graphitiDrainBatchSize,
+      });
+      if (stats.failed > 0 || stats.dead > 0) {
+        throw new Error(`[${label}] Graphiti temporal job drain failed: ${JSON.stringify(stats)}`);
+      }
+      if (stats.claimed === 0) {
+        if (graphitiSearchSettleMs > 0) await delay(graphitiSearchSettleMs);
+        return;
+      }
+      console.log(`[${label}] graphiti drain batch: ${JSON.stringify(stats)}`);
+    }
+    throw new Error(`[${label}] Graphiti temporal job drain exceeded ${graphitiDrainBatches} batches`);
+  } finally {
+    await postgres.close();
+  }
 }
 
 async function withModelRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {

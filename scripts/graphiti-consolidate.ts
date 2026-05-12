@@ -80,7 +80,7 @@ try {
         traceId,
         date,
         errorMessage,
-        retryJobId: retryJob.id,
+        temporalJobId: retryJob.id,
         idempotencyKey: episode.metadata?.idempotencyKey,
       },
     });

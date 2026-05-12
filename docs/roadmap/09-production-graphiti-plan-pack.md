@@ -158,7 +158,7 @@ Tasks:
 - If Graphiti write fails:
   - do not rollback PostgreSQL
   - do not mark reminder/risk/family truth as failed
-  - audit `graphiti_write_failed`
+  - audit `graphiti_enqueue_failed`
   - return elder-facing result with internal temporal status metadata
 
 Acceptance:

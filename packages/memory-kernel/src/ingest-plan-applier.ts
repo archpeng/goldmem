@@ -1,4 +1,4 @@
-import type { MemoryContextLink, MemoryEvent, MemoryPlan, PersonalContext, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
+import type { FamilyTask, MemoryContextLink, MemoryEvent, MemoryPlan, PersonalContext, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
 import type { PersonalContextStore } from "@goldmem/memory-store";
 import { isString } from "./guards.js";
 import type { ElderMemoryKernelDeps } from "./index.js";
@@ -15,6 +15,7 @@ export class MemoryPlanApplier {
     const reminders: Reminder[] = [];
     const contextLinks: MemoryContextLink[] = [];
     const riskFlags: RiskFlagRecord[] = [];
+    const familyTasks: FamilyTask[] = [];
 
     const eventWritesStartedAt = Date.now();
     for (const draft of plan.events) {
@@ -47,7 +48,7 @@ export class MemoryPlanApplier {
       reminders.push(reminder);
 
       if (draft.confirmationRequired) {
-        await this.deps.familyTaskStore.create({
+        const task = await this.deps.familyTaskStore.create({
           elderId: plan.elderId,
           tenantId: plan.tenantId,
           title: `确认提醒：${draft.title}`,
@@ -57,6 +58,7 @@ export class MemoryPlanApplier {
           visibility: "shared_summary",
           relatedEventId: relatedEvent?.id,
         });
+        familyTasks.push(task);
       }
     }
     timings.reminderWritesMs = Date.now() - reminderWritesStartedAt;
@@ -76,7 +78,7 @@ export class MemoryPlanApplier {
     const familyTaskWritesStartedAt = Date.now();
     for (const task of plan.familyTasks) {
       const relatedEvent = typeof task.relatedEventIndex === "number" ? events[task.relatedEventIndex] : undefined;
-      await this.deps.familyTaskStore.create({
+      const createdTask = await this.deps.familyTaskStore.create({
         elderId: plan.elderId,
         tenantId: plan.tenantId,
         title: task.title,
@@ -86,13 +88,15 @@ export class MemoryPlanApplier {
         visibility: task.visibility,
         relatedEventId: relatedEvent?.id,
       });
+      familyTasks.push(createdTask);
     }
     timings.familyTaskWritesMs = Date.now() - familyTaskWritesStartedAt;
 
     const contextLinkWritesStartedAt = Date.now();
     for (const draft of plan.contextLinks) {
-      const link = await this.applyContextLinkDraft(plan, draft, events, context, traceId);
-      if (link) contextLinks.push(link);
+      const result = await this.applyContextLinkDraft(plan, draft, events, context, traceId);
+      if (result?.link) contextLinks.push(result.link);
+      if (result?.task) familyTasks.push(result.task);
     }
     timings.contextLinkWritesMs = Date.now() - contextLinkWritesStartedAt;
 
@@ -100,7 +104,7 @@ export class MemoryPlanApplier {
     await this.writeSemanticMemories(plan, events, traceId);
     timings.semanticWritesMs = Date.now() - semanticWritesStartedAt;
     timings.totalMs = Date.now() - startedAt;
-    return { events, reminderCandidates: reminders, contextLinks, riskFlags, timings };
+    return { events, reminderCandidates: reminders, contextLinks, riskFlags, familyTasks, timings };
   }
 
   private async applyContextLinkDraft(
@@ -109,7 +113,7 @@ export class MemoryPlanApplier {
     events: MemoryEvent[],
     context: Awaited<ReturnType<PersonalContextStore["buildContext"]>>,
     traceId: string,
-  ): Promise<MemoryContextLink | undefined> {
+  ): Promise<{ link: MemoryContextLink; task?: FamilyTask } | undefined> {
     const fromEvent = events[draft.fromEventIndex];
     const toEvent = typeof draft.toEventIndex === "number" ? events[draft.toEventIndex] : undefined;
     const toEventId = toEvent?.id ?? draft.toEventId;
@@ -157,8 +161,8 @@ export class MemoryPlanApplier {
       evidence: draft.evidence,
     });
 
-    if (status === "needs_confirmation") {
-      await this.deps.familyTaskStore.create({
+    const task = status === "needs_confirmation"
+      ? await this.deps.familyTaskStore.create({
         tenantId: plan.tenantId,
         elderId: plan.elderId,
         title: draft.type === "fills_missing_time" ? "确认提醒时间关联" : "确认记忆上下文关联",
@@ -167,8 +171,8 @@ export class MemoryPlanApplier {
         urgency: "medium",
         visibility: "shared_summary",
         relatedEventId: fromEvent.id,
-      });
-    }
+      })
+      : undefined;
 
     await this.deps.auditLog.record({
       type: "memory_context_link_created",
@@ -179,7 +183,7 @@ export class MemoryPlanApplier {
       payload: { traceId, link },
     });
 
-    return link;
+    return { link, task };
   }
 
   private async auditSkippedContextLink(
@@ -216,6 +220,7 @@ export class MemoryPlanApplier {
         summary: event.summary,
         createdAt: event.createdAt,
         riskLevel: event.riskLevel,
+        requiresConfirmation: event.requiresConfirmation,
         visibility: event.visibility,
         traceId,
       });

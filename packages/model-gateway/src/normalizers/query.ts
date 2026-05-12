@@ -12,6 +12,7 @@ import {
   isRecord,
   numberValue,
   optionalIso,
+  QUERY_SAFETY_TAGS,
   QUERY_INTENTS,
   stringValue,
 } from "./common.js";
@@ -26,6 +27,7 @@ export function normalizeParsedMemoryQueryResult(raw: unknown, input: ParseMemor
     timeRange: normalizeTimeRange(record.timeRange),
     entities: arrayValue(record.entities).map(normalizeQueryEntity).filter(isRecord),
     eventTypes: normalizeQueryEventTypes(record.eventTypes, input.query),
+    safetyTags: normalizeSafetyTags(record.safetyTags),
     requiresSourceEvidence: booleanValue(record.requiresSourceEvidence, true),
   };
 }
@@ -73,4 +75,15 @@ function normalizeEventTypeValue(value: unknown): (typeof EVENT_TYPES)[number] |
   if (["medical", "doctor"].includes(normalized)) return "health";
   if (["money", "payment", "banking"].includes(normalized)) return "finance";
   return undefined;
+}
+
+function normalizeSafetyTags(raw: unknown): Array<(typeof QUERY_SAFETY_TAGS)[number]> {
+  return [
+    ...new Set(
+      arrayValue(raw)
+        .filter((item): item is (typeof QUERY_SAFETY_TAGS)[number] => (
+          typeof item === "string" && QUERY_SAFETY_TAGS.includes(item as (typeof QUERY_SAFETY_TAGS)[number])
+        )),
+    ),
+  ];
 }

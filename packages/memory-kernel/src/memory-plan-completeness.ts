@@ -11,6 +11,7 @@ export class MemoryPlanCompletenessError extends Error {
 export async function enforceMemoryPlanCompleteness(input: {
   plan: MemoryPlan;
   context: PersonalContext;
+  now: string;
   traceId: string;
   auditLog: AuditLog;
 }): Promise<MemoryPlan> {
@@ -30,6 +31,18 @@ export async function enforceMemoryPlanCompleteness(input: {
       continue;
     }
     decisionsByEvent.set(decision.eventIndex, decision);
+  }
+
+  const repairs = repairActionObligations(plan, decisionsByEvent, openReminderIds, input.now);
+  if (repairs.length > 0) {
+    await input.auditLog.record({
+      type: "memory_plan_action_obligation_repaired",
+      tenantId: plan.tenantId,
+      elderId: plan.elderId,
+      sourceId: plan.sourceId,
+      traceId: input.traceId,
+      payload: { traceId: input.traceId, repairs },
+    });
   }
 
   for (let eventIndex = 0; eventIndex < plan.events.length; eventIndex += 1) {
@@ -64,6 +77,8 @@ export async function enforceMemoryPlanCompleteness(input: {
     }
   }
 
+  validateRelationEnrichmentSignals(plan, problems);
+
   if (problems.length > 0) {
     await input.auditLog.record({
       type: "memory_plan_completeness_failed",
@@ -77,6 +92,124 @@ export async function enforceMemoryPlanCompleteness(input: {
   }
 
   return plan;
+}
+
+function validateRelationEnrichmentSignals(plan: MemoryPlan, problems: string[]): void {
+  for (let signalIndex = 0; signalIndex < plan.relationEnrichmentSignals.length; signalIndex += 1) {
+    const signal = plan.relationEnrichmentSignals[signalIndex];
+    if (!signal) continue;
+    for (const eventIndex of signal.relatedEventIndexes) {
+      if (eventIndex >= plan.events.length) {
+        problems.push(`relationEnrichmentSignal eventIndex out of range at signalIndex: ${signalIndex}`);
+      }
+    }
+    for (const reminderIndex of signal.relatedReminderCandidateIndexes) {
+      if (reminderIndex >= plan.reminderCandidates.length) {
+        problems.push(`relationEnrichmentSignal reminderCandidateIndex out of range at signalIndex: ${signalIndex}`);
+      }
+    }
+  }
+}
+
+type ActionObligationRepair = {
+  obligation: "future_reminder_required" | "update_candidate_required";
+  eventIndex: number;
+  reminderCandidateIndex: number;
+  originalAction?: MemoryPlan["eventActionDecisions"][number]["action"];
+};
+
+function repairActionObligations(
+  plan: MemoryPlan,
+  decisionsByEvent: Map<number, MemoryPlan["eventActionDecisions"][number]>,
+  openReminderIds: Set<string>,
+  now: string,
+): ActionObligationRepair[] {
+  const repairs: ActionObligationRepair[] = [];
+
+  for (let eventIndex = 0; eventIndex < plan.events.length; eventIndex += 1) {
+    const event = plan.events[eventIndex];
+    const decision = decisionsByEvent.get(eventIndex);
+    if (!event) continue;
+
+    if (decision?.action === "update_existing_reminder_candidate" && decision.targetReminderId && openReminderIds.has(decision.targetReminderId)) {
+      if (!validReminderIndex(plan, decision.reminderCandidateIndex)) {
+        const reminderCandidateIndex = appendReminderCandidate(plan, event, eventIndex, "这是对已有提醒的改期或补充，系统补充为待确认更新候选。");
+        decision.reminderCandidateIndex = reminderCandidateIndex;
+        repairs.push({ obligation: "update_candidate_required", eventIndex, reminderCandidateIndex, originalAction: "update_existing_reminder_candidate" });
+      }
+      continue;
+    }
+
+    if (!requiresFutureReminder(event, now)) continue;
+
+    if (decision?.action === "create_reminder_candidate" && validReminderIndex(plan, decision.reminderCandidateIndex)) {
+      continue;
+    }
+
+    const reminderCandidateIndex = validReminderIndex(plan, decision?.reminderCandidateIndex)
+      ? decision.reminderCandidateIndex
+      : appendReminderCandidate(plan, event, eventIndex, "这是未来事项，系统补充为待确认提醒候选。");
+    if (reminderCandidateIndex === undefined) continue;
+
+    const originalAction = decision?.action;
+    if (decision) {
+      decision.action = "create_reminder_candidate";
+      decision.reminderCandidateIndex = reminderCandidateIndex;
+      decision.targetReminderId = undefined;
+      decision.reason = "未来事项必须形成待确认提醒候选。";
+    } else {
+      const newDecision: MemoryPlan["eventActionDecisions"][number] = {
+        eventIndex,
+        action: "create_reminder_candidate",
+        reminderCandidateIndex,
+        reason: "未来事项必须形成待确认提醒候选。",
+        confidence: event.confidence,
+        evidence: event.evidence,
+      };
+      plan.eventActionDecisions.push(newDecision);
+      decisionsByEvent.set(eventIndex, newDecision);
+    }
+    repairs.push({ obligation: "future_reminder_required", eventIndex, reminderCandidateIndex, originalAction });
+  }
+
+  return repairs;
+}
+
+function requiresFutureReminder(event: MemoryPlan["events"][number], now: string): boolean {
+  return event.type === "appointment" && isFutureIso(event.eventTimeStart, now);
+}
+
+function isFutureIso(value: string | undefined, now: string): boolean {
+  if (!value) return false;
+  const valueMs = Date.parse(value);
+  const nowMs = Date.parse(now);
+  return Number.isFinite(valueMs) && Number.isFinite(nowMs) && valueMs > nowMs;
+}
+
+function validReminderIndex(plan: MemoryPlan, index: number | undefined): index is number {
+  return index !== undefined && index >= 0 && index < plan.reminderCandidates.length;
+}
+
+function appendReminderCandidate(
+  plan: MemoryPlan,
+  event: MemoryPlan["events"][number],
+  eventIndex: number,
+  reason: string,
+): number {
+  const reminder: MemoryPlan["reminderCandidates"][number] = {
+    title: event.title,
+    description: event.summary,
+    timeText: event.timeText,
+    remindAt: event.eventTimeStart,
+    timeConfidence: event.timeConfidence,
+    relatedEventIndex: eventIndex,
+    confirmationRequired: true,
+    suggestedConfirmers: [{ role: "family" }],
+    confidence: event.confidence,
+    reason,
+  };
+  plan.reminderCandidates.push(reminder);
+  return plan.reminderCandidates.length - 1;
 }
 
 function validateReminderDecision(

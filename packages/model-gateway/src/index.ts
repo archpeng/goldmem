@@ -9,6 +9,7 @@ import {
   ParsedMemoryQuerySchema,
   type ElderTurnPlan,
   type MemoryAnswer,
+  type MemoryEvent,
   type MemoryPlan,
   type PersonalContext,
   type ParsedMemoryQuery,
@@ -19,6 +20,7 @@ import {
 import { normalizeElderTurnPlanResult } from "./normalizers/turn-plan.js";
 import { normalizeParsedMemoryQueryResult } from "./normalizers/query.js";
 import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
+import { composePrompt } from "./prompt-composer.js";
 
 export type TranscriptionResult = {
   text: string;
@@ -72,6 +74,9 @@ export type RetrievedEvidence = {
   score: number;
   canPlayAudio: boolean;
   retrievalSource: "postgres" | "semantic" | "context_link" | "graphiti" | "graphiti_provenance";
+  eventType?: MemoryEvent["type"];
+  riskLevel?: MemoryEvent["riskLevel"];
+  requiresConfirmation?: boolean;
 };
 
 export type EmbedTextInput = {
@@ -236,7 +241,7 @@ export class OpenAIModelGateway implements ModelGateway {
   }
 
   async generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan> {
-    const prompt = await this.loadPrompt("extract-memory-plan.md");
+    const prompt = await this.composePrompt("extract-memory-plan.md", ["relation-enrichment.md"]);
     const result = await this.completeJson("generateMemoryPlan", prompt, {
       ...input,
       promptVersion: this.promptVersion,
@@ -323,6 +328,11 @@ export class OpenAIModelGateway implements ModelGateway {
   private async loadPrompt(filename: string): Promise<string> {
     const promptsDir = this.options.promptsDir ?? join(process.cwd(), "prompts");
     return readFile(join(promptsDir, filename), "utf8");
+  }
+
+  private async composePrompt(base: string, capabilities: string[]): Promise<string> {
+    const promptsDir = this.options.promptsDir ?? join(process.cwd(), "prompts");
+    return composePrompt({ promptsDir, base, capabilities });
   }
 
   private recordProviderTiming(input: {

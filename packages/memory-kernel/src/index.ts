@@ -5,6 +5,7 @@ import {
   type ElderTurnResult,
   type MemoryAnswer,
   type MemoryEvent,
+  type MemoryPlan,
   type MemorySource,
   type PersonalContext,
   type Reminder,
@@ -63,11 +64,11 @@ export type IngestResult = {
     riskLevel: string;
   }>;
   temporalMemory: {
-    status: "written" | "failed";
-    errorCode?: "graphiti_not_configured" | "graphiti_write_failed" | "graphiti_retry_enqueue_failed";
+    status: "queued" | "not_needed" | "failed";
+    enqueueReason?: "hard_risk" | "hard_context_link" | "hard_family_task" | "model_relation_signal" | "not_needed";
+    relationSignalIntents?: Array<MemoryPlan["relationEnrichmentSignals"][number]["intent"]>;
+    errorCode?: "graphiti_enqueue_failed";
     errorMessage?: string;
-    retryQueued?: boolean;
-    retryJobId?: string;
   };
 };
 

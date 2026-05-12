@@ -16,6 +16,7 @@ The key architectural decision is to stop treating PostgreSQL as the long-term m
 8. [Temporal Memory Implementation Note](./08-temporal-memory-implementation-note.md)
 9. [Production Graphiti Plan Pack](./09-production-graphiti-plan-pack.md)
 10. [Mobile Elder AI-Native Roadmap](./10-mobile-elder-ai-native-roadmap.md)
+11. [Graphiti Background Relation Roadmap](./16-graphiti-background-relation-roadmap.md)
 
 ## One-line direction
 

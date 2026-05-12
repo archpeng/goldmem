@@ -27,7 +27,7 @@ Date: 2026-05-12
 | `e2e/golden-context-links.json` | Graphiti enabled, 5s Graphiti timeout | Fail | 113.14s | `OpenAI JSON completion failed` during seed ingest |
 | `e2e/golden-context-links.json` | Graphiti enabled, 30s Graphiti timeout | Fail | 190.89s | Fixture expects no `graphiti` evidence, but Graphiti evidence entered `semantic-disambiguation-link` |
 | `e2e/golden-context-links.json` | No `.env` in runner | Fail | 184.57s | Semantic judge missing `OPENAI_API_KEY` |
-| `e2e/golden-graphiti.json` | Graphiti enabled, 5s timeout | Fail | 16.87s | First seed returned `temporalMemory.status=failed`; audit shows `graphiti_write_failed: The operation was aborted due to timeout` |
+| `e2e/golden-graphiti.json` | Graphiti enabled, 5s timeout | Fail | 16.87s | First seed returned `temporalMemory.status=failed`; audit shows `graphiti_enqueue_failed: The operation was aborted due to timeout` |
 | `e2e/golden-graphiti.json` | Graphiti enabled, 30s timeout | Fail | 177.83s | `fraud-risk-chain` was routed as `clarify`, so `/elder/turn` returned no answer |
 | `e2e/golden-graphiti.json` | After safety recall prompt update | Fail | 135.13s | `fraud-chain` seed was routed as `recall`, so seed returned no `ingestResult` |
 | `e2e/golden-graphiti.json` | After record-vs-recall prompt tightening | Fail | 156.28s | `medication-current-instruction` answer passed semantic judge, but evidence text missed required hint `早饭后` |

@@ -25,7 +25,7 @@ export const RISK_TYPES = [
   "location_sensitive",
 ] as const;
 export const SEVERITIES = ["low", "medium", "high"] as const;
-export const FAMILY_TASK_TYPES = ["reminder_confirm", "risk_review", "memory_correction", "general_review"] as const;
+export const FAMILY_TASK_TYPES = ["reminder_confirm", "risk_review", "memory_correction", "general_review", "conflict_review"] as const;
 export const URGENCIES = ["low", "medium", "high"] as const;
 export const MEMORY_UPDATE_TARGETS = ["wiki_page"] as const;
 export const MEMORY_UPDATE_OPERATIONS = ["add", "append", "replace_section", "create"] as const;
@@ -39,6 +39,14 @@ export const EVENT_ACTIONS = [
 export const UNCERTAINTY_ACTIONS = ["ask_elder", "ask_family", "leave_unresolved", "review_later"] as const;
 export const CONTEXT_LINK_TYPES = ["possibly_related", "fills_missing_time"] as const;
 export const CONTEXT_LINK_STATUSES = ["active", "needs_confirmation", "rejected"] as const;
+export const RELATION_ENRICHMENT_INTENTS = [
+  "temporal_change",
+  "conflict_resolution",
+  "same_matter_link",
+  "safety_chain",
+  "caregiver_context",
+  "long_term_pattern",
+] as const;
 export const QUERY_INTENTS = [
   "recall_event",
   "check_reminder",
@@ -47,6 +55,7 @@ export const QUERY_INTENTS = [
   "ask_person_related",
   "unknown",
 ] as const;
+export const QUERY_SAFETY_TAGS = ["medical", "medication", "financial", "fraud", "identity", "privacy"] as const;
 
 export function asRecord(value: unknown): JsonRecord {
   return isRecord(value) ? value : {};
@@ -73,6 +82,10 @@ export function numberValue(value: unknown, fallback: number): number {
   if (typeof value !== "string") return fallback;
 
   const normalized = value.trim().toLowerCase();
+  if (normalized.endsWith("%")) {
+    const parsedPercent = Number(normalized.slice(0, -1));
+    if (Number.isFinite(parsedPercent)) return clamp01(parsedPercent / 100);
+  }
   const parsed = Number(normalized);
   if (Number.isFinite(parsed)) return clamp01(parsed);
 

@@ -101,7 +101,7 @@ sequenceDiagram
     Kernel->>PG: audit memory_ingest
   else Graphiti write fails
     Kernel->>PG: enqueue temporal retry job
-    Kernel->>PG: audit graphiti_write_failed
+    Kernel->>PG: audit graphiti_enqueue_failed
     Kernel->>PG: audit memory_ingest with failed temporal status
   end
   Kernel-->>API: ingest result + temporalMemory status

@@ -113,13 +113,13 @@ export class QueryOrchestrator {
     };
     if (evidence.length === 0) {
       const answer: MemoryAnswer = {
-        answerText: "I could not find a matching memory for that question.",
+        answerText: "我没有找到可以回答这件事的记忆。",
         traceId,
         confidence: 0,
         matchedSources: [],
         retrievedEvidence: [],
         suggestedActions: [],
-        safetyNote: "No source evidence was found.",
+        safetyNote: "没有找到可引用的来源依据。",
       };
 
       await this.deps.auditLog.record({
@@ -145,7 +145,7 @@ export class QueryOrchestrator {
     timings.answerGenerationMs = Date.now() - answerGenerationStartedAt;
     appendProviderTimings(timings, this.deps.modelGateway);
     timings.totalMs = Date.now() - startedAt;
-    const safetyCheckedAnswer = enforceQueryAnswerSafety(input.query, generatedAnswer, evidence, parsedQuery);
+    const safetyCheckedAnswer = enforceQueryAnswerSafety(generatedAnswer, evidence, parsedQuery);
     const answer: MemoryAnswer = {
       ...safetyCheckedAnswer,
       traceId,
@@ -319,13 +319,14 @@ export class QueryOrchestrator {
         .map((event) => [event.id, event]),
     );
 
-    return candidates.filter((result) => {
-      if (!result.sourceId || !validSourceIds.has(result.sourceId)) return false;
+    return candidates.flatMap((result) => {
+      if (!result.sourceId || !validSourceIds.has(result.sourceId)) return [];
       if (result.eventId) {
         const event = validEventsById.get(result.eventId);
-        return Boolean(event && event.sourceId === result.sourceId);
+        if (!event || event.sourceId !== result.sourceId) return [];
+        return [{ ...result, metadata: { ...result.metadata, eventType: event.type, riskLevel: event.riskLevel, requiresConfirmation: event.requiresConfirmation } }];
       }
-      return isString(result.episodeId);
+      return isString(result.episodeId) ? [result] : [];
     });
   }
 
@@ -349,44 +350,38 @@ function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEv
 }
 
 function enforceQueryAnswerSafety(
-  query: string,
   answer: MemoryAnswer,
   evidence: RetrievedEvidence[],
   parsedQuery: ParsedMemoryQuery,
 ): MemoryAnswer {
-  if (!hasSensitiveFraudOrIdentitySignal(query, answer, evidence, parsedQuery)) return answer;
-  const note = "请先不要发送身份证号、验证码、密码或转账信息，最好让家人先帮你确认。";
+  const note = querySafetyNote(parsedQuery, evidence);
+  if (!note) return answer;
   return {
     ...answer,
-    answerText: containsFamilyConfirmation(answer.answerText) ? answer.answerText : `${answer.answerText} ${note}`,
+    answerText: answer.answerText.includes(note) ? answer.answerText : `${answer.answerText} ${note}`,
     safetyNote: appendSafetyNote(answer.safetyNote, note),
   };
 }
 
-function hasSensitiveFraudOrIdentitySignal(
-  query: string,
-  answer: MemoryAnswer,
-  evidence: RetrievedEvidence[],
+function querySafetyNote(
   parsedQuery: ParsedMemoryQuery,
-): boolean {
-  const text = [
-    query,
-    answer.answerText,
-    answer.safetyNote ?? "",
-    parsedQuery.eventTypes.join(" "),
-    parsedQuery.entities.map((entity) => `${entity.type} ${entity.name}`).join(" "),
-    evidence.slice(0, 3).map((item) => item.summary).join(" "),
-  ].join(" ");
-  return /(诈骗|陌生人|验证码|密码|身份证|护照|转账|银行卡|fraud|scam|password|verification code|identity|passport|transfer|bank)/i.test(text);
-}
-
-function containsFamilyConfirmation(value: string): boolean {
-  return /(家人|子女|女儿|儿子|亲属|family|caregiver)/i.test(value);
+  evidence: RetrievedEvidence[],
+): string | undefined {
+  const tags = new Set(parsedQuery.safetyTags);
+  const risks = new Set(evidence.map((item) => item.riskLevel).filter(Boolean));
+  const eventTypes = new Set(evidence.map((item) => item.eventType).filter(Boolean));
+  if (tags.has("fraud") || tags.has("identity") || tags.has("financial") || tags.has("privacy") || risks.has("fraud_risk") || risks.has("financial") || eventTypes.has("finance")) {
+    return "请先不要发送身份证号、验证码、密码或转账信息，最好让家人先帮你确认。";
+  }
+  if (tags.has("medical") || tags.has("medication") || risks.has("medical") || eventTypes.has("health") || eventTypes.has("medication")) {
+    return "涉及医疗或用药的信息，请先按医生或家人确认过的安排处理。";
+  }
+  return undefined;
 }
 
 function appendSafetyNote(current: string | undefined, note: string): string {
   if (!current) return note;
-  if (containsFamilyConfirmation(current)) return current;
+  if (current.includes(note)) return current;
   return `${current} ${note}`;
 }
 

@@ -98,6 +98,34 @@ describe("model-gateway normalization", () => {
     expect(() => MemoryPlanSchema.parse(normalized)).toThrow();
   });
 
+  it("adds source evidence to risk flags when the model omits risk evidence", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "陌生人索要验证码。",
+        events: [{
+          title: "疑似诈骗",
+          summary: "陌生人索要验证码。",
+          timeText: "刚才",
+          confidence: 0.8,
+          evidence: ["陌生人索要验证码"],
+        }],
+        riskFlags: [{
+          type: "fraud_suspected",
+          severity: "high",
+          summary: "陌生人索要验证码。",
+          evidence: [],
+        }],
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(MemoryPlanSchema.parse(normalized).riskFlags[0]?.evidence).toEqual([
+      expect.objectContaining({ sourceId: "source-1" }),
+    ]);
+  });
+
   it("normalizes explicit memory plan action decisions without inferring actions", () => {
     const normalized = normalizeMemoryPlanResult(
       {
@@ -137,6 +165,80 @@ describe("model-gateway normalization", () => {
       reminderCandidateIndex: 0,
       confidence: 0.9,
     });
+  });
+
+  it("normalizes relation enrichment signals without inventing evidence", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "社区医院复查改期。",
+        events: [{
+          title: "社区医院复查改期",
+          summary: "社区医院复查改到下周一上午九点。",
+          timeText: "下周一上午九点",
+          confidence: 0.8,
+          evidence: ["改到下周一上午九点"],
+        }],
+        eventActionDecisions: [{
+          eventIndex: 0,
+          action: "family_review",
+          reason: "医疗复查改期需要家人确认。",
+          confidence: 0.8,
+          evidence: ["改到下周一上午九点"],
+        }],
+        relationEnrichmentSignals: [
+          {
+            intent: "temporal_change",
+            valueScore: "90%",
+            confidence: "high",
+            relatedEventIndexes: ["0"],
+            relatedReminderCandidateIndexes: ["0"],
+            reason: "这条记录改变了复查时间。",
+            evidence: ["改到下周一上午九点"],
+          },
+          {
+            intent: "hospital_keyword_case",
+            valueScore: 1,
+            confidence: 1,
+            reason: "非法业务关键词 intent 应被丢弃。",
+            evidence: ["社区医院"],
+          },
+        ],
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(MemoryPlanSchema.parse(normalized).relationEnrichmentSignals).toEqual([
+      expect.objectContaining({
+        intent: "temporal_change",
+        valueScore: 0.9,
+        confidence: 0.9,
+        relatedEventIndexes: [0],
+        relatedReminderCandidateIndexes: [0],
+      }),
+    ]);
+  });
+
+  it("keeps relation enrichment signal evidence failures visible", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "社区医院复查改期。",
+        relationEnrichmentSignals: [{
+          intent: "temporal_change",
+          valueScore: 0.9,
+          confidence: 0.8,
+          relatedEventIndexes: [],
+          reason: "缺少 evidence。",
+          evidence: [],
+        }],
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(() => MemoryPlanSchema.parse(normalized)).toThrow();
   });
 
   it("normalizes elder turn routing plans without answering or writing truth", () => {
@@ -220,6 +322,7 @@ function parsedQuery(): ParsedMemoryQuery {
     intent: "recall_event",
     requiresSourceEvidence: true,
     eventTypes: ["shopping"],
+    safetyTags: [],
     entities: [],
   };
 }

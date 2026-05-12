@@ -2,12 +2,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import OpenAI from "openai";
 import { z } from "zod";
+import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import {
   MemoryAnswerSchema,
   type FamilyTask,
   type MemoryEvent,
   type Reminder,
 } from "../packages/memory-schema/src/index.js";
+import { GraphitiTemporalMemoryStore } from "../packages/temporal-memory/src/index.js";
+import { runGraphitiRetryBatch } from "./graphiti-retry.js";
 
 type Json = Record<string, unknown>;
 
@@ -49,6 +52,11 @@ const GoldenCaseSchema = z.object({
       }),
     )
     .default([]),
+  temporalExpectations: z.array(z.object({
+    seedNoteId: z.string(),
+    status: z.enum(["queued", "not_needed", "failed"]),
+    enqueueReason: z.enum(["hard_risk", "hard_context_link", "hard_family_task", "model_relation_signal", "not_needed"]).optional(),
+  })).default([]),
   familyTaskExpectations: z.array(z.object({ type: z.string().optional(), hint: z.string().min(1) })).default([]),
   familyTaskActionExpectations: z.array(z.object({
     type: z.string().optional(),
@@ -71,6 +79,10 @@ const tenantId = process.env.GOLDEN_E2E_TENANT_ID ?? "tenant-mvp";
 const elderId = process.env.GOLDEN_E2E_ELDER_ID ?? `golden-e2e-${Date.now()}`;
 const fixturePath = process.env.GOLDEN_E2E_FIXTURE ?? join(process.cwd(), "e2e", "golden-retrieval.json");
 const requestTimeoutMs = Number(process.env.GOLDEN_E2E_TIMEOUT_MS ?? 600_000);
+const graphitiDrainBatches = Number(process.env.GOLDEN_E2E_DRAIN_BATCHES ?? 20);
+const graphitiDrainBatchSize = Number(process.env.GOLDEN_E2E_DRAIN_BATCH_SIZE ?? 20);
+const graphitiSearchSettleMs = Number(process.env.GOLDEN_E2E_SEARCH_SETTLE_MS ?? 5000);
+const graphitiTimeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 60_000);
 const fixture = GoldenCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
 const semanticJudge = createSemanticJudge();
 const graphitiMode = process.env.GOLDEN_E2E_GRAPHITI_MODE
@@ -102,9 +114,11 @@ for (const note of fixture.seedNotes) {
   ingests.set(note.id, result);
   assert(result.events.length > 0 || result.reminderCandidates.length > 0, `Seed note ${note.id} produced no records`);
   if (fixturePath.includes("graphiti")) {
-    assert(result.temporalMemory?.status === "written", `Seed note ${note.id} did not write Graphiti temporal memory`);
+    assert(result.temporalMemory?.status === "queued" || result.temporalMemory?.status === "not_needed", `Seed note ${note.id} returned invalid temporal memory status`);
   }
 }
+
+if (graphitiMode === "required") await drainGraphitiJobs();
 
 const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
 const events = await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`);
@@ -128,13 +142,28 @@ for (const expectation of fixture.reminderExpectations) {
     (reminder) =>
       textIncludes(reminder.title, expectation.titleHint) ||
       textIncludes(reminder.reason, expectation.titleHint) ||
-      textIncludes(reminder.description, expectation.titleHint),
+      textIncludes(reminder.description, expectation.titleHint) ||
+      textIncludes(reminder.timeText, expectation.titleHint),
   );
   assert(Boolean(matched), `Expected reminder containing ${expectation.titleHint}`);
   assert(
     matched?.confirmationRequired === expectation.requiresConfirmation,
     `Expected reminder ${matched?.id} confirmationRequired=${expectation.requiresConfirmation}`,
   );
+}
+
+for (const expectation of fixture.temporalExpectations) {
+  const ingest = requiredIngest(ingests, expectation.seedNoteId);
+  assert(
+    ingest.temporalMemory?.status === expectation.status,
+    `Expected ${expectation.seedNoteId} temporalMemory.status=${expectation.status}, got ${String(ingest.temporalMemory?.status)}`,
+  );
+  if (expectation.enqueueReason) {
+    assert(
+      ingest.temporalMemory?.enqueueReason === expectation.enqueueReason,
+      `Expected ${expectation.seedNoteId} enqueueReason=${expectation.enqueueReason}, got ${String(ingest.temporalMemory?.enqueueReason)}`,
+    );
+  }
 }
 
 for (const expectation of fixture.familyTaskExpectations) {
@@ -256,7 +285,11 @@ async function ingestNote(transcript: string) {
       summary: string;
       events: MemoryEvent[];
       reminderCandidates: Reminder[];
-      temporalMemory?: { status: "written" | "failed"; errorMessage?: string };
+      temporalMemory?: {
+        status: "queued" | "not_needed" | "failed";
+        enqueueReason?: "hard_risk" | "hard_context_link" | "hard_family_task" | "model_relation_signal" | "not_needed";
+        errorMessage?: string;
+      };
     };
   }>("POST", "/elder/turn", {
     tenantId,
@@ -265,6 +298,37 @@ async function ingestNote(transcript: string) {
   });
   if (!turn.ingestResult) throw new Error("Elder turn did not return ingestResult for seed note");
   return turn.ingestResult;
+}
+
+async function drainGraphitiJobs(): Promise<void> {
+  const databaseUrl = requiredEnv("DATABASE_URL");
+  const graphitiBaseUrl = requiredEnv("GRAPHITI_BASE_URL");
+  const postgres = createPostgresStores({ databaseUrl });
+  const temporalMemory = new GraphitiTemporalMemoryStore({
+    baseUrl: graphitiBaseUrl,
+    apiKey: process.env.GRAPHITI_API_KEY,
+    timeoutMs: graphitiTimeoutMs,
+  });
+  try {
+    for (let attempt = 0; attempt < graphitiDrainBatches; attempt += 1) {
+      const stats = await runGraphitiRetryBatch({ postgres, temporalMemory, batchSize: graphitiDrainBatchSize });
+      if (stats.failed > 0 || stats.dead > 0) throw new Error(`Graphiti temporal job drain failed: ${JSON.stringify(stats)}`);
+      if (stats.claimed === 0) {
+        if (graphitiSearchSettleMs > 0) await new Promise((resolve) => setTimeout(resolve, graphitiSearchSettleMs));
+        return;
+      }
+      console.log(`golden graphiti drain batch: ${JSON.stringify(stats)}`);
+    }
+    throw new Error(`Graphiti temporal job drain exceeded ${graphitiDrainBatches} batches`);
+  } finally {
+    await postgres.close();
+  }
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }
 
 async function request<T>(method: string, path: string, body?: Json): Promise<T> {

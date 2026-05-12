@@ -11,7 +11,8 @@ Examples:
 ## Rules
 
 1. Do not answer the question.
-2. Extract intent, time range, entities, event types, and whether source evidence is required.
+2. Extract intent, time range, entities, event types, safetyTags, and whether source evidence is required.
 3. Keep time confidence low when the elder is vague.
 4. Output JSON conforming to `ParsedMemoryQuerySchema`.
 5. Preserve Chinese entity names exactly when the query is in Chinese.
+6. Use safetyTags only for structured safety domains: medical, medication, financial, fraud, identity, privacy.

@@ -18,6 +18,7 @@ export const EventTypeSchema = z.enum([
 ]);
 export const EntityTypeSchema = z.enum(["person", "place", "medicine", "object", "organization", "unknown"]);
 export const RiskLevelSchema = z.enum(["normal", "sensitive", "medical", "financial", "fraud_risk"]);
+export const QuerySafetyTagSchema = z.enum(["medical", "medication", "financial", "fraud", "identity", "privacy"]);
 export const ReminderStatusSchema = z.enum([
   "candidate",
   "pending_elder_confirm",
@@ -32,6 +33,14 @@ export const ReminderStatusSchema = z.enum([
 export const VisibilitySchema = z.enum(["private", "shared_summary", "shared_full", "family_required"]);
 export const ContextLinkTypeSchema = z.enum(["possibly_related", "fills_missing_time"]);
 export const ContextLinkStatusSchema = z.enum(["active", "needs_confirmation", "rejected"]);
+export const RelationEnrichmentIntentSchema = z.enum([
+  "temporal_change",
+  "conflict_resolution",
+  "same_matter_link",
+  "safety_chain",
+  "caregiver_context",
+  "long_term_pattern",
+]);
 
 export const EvidenceRefSchema = z.object({
   sourceId: z.string().min(1),
@@ -262,6 +271,17 @@ export const UncertaintySchema = z.object({
 });
 export type Uncertainty = z.infer<typeof UncertaintySchema>;
 
+export const RelationEnrichmentSignalSchema = z.object({
+  intent: RelationEnrichmentIntentSchema,
+  valueScore: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  relatedEventIndexes: z.array(z.number().int().nonnegative()).min(1),
+  relatedReminderCandidateIndexes: z.array(z.number().int().nonnegative()).default([]),
+  reason: z.string().min(1),
+  evidence: z.array(EvidenceRefSchema).min(1),
+});
+export type RelationEnrichmentSignal = z.infer<typeof RelationEnrichmentSignalSchema>;
+
 export const MemoryPlanSchema = z.object({
   tenantId: TenantIdSchema,
   sourceId: z.string().min(1),
@@ -273,6 +293,7 @@ export const MemoryPlanSchema = z.object({
   riskFlags: z.array(RiskFlagSchema).default([]),
   familyTasks: z.array(FamilyConfirmationTaskDraftSchema).default([]),
   contextLinks: z.array(ContextLinkDraftSchema).default([]),
+  relationEnrichmentSignals: z.array(RelationEnrichmentSignalSchema).default([]),
   memoryUpdates: z.array(MemoryUpdateDraftSchema).default([]),
   uncertainties: z.array(UncertaintySchema).default([]),
   evidence: z.array(EvidenceRefSchema).default([]),
@@ -358,6 +379,7 @@ export const ParsedMemoryQuerySchema = z.object({
     )
     .default([]),
   eventTypes: z.array(EventTypeSchema).default([]),
+  safetyTags: z.array(QuerySafetyTagSchema).default([]),
   requiresSourceEvidence: z.boolean(),
 });
 export type ParsedMemoryQuery = z.infer<typeof ParsedMemoryQuerySchema>;
@@ -388,6 +410,9 @@ export const MemoryAnswerSchema = z.object({
         score: z.number().min(0).max(1),
         canPlayAudio: z.boolean(),
         retrievalSource: z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"]),
+        eventType: EventTypeSchema.optional(),
+        riskLevel: RiskLevelSchema.optional(),
+        requiresConfirmation: z.boolean().optional(),
       }),
     )
     .default([]),
@@ -445,11 +470,11 @@ export const ElderTurnResultSchema = z.object({
       })),
       temporalMemory: z
         .object({
-          status: z.enum(["written", "failed"]),
-          errorCode: z.enum(["graphiti_not_configured", "graphiti_write_failed", "graphiti_retry_enqueue_failed"]).optional(),
+          status: z.enum(["queued", "not_needed", "failed"]),
+          errorCode: z.enum(["graphiti_enqueue_failed"]).optional(),
           errorMessage: z.string().optional(),
-          retryQueued: z.boolean().optional(),
-          retryJobId: z.string().optional(),
+          enqueueReason: z.enum(["hard_risk", "hard_context_link", "hard_family_task", "model_relation_signal", "not_needed"]).optional(),
+          relationSignalIntents: z.array(RelationEnrichmentIntentSchema).optional(),
         })
         .optional(),
     })

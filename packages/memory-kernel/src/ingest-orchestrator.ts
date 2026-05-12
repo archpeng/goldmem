@@ -73,6 +73,7 @@ export class IngestOrchestrator {
       const completePlan = await enforceMemoryPlanCompleteness({
         plan: permissionedPlan,
         context,
+        now: source.localCreatedAt ?? source.createdAt,
         traceId,
         auditLog: this.deps.auditLog,
       });
@@ -84,9 +85,9 @@ export class IngestOrchestrator {
       timings.applyPlan = applied.timings;
       appendProviderTimings(timings, this.deps.modelGateway);
 
-      const temporalWriteStartedAt = Date.now();
-      const temporalMemory = await this.temporalWriter.write(source, applied, traceId);
-      timings.temporalWriteMs = Date.now() - temporalWriteStartedAt;
+      const temporalEnqueueStartedAt = Date.now();
+      const temporalMemory = await this.temporalWriter.enqueue(source, completePlan, applied, traceId);
+      timings.temporalEnqueueMs = Date.now() - temporalEnqueueStartedAt;
       timings.totalMs = Date.now() - startedAt;
 
       await this.deps.auditLog.record({

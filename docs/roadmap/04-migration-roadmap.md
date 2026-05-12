@@ -132,7 +132,7 @@ Failure behavior:
 ```text
 Graphiti failure does not rollback PostgreSQL.
 Graphiti failure is included in response internal metadata.
-Graphiti failure writes audit event graphiti_write_failed.
+Graphiti failure writes audit event graphiti_enqueue_failed.
 Retry queue/job can replay from PostgreSQL records later.
 ```
 

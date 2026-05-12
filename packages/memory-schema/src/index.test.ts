@@ -85,6 +85,66 @@ describe("memory-schema safety contracts", () => {
     expect(parsed.eventActionDecisions[0]?.action).toBe("create_reminder_candidate");
   });
 
+  it("accepts evidence-backed relation enrichment signals in MemoryPlan", () => {
+    const parsed = MemoryPlanSchema.parse({
+      tenantId: "tenant-mvp",
+      sourceId: "source-1",
+      elderId: "elder-1",
+      summary: "社区医院复查改期。",
+      events: [{
+        type: "appointment",
+        title: "社区医院复查改期",
+        summary: "社区医院复查改到下周一上午九点。",
+        timeText: "下周一上午九点",
+        timeConfidence: 0.8,
+        entities: [],
+        importance: 0.8,
+        confidence: 0.8,
+        riskLevel: "medical",
+        requiresConfirmation: true,
+        evidence: [{ sourceId: "source-1", quote: "改到下周一上午九点" }],
+      }],
+      eventActionDecisions: [{
+        eventIndex: 0,
+        action: "family_review",
+        reason: "医疗复查改期需要确认。",
+        confidence: 0.8,
+        evidence: [{ sourceId: "source-1", quote: "改到下周一上午九点" }],
+      }],
+      relationEnrichmentSignals: [{
+        intent: "temporal_change",
+        valueScore: 0.9,
+        confidence: 0.8,
+        relatedEventIndexes: [0],
+        reason: "这条记录改变了复查时间。",
+        evidence: [{ sourceId: "source-1", quote: "改到下周一上午九点" }],
+      }],
+      modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+      confidence: 0.8,
+    });
+
+    expect(parsed.relationEnrichmentSignals[0]?.intent).toBe("temporal_change");
+  });
+
+  it("requires evidence on relation enrichment signals", () => {
+    expect(() => MemoryPlanSchema.parse({
+      tenantId: "tenant-mvp",
+      sourceId: "source-1",
+      elderId: "elder-1",
+      summary: "社区医院复查改期。",
+      relationEnrichmentSignals: [{
+        intent: "temporal_change",
+        valueScore: 0.9,
+        confidence: 0.8,
+        relatedEventIndexes: [],
+        reason: "缺少证据。",
+        evidence: [],
+      }],
+      modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+      confidence: 0.8,
+    })).toThrow();
+  });
+
   it("requires retrieval evidence and bounded source metadata for answers", () => {
     expect(() => MemoryAnswerSchema.parse({
       answerText: "您买了青菜。",

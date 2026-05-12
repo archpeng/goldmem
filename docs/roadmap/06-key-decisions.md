@@ -218,7 +218,7 @@ When Graphiti write fails:
 ```text
 PostgreSQL stays committed
 response records temporal write failure in internal metadata
-audit records graphiti_write_failed
+audit records graphiti_enqueue_failed
 retry queue/job can replay from PostgreSQL records
 ```
 

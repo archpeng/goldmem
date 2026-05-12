@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "description": "Real-service golden E2E for relation enrichment signals and Graphiti enqueue decisions.",
+  "seedNotes": [
+    {
+      "id": "ordinary-shopping",
+      "transcript": "明天上午我去菜市场买鸡蛋和青菜。"
+    },
+    {
+      "id": "ordinary-call",
+      "transcript": "晚上提醒我给儿子打电话，问问他周末回不回来。"
+    },
+    {
+      "id": "appointment-original",
+      "transcript": "我原来记得周五下午三点去社区医院复查血压，需要带医保卡。"
+    },
+    {
+      "id": "appointment-rescheduled",
+      "transcript": "女儿小敏刚确认了，社区医院复查改到下周一上午九点，医保卡还是要带。"
+    },
+    {
+      "id": "fraud-repeat",
+      "transcript": "昨天那个说办补贴的人今天又打电话，让我把验证码发过去，我还没发。"
+    },
+    {
+      "id": "symptom-pattern",
+      "transcript": "这几天早上起来又有点头晕，比前几天明显一些。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "appointment-change",
+      "query": "社区医院复查后来改到什么时候了？医保卡还要带吗？",
+      "semanticAnswerExpectations": [
+        "The answer says the follow-up changed to next Monday morning at 9.",
+        "The answer says the insurance card is still relevant."
+      ],
+      "expectedEvidenceHints": ["社区医院", "下周一", "医保卡"],
+      "allowedSources": ["postgres", "semantic", "graphiti", "graphiti_provenance"],
+      "expectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "fraud-chain",
+      "query": "那个办补贴的人后来又让我发什么？安全吗？",
+      "semanticAnswerExpectations": [
+        "The answer identifies verification code as requested.",
+        "The answer treats the situation as unsafe or requiring family review."
+      ],
+      "expectedEvidenceHints": ["补贴", "验证码"],
+      "allowedSources": ["postgres", "semantic", "graphiti", "graphiti_provenance"],
+      "expectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    }
+  ],
+  "riskExpectations": [
+    {
+      "seedNoteId": "fraud-repeat",
+      "eventRiskLevel": "fraud_risk",
+      "familyTaskType": "risk_review"
+    }
+  ],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "appointment-rescheduled",
+      "titleHint": "下周一",
+      "requiresConfirmation": true
+    }
+  ],
+  "temporalExpectations": [
+    {
+      "seedNoteId": "ordinary-shopping",
+      "status": "not_needed",
+      "enqueueReason": "not_needed"
+    },
+    {
+      "seedNoteId": "appointment-rescheduled",
+      "status": "queued"
+    },
+    {
+      "seedNoteId": "fraud-repeat",
+      "status": "queued",
+      "enqueueReason": "hard_risk"
+    },
+    {
+      "seedNoteId": "symptom-pattern",
+      "status": "queued"
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["社区医院", "复查"]
+}

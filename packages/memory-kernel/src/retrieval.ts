@@ -1,4 +1,4 @@
-import type { MemoryAnswer, MemoryEvent, ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { EventTypeSchema, RiskLevelSchema, type MemoryAnswer, type MemoryEvent, type ParsedMemoryQuery } from "@goldmem/memory-schema";
 import type { MemoryRecallResult } from "@goldmem/memory-store";
 import type { RetrievedEvidence } from "@goldmem/model-gateway";
 import type { TemporalEvidence } from "@goldmem/temporal-memory";
@@ -45,6 +45,9 @@ export function mergeEvidence(
     score: scoreStructuredEvent(event, parsedQuery, query),
     canPlayAudio: true,
     retrievalSource: "postgres",
+    eventType: event.type,
+    riskLevel: event.riskLevel,
+    requiresConfirmation: event.requiresConfirmation,
   }));
 
   const semanticEvidence: RetrievedEvidence[] = semanticResults.flatMap((result) => {
@@ -58,12 +61,18 @@ export function mergeEvidence(
         score: result.score ?? 0.5,
         canPlayAudio: true,
         retrievalSource: "semantic" as const,
+        eventType: parseEventType(result.metadata.eventType),
+        riskLevel: parseRiskLevel(result.metadata.riskLevel),
+        requiresConfirmation: typeof result.metadata.requiresConfirmation === "boolean" ? result.metadata.requiresConfirmation : undefined,
       },
     ];
   });
 
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+
   const temporalEvidence: RetrievedEvidence[] = temporalResults.flatMap((result) => {
     if (!result.sourceId) return [];
+    const event = result.eventId ? eventsById.get(result.eventId) : undefined;
     return [
       {
         sourceId: result.sourceId,
@@ -73,11 +82,24 @@ export function mergeEvidence(
         score: result.score,
         canPlayAudio: true,
         retrievalSource: result.origin === "provenance_fallback" ? "graphiti_provenance" as const : "graphiti" as const,
+        eventType: event?.type ?? parseEventType(result.metadata?.eventType),
+        riskLevel: event?.riskLevel ?? parseRiskLevel(result.metadata?.riskLevel),
+        requiresConfirmation: event?.requiresConfirmation ?? (typeof result.metadata?.requiresConfirmation === "boolean" ? result.metadata.requiresConfirmation : undefined),
       },
     ];
   });
 
   return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence, ...temporalEvidence]);
+}
+
+function parseEventType(value: unknown): MemoryEvent["type"] | undefined {
+  const parsed = EventTypeSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseRiskLevel(value: unknown): MemoryEvent["riskLevel"] | undefined {
+  const parsed = RiskLevelSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function mergeRetrievedEvidence(evidence: RetrievedEvidence[]): RetrievedEvidence[] {

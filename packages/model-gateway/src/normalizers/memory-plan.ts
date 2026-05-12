@@ -24,6 +24,7 @@ import {
   numberValue,
   optionalIso,
   optionalString,
+  RELATION_ENRICHMENT_INTENTS,
   RISK_LEVELS,
   RISK_TYPES,
   SEVERITIES,
@@ -61,6 +62,9 @@ export function normalizeMemoryPlanResult(
     contextLinks: arrayValue(record.contextLinks)
       .map((link) => normalizeContextLink(link, input, events.length))
       .filter(isRecord),
+    relationEnrichmentSignals: arrayValue(record.relationEnrichmentSignals)
+      .map((signal) => normalizeRelationEnrichmentSignal(signal, input))
+      .filter(isRecord),
     memoryUpdates: arrayValue(record.memoryUpdates).map(normalizeMemoryUpdate).filter(isRecord),
     uncertainties: arrayValue(record.uncertainties).map(normalizeUncertainty).filter(isRecord),
     evidence: normalizeEvidenceRefs(record.evidence, input, false),
@@ -70,6 +74,23 @@ export function normalizeMemoryPlanResult(
       promptVersion: stringValue(asRecord(record.modelInfo).promptVersion, promptVersion),
     },
     confidence: numberValue(record.confidence, 0.5),
+  };
+}
+
+function normalizeRelationEnrichmentSignal(raw: unknown, input: GenerateMemoryPlanInput): JsonRecord | undefined {
+  const record = asRecord(raw);
+  const rawIntent = optionalString(record.intent);
+  if (!rawIntent || !RELATION_ENRICHMENT_INTENTS.includes(rawIntent as (typeof RELATION_ENRICHMENT_INTENTS)[number])) return undefined;
+
+  return {
+    ...record,
+    intent: rawIntent,
+    valueScore: numberValue(record.valueScore, 0.5),
+    confidence: numberValue(record.confidence, 0.5),
+    relatedEventIndexes: arrayValue(record.relatedEventIndexes).map(integerValue).filter((index): index is number => index !== undefined),
+    relatedReminderCandidateIndexes: arrayValue(record.relatedReminderCandidateIndexes).map(integerValue).filter((index): index is number => index !== undefined),
+    reason: stringValue(record.reason, "Model identified long-term relationship value."),
+    evidence: normalizeEvidenceRefs(record.evidence, input, true),
   };
 }
 
@@ -142,6 +163,7 @@ function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRe
   const summary = stringValue(record.summary, stringValue(record.reason, ""));
   if (!summary) return undefined;
   const textForInference = `${summary} ${stringValue(record.reason, "")}`;
+  const evidence = normalizeEvidenceRefs(record.evidence, input, false);
 
   return {
     ...record,
@@ -151,7 +173,7 @@ function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRe
     reason: stringValue(record.reason, summary),
     requiresFamilyReview: booleanValue(record.requiresFamilyReview, inferRequiresFamilyReview(textForInference)),
     requiresHumanConfirmation: booleanValue(record.requiresHumanConfirmation, true),
-    evidence: normalizeEvidenceRefs(record.evidence, input, true),
+    evidence: evidence.length > 0 ? evidence : [sourceEvidence(input)],
   };
 }
 
@@ -278,5 +300,12 @@ function normalizeEvidenceRef(raw: unknown, sourceId: string): JsonRecord | unde
     endChar: integerValue(record.endChar),
     audioStartMs: integerValue(record.audioStartMs),
     audioEndMs: integerValue(record.audioEndMs),
+  };
+}
+
+function sourceEvidence(input: GenerateMemoryPlanInput): JsonRecord {
+  return {
+    sourceId: input.sourceId,
+    quote: input.transcript.slice(0, 240),
   };
 }

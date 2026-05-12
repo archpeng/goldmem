@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "description": "Real-service golden E2E for MemoryPlan action obligations and Kernel reminder safety.",
+  "seedNotes": [
+    {
+      "id": "appointment-new",
+      "transcript": "明天上午十点我要去社区医院复查血压，女儿小敏可能陪我去。"
+    },
+    {
+      "id": "appointment-rescheduled",
+      "transcript": "刚才那个社区医院复查改到后天上午九点，还是要带医保卡。"
+    },
+    {
+      "id": "medication-change",
+      "transcript": "医生今天说降压药先改成晚饭后一片，我不确定要不要马上照做。"
+    },
+    {
+      "id": "fraud-risk",
+      "transcript": "有人说帮我办补贴，让我先把身份证号和验证码发过去，我还没有发。"
+    },
+    {
+      "id": "object-recall",
+      "transcript": "我把蓝色小本子放在电视柜第二个抽屉里，医保卡也在旁边。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "appointment-current-time",
+      "query": "社区医院复查后来改到什么时候了？医保卡还要带吗？",
+      "expectedAnswerHints": ["社区医院", "后天", "医保卡"],
+      "expectedEvidenceHints": ["社区医院", "后天", "医保卡"],
+      "allowedSources": ["postgres", "semantic", "graphiti", "graphiti_provenance"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "semantic-object-recall",
+      "query": "Where is my blue notebook?",
+      "expectedAnswerAnyHints": [["电视柜", "TV cabinet"], ["抽屉", "drawer"]],
+      "expectedEvidenceHints": ["蓝色小本子"],
+      "allowedSources": ["postgres", "semantic", "graphiti", "graphiti_provenance"],
+      "requiresSemantic": true,
+      "minConfidence": 0.4
+    }
+  ],
+  "riskExpectations": [
+    {
+      "seedNoteId": "medication-change",
+      "eventRiskLevel": "medical",
+      "familyTaskType": "reminder_confirm"
+    },
+    {
+      "seedNoteId": "fraud-risk",
+      "eventRiskLevel": "fraud_risk",
+      "familyTaskType": "risk_review"
+    }
+  ],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "appointment-new",
+      "titleHint": "血压",
+      "requiresConfirmation": true
+    },
+    {
+      "seedNoteId": "appointment-rescheduled",
+      "titleHint": "后天",
+      "requiresConfirmation": true
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码"
+    },
+    {
+      "type": "reminder_confirm",
+      "hint": "降压药"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["社区医院", "复查"]
+}
