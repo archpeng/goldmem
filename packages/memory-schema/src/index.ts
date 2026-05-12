@@ -519,6 +519,7 @@ export const ConfirmReminderRequestSchema = z.object({
   tenantId: TenantIdSchema,
   actorUserId: z.string().min(1),
   remindAt: ISODateTimeSchema.optional(),
+  timezone: z.string().min(1).optional(),
   traceId: z.string().min(1).optional(),
 });
 export type ConfirmReminderRequest = z.infer<typeof ConfirmReminderRequestSchema>;

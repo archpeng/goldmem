@@ -1,7 +1,5 @@
 export const copy = {
-  appKicker: "生活记忆助手",
-  appTitle: "我帮你记",
-  appDescription: "说一句话，我帮你记住；想不起来时，我根据你说过的话帮你找。",
+  appTitle: "生活记忆助手",
   conversation: {
     inputLabel: "想说的话",
     placeholder: "说一句话，我来判断是记住，还是帮你找。",
@@ -18,9 +16,10 @@ export const copy = {
   },
   today: {
     kicker: "今天",
-    hasActions: "有几件事需要你确认",
+    hasActions: "有几件事需要处理",
     noActions: "今天没有需要处理的事",
-    needsConfirmation: "需要你确认",
+    needsConfirmation: "待我确认",
+    familyConfirmation: "家人确认",
     todayReminders: "今天提醒",
     recentMemories: "最近记住",
   },
@@ -44,6 +43,18 @@ export const copy = {
   },
   events: {
     refresh: "刷新",
+  },
+  tasks: {
+    title: "事项",
+    emptyTitle: "还没有待处理事项",
+    emptyBody: "说一句话后，我会把需要处理的事放到这里。",
+    needsConfirmation: "待我确认",
+    familyReview: "需家人确认",
+    familyWaiting: "等待家人确认",
+    todayReminder: "今天提醒",
+    confirmedReminder: "确认",
+    recentMemory: "最近记住",
+    latestAnswer: "最近回答",
   },
   reminders: {
     confirm: "确认提醒",

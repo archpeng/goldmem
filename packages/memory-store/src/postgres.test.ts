@@ -91,6 +91,25 @@ describePostgres("PostgresStores integration", () => {
       timeText: "明天上午九点",
       timeConfidence: 0.8,
     });
+    const confirmedReminder = await stores.reminderStore.update({
+      tenantId: source.tenantId,
+      reminderId: reminder.id,
+      patch: {
+        status: "confirmed",
+        confirmationRequired: false,
+        timeText: "2026年5月10日 16:00",
+        reason: "已按确认时间设置提醒：2026年5月10日 16:00。",
+        confirmedBy: "elder-1",
+        confirmedAt: "2026-05-10T08:00:00.000Z",
+      },
+    });
+    expect(ReminderSchema.parse(confirmedReminder)).toMatchObject({
+      id: reminder.id,
+      status: "confirmed",
+      confirmationRequired: false,
+      timeText: "2026年5月10日 16:00",
+      reason: "已按确认时间设置提醒：2026年5月10日 16:00。",
+    });
 
     const link = await stores.contextLinkStore.create({
       tenantId: source.tenantId,

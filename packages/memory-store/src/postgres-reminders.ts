@@ -60,9 +60,13 @@ export class PostgresReminderStore implements ReminderStore {
       .update(schema.reminders)
       .set({
         remindAt: input.patch.remindAt ? new Date(input.patch.remindAt) : undefined,
+        title: input.patch.title,
+        description: input.patch.description,
         timeText: input.patch.timeText,
         timeConfidence: input.patch.timeConfidence,
         status: input.patch.status,
+        confirmationRequired: input.patch.confirmationRequired,
+        reason: input.patch.reason,
         confirmedBy: input.patch.confirmedBy,
         confirmedAt: input.patch.confirmedAt ? new Date(input.patch.confirmedAt) : undefined,
       })

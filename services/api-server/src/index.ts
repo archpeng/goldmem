@@ -134,6 +134,7 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
       reminderId: params.id,
       actorUserId: input.actorUserId,
       remindAt: input.remindAt,
+      timezone: input.timezone,
     });
     await deps.auditLog.record({
       type: "reminder_confirmed",

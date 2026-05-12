@@ -27,6 +27,62 @@ describe("DefaultReminderEngine", () => {
     expect(done.status).toBe("done");
   });
 
+  it("clears confirmationRequired when confirming a reminder", async () => {
+    const store = new InMemoryReminderStore();
+    const engine = new DefaultReminderEngine(store);
+    const reminder = await store.create({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      sourceId: "source-1",
+      title: "Call daughter",
+      remindAt: "2026-05-10T09:00:00.000Z",
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+      confidence: 0.9,
+      reason: "Needs confirmation",
+    });
+
+    const confirmed = await engine.confirmReminder({
+      tenantId: "tenant-mvp",
+      reminderId: reminder.id,
+      actorUserId: "elder-1",
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(confirmed.status).toBe("confirmed");
+    expect(confirmed.confirmationRequired).toBe(false);
+    expect(confirmed.timeText).toBe("2026年5月10日 17:00");
+    expect(confirmed.reason).toBe("已按确认时间设置提醒：2026年5月10日 17:00。");
+  });
+
+  it("uses the selected confirmation time to reconcile reminder text", async () => {
+    const store = new InMemoryReminderStore();
+    const engine = new DefaultReminderEngine(store);
+    const reminder = await store.create({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      sourceId: "source-1",
+      title: "上午去城里买生活用品",
+      remindAt: "2026-05-10T01:00:00.000Z",
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+      confidence: 0.9,
+      reason: "老人提到上午要去城里买生活用品，但没有说明具体是哪一天上午。",
+    });
+
+    const confirmed = await engine.confirmReminder({
+      tenantId: "tenant-mvp",
+      reminderId: reminder.id,
+      actorUserId: "elder-1",
+      remindAt: "2026-05-12T11:00:00.000Z",
+      timezone: "Asia/Shanghai",
+    });
+
+    expect(confirmed.remindAt).toBe("2026-05-12T11:00:00.000Z");
+    expect(confirmed.timeText).toBe("2026年5月12日 19:00");
+    expect(confirmed.reason).not.toContain("上午");
+  });
+
   it("rejects scheduling before confirmation", async () => {
     const store = new InMemoryReminderStore();
     const engine = new DefaultReminderEngine(store);

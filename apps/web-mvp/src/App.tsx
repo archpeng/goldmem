@@ -10,14 +10,13 @@ import {
   type MvpLists,
 } from "./lib/api.js";
 import { copy } from "./lib/copy.js";
-import { buildTodaySnapshot, toIso } from "./lib/elder-view-model.js";
+import { buildTaskItems, buildTodaySnapshot, filterTaskItems, toIso, type ElderTaskFilter } from "./lib/elder-view-model.js";
 import { Alert } from "./components/ui/alert.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { DevPanel } from "./components/dev-panel.js";
-import { EmptyConversation } from "./components/empty-conversation.js";
+import { LatestAnswer, TaskList } from "./components/elder-task-list.js";
 import { TodaySnapshot } from "./components/elder-today.js";
-import { type ChatTurn, TurnCard } from "./components/elder-turn-cards.js";
 
 type RequestState = {
   loading: boolean;
@@ -31,8 +30,8 @@ const DEFAULT_ACTOR_ID = "elder-mvp";
 export function App() {
   const [elderId, setElderId] = useState(DEFAULT_ELDER_ID);
   const [actorUserId, setActorUserId] = useState(DEFAULT_ACTOR_ID);
-  const [inputText, setInputText] = useState<string>(copy.conversation.defaultInput);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [latestAnswer, setLatestAnswer] = useState<MemoryAnswer | null>(null);
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [familyTasks, setFamilyTasks] = useState<FamilyTask[]>([]);
@@ -40,9 +39,13 @@ export function App() {
   const [debugTraceId, setDebugTraceId] = useState("");
   const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<ElderTaskFilter>("all");
   const [state, setState] = useState<RequestState>({ loading: false });
 
-  const today = useMemo(() => buildTodaySnapshot(events, reminders, familyTasks, new Date()), [events, reminders, familyTasks]);
+  const now = useMemo(() => new Date(), [events, reminders, familyTasks]);
+  const today = useMemo(() => buildTodaySnapshot(events, reminders, familyTasks, now), [events, reminders, familyTasks, now]);
+  const taskItems = useMemo(() => buildTaskItems(events, reminders, familyTasks, now), [events, reminders, familyTasks, now]);
+  const filteredTaskItems = useMemo(() => filterTaskItems(taskItems, taskFilter, now), [taskItems, taskFilter, now]);
 
   useEffect(() => {
     void refreshLists(elderId, setLists, setState, false);
@@ -51,11 +54,9 @@ export function App() {
   async function handleSubmit() {
     const text = inputText.trim();
     if (!text) return;
-    const id = crypto.randomUUID();
-    setTurns((current) => [...current, { id, text }]);
     await runRequest(setState, copy.status.turnCompleted, async () => {
       const result = await sendElderTurn({ elderId, text });
-      setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, result } : turn)));
+      setLatestAnswer(result.answer ?? null);
       setDebugTraceId(result.traceId);
       setInputText("");
       setIsListening(false);
@@ -64,14 +65,31 @@ export function App() {
   }
 
   async function handleConfirmReminder(reminder: Reminder) {
-    await runRequest(setState, copy.status.reminderConfirmed, async () => {
-      await confirmReminder({
+    const previousReminders = reminders;
+    const remindAt = reminder.remindAt ?? toIso(confirmTimes[reminder.id]);
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const confirmedText = remindAt ? formatConfirmedReminderText(remindAt, timezone) : undefined;
+    setReminders((current) => current.map((item) => item.id === reminder.id ? {
+      ...item,
+      remindAt,
+      timeText: confirmedText,
+      reason: confirmedText ? `已按确认时间设置提醒：${confirmedText}。` : item.reason,
+      status: "confirmed" as const,
+      confirmationRequired: false,
+      confirmedBy: actorUserId,
+      confirmedAt: new Date().toISOString(),
+    } : item));
+    const ok = await runRequest(setState, copy.status.reminderConfirmed, async () => {
+      const confirmed = await confirmReminder({
         reminderId: reminder.id,
         actorUserId,
-        remindAt: reminder.remindAt ?? toIso(confirmTimes[reminder.id]),
+        remindAt,
+        timezone,
       });
+      setReminders((current) => current.map((item) => item.id === confirmed.id ? confirmed : item));
       await refreshLists(elderId, setLists, setState, false);
     });
+    if (!ok) setReminders(previousReminders);
   }
 
   async function handleSendAnswerFeedback(answer: MemoryAnswer, correctionText: string) {
@@ -105,17 +123,16 @@ export function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7f5] px-3 py-4 text-slate-950 sm:px-5">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-        <header className="border-b border-slate-100 px-5 pb-4 pt-5">
-          <div className="flex items-start justify-between gap-3">
+    <main className="min-h-screen bg-[#f2f2f7] text-slate-950">
+      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#f2f2f7]">
+        <header className="px-5 pb-2 pt-5">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-base font-medium text-emerald-700">{copy.appKicker}</p>
-              <h1 className="mt-1 text-3xl font-semibold leading-tight tracking-normal text-slate-950">{copy.appTitle}</h1>
+              <h1 className="text-[2rem] font-bold leading-tight tracking-normal text-slate-950">{copy.appTitle}</h1>
             </div>
             <Button
               aria-label={copy.events.refresh}
-              className="h-12 w-12 shrink-0 rounded-full"
+              className="h-10 w-10 shrink-0 rounded-full bg-white text-blue-600 shadow-none hover:bg-white/80"
               disabled={state.loading}
               size="icon"
               variant="secondary"
@@ -124,35 +141,28 @@ export function App() {
               <RefreshCw className="h-5 w-5" />
             </Button>
           </div>
-          <p className="mt-3 text-lg leading-8 text-slate-600">{copy.appDescription}</p>
         </header>
 
         {state.message || state.error ? (
-          <Alert className="mx-4 mt-4 text-base leading-7" variant={state.error ? "destructive" : "default"}>
+          <Alert className="mx-4 mt-3 rounded-2xl bg-white text-base leading-7 shadow-none" variant={state.error ? "destructive" : "default"}>
             {state.error ?? state.message}
           </Alert>
         ) : null}
 
-        <section className="flex-1 overflow-y-auto px-4 py-4 pb-44">
-          <TodaySnapshot snapshot={today} />
+        <section className="flex-1 overflow-y-auto px-4 py-3 pb-40">
+          <TodaySnapshot activeFilter={taskFilter} snapshot={today} onFilterChange={setTaskFilter} />
 
-          <div className="mt-4 grid gap-4">
-            {turns.length === 0 ? (
-              <EmptyConversation onPickExample={setInputText} />
-            ) : (
-              turns.map((turn) => (
-                <TurnCard
-                  confirmTimes={confirmTimes}
-                  key={turn.id}
-                  loading={state.loading}
-                  turn={turn}
-                  onConfirmReminder={handleConfirmReminder}
-                  onSendFeedback={handleSendAnswerFeedback}
-                  onTimeChange={(id, value) => setConfirmTimes((current) => ({ ...current, [id]: value }))}
-                />
-              ))
-            )}
-          </div>
+          <TaskList
+            confirmTimes={confirmTimes}
+            items={filteredTaskItems}
+            loading={state.loading}
+            onConfirmReminder={handleConfirmReminder}
+            onTimeChange={(id, value) => setConfirmTimes((current) => ({ ...current, [id]: value }))}
+          />
+
+          {latestAnswer ? (
+            <LatestAnswer answer={latestAnswer} loading={state.loading} onSendFeedback={handleSendAnswerFeedback} />
+          ) : null}
 
           {import.meta.env.DEV ? (
             <DevPanel
@@ -176,18 +186,18 @@ export function App() {
             void handleSubmit();
           }}
         >
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             <Textarea
               aria-label={copy.conversation.inputLabel}
-              className="min-h-20 resize-none rounded-2xl text-lg leading-8"
+              className="min-h-16 resize-none rounded-2xl bg-[#f2f2f7] text-lg leading-7 shadow-none"
               placeholder={copy.conversation.placeholder}
               value={inputText}
               onChange={(event) => setInputText(event.target.value)}
             />
-            <div className="grid grid-cols-[3.5rem_1fr] gap-3">
+            <div className="grid grid-cols-[3.25rem_1fr] gap-2">
               <Button
                 aria-label={copy.conversation.voiceAction}
-                className={`h-14 rounded-full ${isListening ? "bg-red-600 text-white hover:bg-red-700" : ""}`}
+                className={`h-12 rounded-full shadow-none ${isListening ? "bg-red-600 text-white hover:bg-red-700" : "bg-[#f2f2f7] text-blue-600 hover:bg-slate-200"}`}
                 disabled={state.loading}
                 size="icon"
                 type="button"
@@ -196,7 +206,7 @@ export function App() {
               >
                 <Mic className="h-6 w-6" />
               </Button>
-              <Button className="h-14 rounded-2xl text-lg" disabled={state.loading || !inputText.trim()} type="submit">
+              <Button className="h-12 rounded-2xl bg-blue-600 text-base shadow-none hover:bg-blue-700" disabled={state.loading || !inputText.trim()} type="submit">
                 <Send className="h-5 w-5" />
                 {state.loading ? copy.conversation.thinking : copy.conversation.send}
               </Button>
@@ -207,6 +217,20 @@ export function App() {
       </div>
     </main>
   );
+}
+
+function formatConfirmedReminderText(remindAt: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(remindAt));
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}年${Number(value("month"))}月${Number(value("day"))}日 ${value("hour")}:${value("minute")}`;
 }
 
 async function refreshLists(
@@ -237,15 +261,17 @@ async function runRequest(
   successMessage: string,
   action: () => Promise<void>,
   showStatus = true,
-) {
+): Promise<boolean> {
   setState({ loading: true });
   try {
     await action();
     setState({ loading: false, message: showStatus ? successMessage : undefined });
+    return true;
   } catch (error) {
     setState({
       loading: false,
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }

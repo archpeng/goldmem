@@ -13,6 +13,7 @@ export type ConfirmReminderInput = {
   reminderId: string;
   actorUserId: string;
   remindAt?: string;
+  timezone?: string;
 };
 
 export type ReminderTransitionInput = {
@@ -48,13 +49,17 @@ export class DefaultReminderEngine implements ReminderEngine {
     if (!remindAt) {
       throw new Error("Cannot confirm reminder without remindAt");
     }
+    const confirmedTimeText = formatConfirmedReminderTime(remindAt, input.timezone);
 
     return this.reminderStore.update({
       tenantId: input.tenantId,
       reminderId: existing.id,
       patch: {
         remindAt,
+        timeText: confirmedTimeText,
         status: "confirmed",
+        confirmationRequired: false,
+        reason: `已按确认时间设置提醒：${confirmedTimeText}。`,
         confirmedBy: input.actorUserId,
         confirmedAt: new Date().toISOString(),
       },
@@ -110,6 +115,30 @@ export class DefaultReminderEngine implements ReminderEngine {
       throw new Error(`Reminder not found: ${input.reminderId}`);
     }
     return existing;
+  }
+}
+
+export function formatConfirmedReminderTime(remindAt: string, timezone = "Asia/Shanghai"): string {
+  const formatter = buildConfirmedReminderFormatter(timezone);
+  const parts = formatter.formatToParts(new Date(remindAt));
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}年${Number(value("month"))}月${Number(value("day"))}日 ${value("hour")}:${value("minute")}`;
+}
+
+function buildConfirmedReminderFormatter(timezone: string): Intl.DateTimeFormat {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  };
+  try {
+    return new Intl.DateTimeFormat("zh-CN", options);
+  } catch {
+    return new Intl.DateTimeFormat("zh-CN", { ...options, timeZone: "Asia/Shanghai" });
   }
 }
 

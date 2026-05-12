@@ -55,12 +55,14 @@ export async function confirmReminder(input: {
   reminderId: string;
   actorUserId: string;
   remindAt?: string;
+  timezone?: string;
 }): Promise<Reminder> {
   return request<Reminder>(`/elder/reminders/${encodeURIComponent(input.reminderId)}/confirm`, {
     method: "POST",
     body: {
       actorUserId: input.actorUserId,
       remindAt: input.remindAt,
+      timezone: input.timezone,
     },
   });
 }

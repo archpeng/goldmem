@@ -59,10 +59,15 @@ describe("web MVP api adapter", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ id: "reminder-1", status: "confirmed" }));
 
-    await confirmReminder({ reminderId: "reminder-1", actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" });
+    await confirmReminder({
+      reminderId: "reminder-1",
+      actorUserId: "elder-1",
+      remindAt: "2026-05-11T09:00:00.000Z",
+      timezone: "Asia/Shanghai",
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/reminders/reminder-1/confirm", expect.objectContaining({
-      body: JSON.stringify({ actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z" }),
+      body: JSON.stringify({ actorUserId: "elder-1", remindAt: "2026-05-11T09:00:00.000Z", timezone: "Asia/Shanghai" }),
     }));
   });
 
