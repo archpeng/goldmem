@@ -40,19 +40,15 @@ describe("web MVP api adapter", () => {
   it("sends recall turns and lists MVP data with encoded elder ids", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ traceId: "trace-1", turnType: "recall", message: "您买了青菜。", answer: { answerText: "您买了青菜。", confidence: 0.9, matchedSources: [], retrievedEvidence: [], suggestedActions: [] } }))
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([]));
 
     await expect(sendElderTurn({ elderId: "elder 1", text: "我买了什么？" })).resolves.toMatchObject({
       answer: expect.objectContaining({ answerText: "您买了青菜。" }),
     });
-    await expect(listMvpData("elder 1")).resolves.toEqual({ events: [], reminders: [], familyTasks: [] });
+    await expect(listMvpData("elder 1")).resolves.toEqual({ reminders: [] });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/turn", expect.objectContaining({ method: "POST" }));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/elder/events?elderId=elder%201", expect.any(Object));
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/elder/reminders?elderId=elder%201", expect.any(Object));
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/family/elders/elder%201/tasks", expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/elder/reminders?elderId=elder%201", expect.any(Object));
   });
 
   it("confirms reminders through the elder route", async () => {

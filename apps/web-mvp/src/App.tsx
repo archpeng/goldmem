@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Mic, RefreshCw, Send } from "lucide-react";
-import type { DebugTrace, FamilyTask, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, MemoryAnswer, Reminder } from "@goldmem/memory-schema";
 import {
   confirmReminder,
   getDebugTrace,
@@ -10,13 +10,12 @@ import {
   type MvpLists,
 } from "./lib/api.js";
 import { copy } from "./lib/copy.js";
-import { buildTaskItems, buildTodaySnapshot, filterTaskItems, toIso, type ElderTaskFilter } from "./lib/elder-view-model.js";
+import { buildTaskItems, toIso } from "./lib/elder-view-model.js";
 import { Alert } from "./components/ui/alert.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { DevPanel } from "./components/dev-panel.js";
 import { LatestAnswer, TaskList } from "./components/elder-task-list.js";
-import { TodaySnapshot } from "./components/elder-today.js";
 
 type RequestState = {
   loading: boolean;
@@ -32,20 +31,15 @@ export function App() {
   const [actorUserId, setActorUserId] = useState(DEFAULT_ACTOR_ID);
   const [inputText, setInputText] = useState("");
   const [latestAnswer, setLatestAnswer] = useState<MemoryAnswer | null>(null);
-  const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [familyTasks, setFamilyTasks] = useState<FamilyTask[]>([]);
   const [confirmTimes, setConfirmTimes] = useState<Record<string, string>>({});
   const [debugTraceId, setDebugTraceId] = useState("");
   const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
   const [isListening, setIsListening] = useState(false);
-  const [taskFilter, setTaskFilter] = useState<ElderTaskFilter>("all");
   const [state, setState] = useState<RequestState>({ loading: false });
 
-  const now = useMemo(() => new Date(), [events, reminders, familyTasks]);
-  const today = useMemo(() => buildTodaySnapshot(events, reminders, familyTasks, now), [events, reminders, familyTasks, now]);
-  const taskItems = useMemo(() => buildTaskItems(events, reminders, familyTasks, now), [events, reminders, familyTasks, now]);
-  const filteredTaskItems = useMemo(() => filterTaskItems(taskItems, taskFilter, now), [taskItems, taskFilter, now]);
+  const now = useMemo(() => new Date(), [reminders]);
+  const taskItems = useMemo(() => buildTaskItems(reminders, now), [reminders, now]);
 
   useEffect(() => {
     void refreshLists(elderId, setLists, setState, false);
@@ -117,14 +111,12 @@ export function App() {
   }
 
   function setLists(lists: MvpLists) {
-    setEvents(lists.events);
     setReminders(lists.reminders);
-    setFamilyTasks(lists.familyTasks);
   }
 
   return (
-    <main className="min-h-screen bg-[#f2f2f7] text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#f2f2f7]">
+    <main className="min-h-screen bg-slate-100 text-slate-950">
+      <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-slate-100">
         <header className="px-5 pb-2 pt-5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -132,7 +124,7 @@ export function App() {
             </div>
             <Button
               aria-label={copy.events.refresh}
-              className="h-10 w-10 shrink-0 rounded-full bg-white text-blue-600 shadow-none hover:bg-white/80"
+              className="h-10 w-10 shrink-0 rounded-full bg-white text-slate-950 shadow-none hover:bg-slate-50"
               disabled={state.loading}
               size="icon"
               variant="secondary"
@@ -150,11 +142,9 @@ export function App() {
         ) : null}
 
         <section className="flex-1 overflow-y-auto px-4 py-3 pb-40">
-          <TodaySnapshot activeFilter={taskFilter} snapshot={today} onFilterChange={setTaskFilter} />
-
           <TaskList
             confirmTimes={confirmTimes}
-            items={filteredTaskItems}
+            items={taskItems}
             loading={state.loading}
             onConfirmReminder={handleConfirmReminder}
             onTimeChange={(id, value) => setConfirmTimes((current) => ({ ...current, [id]: value }))}
@@ -189,7 +179,7 @@ export function App() {
           <div className="grid gap-2">
             <Textarea
               aria-label={copy.conversation.inputLabel}
-              className="min-h-16 resize-none rounded-2xl bg-[#f2f2f7] text-lg leading-7 shadow-none"
+              className="min-h-16 resize-none rounded-2xl bg-slate-100 text-lg leading-7 shadow-none"
               placeholder={copy.conversation.placeholder}
               value={inputText}
               onChange={(event) => setInputText(event.target.value)}
@@ -197,7 +187,7 @@ export function App() {
             <div className="grid grid-cols-[3.25rem_1fr] gap-2">
               <Button
                 aria-label={copy.conversation.voiceAction}
-                className={`h-12 rounded-full shadow-none ${isListening ? "bg-red-600 text-white hover:bg-red-700" : "bg-[#f2f2f7] text-blue-600 hover:bg-slate-200"}`}
+                className={`h-12 rounded-full shadow-none ${isListening ? "bg-slate-950 text-white hover:bg-slate-800" : "bg-slate-100 text-slate-950 hover:bg-slate-200"}`}
                 disabled={state.loading}
                 size="icon"
                 type="button"
@@ -206,12 +196,12 @@ export function App() {
               >
                 <Mic className="h-6 w-6" />
               </Button>
-              <Button className="h-12 rounded-2xl bg-blue-600 text-base shadow-none hover:bg-blue-700" disabled={state.loading || !inputText.trim()} type="submit">
+              <Button className="h-12 rounded-2xl bg-slate-950 text-base shadow-none hover:bg-slate-800" disabled={state.loading || !inputText.trim()} type="submit">
                 <Send className="h-5 w-5" />
                 {state.loading ? copy.conversation.thinking : copy.conversation.send}
               </Button>
             </div>
-            {isListening ? <p className="text-center text-base font-medium text-red-700">{copy.conversation.listening}</p> : null}
+            {isListening ? <p className="text-center text-base font-medium text-slate-700">{copy.conversation.listening}</p> : null}
           </div>
         </form>
       </div>

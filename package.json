@@ -22,6 +22,7 @@
     "e2e:golden": "tsx scripts/golden-e2e.ts",
     "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json GOLDEN_E2E_GRAPHITI_MODE=required tsx scripts/golden-e2e.ts",
     "e2e:graphiti": "GOLDEN_E2E_FIXTURE=e2e/golden-graphiti.json GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts",
+    "e2e:graphiti:compare": "GRAPHITI_E2E_FIXTURE=e2e/golden-graphiti-core.json tsx scripts/graphiti-comparison-e2e.ts",
     "graphiti:smoke": "tsx scripts/graphiti-smoke.ts",
     "graphiti:consolidate": "tsx scripts/graphiti-consolidate.ts",
     "graphiti:replay": "tsx scripts/graphiti-replay.ts",

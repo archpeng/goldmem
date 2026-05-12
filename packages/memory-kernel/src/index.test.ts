@@ -1305,6 +1305,14 @@ describe("ElderMemoryKernel", () => {
       eventTypes: ["general"],
       entities: [],
     };
+    harness.model.answer = {
+      answerText: "他让你发身份证号和验证码，这不安全。",
+      confidence: 0.86,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+      safetyNote: "请先不要发送敏感信息。",
+    };
 
     const answer = await harness.kernel.queryMemory({
       elderId: "elder-1",
@@ -1320,6 +1328,8 @@ describe("ElderMemoryKernel", () => {
         eventId: "event-fraud",
       }),
     ]);
+    expect(answer.answerText).toContain("家人");
+    expect(answer.safetyNote).toContain("家人");
   });
 
   it("drops Graphiti evidence that cannot be verified against PostgreSQL tenant and elder source records", async () => {
@@ -1441,7 +1451,7 @@ describe("ElderMemoryKernel", () => {
     });
   });
 
-  it("expands query evidence through persisted context links", async () => {
+  it("keeps persisted context links out of final query evidence", async () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     const noodleEvent = memoryEvent({
       id: "event-noodle",
@@ -1492,30 +1502,15 @@ describe("ElderMemoryKernel", () => {
       now,
     });
 
-    expect(answer.retrievedEvidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ eventId: "event-noodle", retrievalSource: "postgres" }),
-        expect.objectContaining({
-          eventId: "event-time",
-          retrievalSource: "context_link",
-          summary: expect.stringContaining("原事项：老人说下周一"),
-        }),
-        expect.objectContaining({
-          eventId: "event-time",
-          retrievalSource: "context_link",
-          summary: expect.stringContaining("补充信息：老人补充说大约下午三点"),
-        }),
-        expect.objectContaining({
-          eventId: "event-time",
-          retrievalSource: "context_link",
-          summary: expect.stringContaining("下午三点"),
-        }),
-      ]),
-    );
-    expect(harness.audit.records.at(-1)?.payload?.retrieval).toMatchObject({ contextLinkCount: 1 });
+    expect(answer.retrievedEvidence).toEqual([
+      expect.objectContaining({ eventId: "event-noodle", retrievalSource: "postgres" }),
+    ]);
+    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "context_link")).toBe(false);
+    expect(harness.contextLinkStore.links).toHaveLength(1);
+    expect(harness.audit.records.at(-1)?.payload?.retrieval).toMatchObject({ contextLinkCount: 0 });
   });
 
-  it("appends context-link anchor evidence when generated answers omit it", async () => {
+  it("does not append context-link notes when generated answers omit linked event details", async () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     const noodleEvent = memoryEvent({
       id: "event-noodle",
@@ -1566,9 +1561,9 @@ describe("ElderMemoryKernel", () => {
       now,
     });
 
-    expect(answer.answerText).toContain("补充说明");
-    expect(answer.answerText).toContain("下周一");
-    expect(answer.answerText).toContain("下午三点");
+    expect(answer.answerText).toBe("有提到时间，像是大约下午三点，但还不算很确定。");
+    expect(answer.answerText).not.toContain("补充说明");
+    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "context_link")).toBe(false);
   });
 
   it("does not append context-link notes to ordinary PostgreSQL answers", async () => {

@@ -23,7 +23,7 @@ const confirmReminderMock = vi.mocked(api.confirmReminder);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listMvpDataMock.mockResolvedValue({ events: [], reminders: [], familyTasks: [] });
+  listMvpDataMock.mockResolvedValue({ reminders: [] });
   sendFeedbackMock.mockResolvedValue({
     id: "feedback-1",
     tenantId: "tenant-mvp",
@@ -46,7 +46,6 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "生活记忆助手" })).toBeInTheDocument();
-    expect(screen.getAllByText("今天").length).toBeGreaterThan(0);
     expect(screen.getByText("事项")).toBeInTheDocument();
     expect(screen.queryByText("全部")).not.toBeInTheDocument();
     expect(screen.getByText("还没有待处理事项")).toBeInTheDocument();
@@ -60,8 +59,8 @@ describe("App", () => {
   it("submits one elder turn and refreshes the task list", async () => {
     const user = userEvent.setup();
     listMvpDataMock
-      .mockResolvedValueOnce({ events: [], reminders: [], familyTasks: [] })
-      .mockResolvedValueOnce({ events: [eventRecord()], reminders: [reminderRecord()], familyTasks: [] });
+      .mockResolvedValueOnce({ reminders: [] })
+      .mockResolvedValueOnce({ reminders: [reminderRecord()] });
     render(<App />);
 
     await user.type(screen.getByLabelText("想说的话"), "明天上午提醒我给女儿打电话。");
@@ -78,8 +77,8 @@ describe("App", () => {
   it("turns a pending reminder into confirmed state after confirmation", async () => {
     const user = userEvent.setup();
     listMvpDataMock
-      .mockResolvedValueOnce({ events: [eventRecord()], reminders: [reminderRecord()], familyTasks: [] })
-      .mockResolvedValueOnce({ events: [eventRecord()], reminders: [confirmedReminderRecord()], familyTasks: [] });
+      .mockResolvedValueOnce({ reminders: [reminderRecord()] })
+      .mockResolvedValueOnce({ reminders: [confirmedReminderRecord()] });
     render(<App />);
 
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
@@ -94,37 +93,38 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "确认提醒" })).not.toBeInTheDocument();
   });
 
-  it("filters task list from the top summary controls", async () => {
+  it("renders only reminder sections without top filter cards", async () => {
     const user = userEvent.setup();
-    listMvpDataMock.mockResolvedValue({ events: [eventRecord()], reminders: [reminderRecord()], familyTasks: [] });
+    listMvpDataMock.mockResolvedValue({ reminders: [reminderRecord()] });
     render(<App />);
 
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: /最近记住/ }));
+    expect(screen.getByRole("button", { name: "确认提醒" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /待我确认/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /家人确认/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("等待家人确认")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近记住")).not.toBeInTheDocument();
 
-    expect(screen.queryByText("确认提醒")).not.toBeInTheDocument();
-    expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /最近记住/ })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "给女儿打电话 标记紧急" }));
+    expect(screen.getByRole("button", { name: "给女儿打电话 取消紧急" })).toBeInTheDocument();
+    expect(screen.getAllByText("紧急").length).toBeGreaterThan(0);
   });
 
-  it("separates elder confirmation from family confirmation", async () => {
+  it("moves an urgent reminder to the top of the list", async () => {
     const user = userEvent.setup();
     listMvpDataMock.mockResolvedValue({
-      events: [eventRecord()],
-      reminders: [reminderRecord()],
-      familyTasks: [familyTaskRecord()],
+      reminders: [
+        { ...reminderRecord(), id: "reminder-1", title: "先买菜" },
+        { ...reminderRecord(), id: "reminder-2", title: "后拿药" },
+      ],
     });
     render(<App />);
 
-    expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /待我确认/ })).toHaveAttribute("aria-pressed", "false");
-    await user.click(screen.getByRole("button", { name: /待我确认/ }));
-    expect(screen.getByRole("button", { name: "确认提醒" })).toBeInTheDocument();
-    expect(screen.queryByText("等待家人确认")).not.toBeInTheDocument();
+    expect((await screen.findByText("先买菜")).compareDocumentPosition(await screen.findByText("后拿药")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: /家人确认/ }));
-    expect(await screen.findByText("等待家人确认")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "确认提醒" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "后拿药 标记紧急" }));
+
+    expect(screen.getByText("后拿药").compareDocumentPosition(screen.getByText("先买菜")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders all pending reminders without truncating at twelve", async () => {
@@ -133,7 +133,7 @@ describe("App", () => {
       id: `reminder-${index + 1}`,
       title: `待确认提醒 ${index + 1}`,
     }));
-    listMvpDataMock.mockResolvedValue({ events: [], reminders, familyTasks: [] });
+    listMvpDataMock.mockResolvedValue({ reminders });
     render(<App />);
 
     expect(await screen.findByText("待确认提醒 13")).toBeInTheDocument();
@@ -142,17 +142,15 @@ describe("App", () => {
 
   it("does not put already confirmed reminders back into elder confirmation", async () => {
     listMvpDataMock.mockResolvedValue({
-      events: [],
       reminders: [{
         ...confirmedReminderRecord(),
         confirmationRequired: true,
       }],
-      familyTasks: [],
     });
     render(<App />);
 
     expect((await screen.findAllByText("确认")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /待我确认/ })).toHaveTextContent("0");
+    expect(screen.queryByText("待我确认")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认提醒" })).not.toBeInTheDocument();
   });
 
@@ -212,29 +210,6 @@ function recordTurn() {
   };
 }
 
-function eventRecord() {
-  return {
-    id: "event-1",
-    tenantId: "tenant-mvp",
-    elderId: "elder-mvp",
-    sourceId: "source-1",
-    type: "family" as const,
-    title: "给女儿打电话",
-    summary: "老人想明天上午给女儿打电话。",
-    timeText: "明天上午",
-    timeConfidence: 0.8,
-    entities: [],
-    importance: 0.7,
-    confidence: 0.8,
-    riskLevel: "normal" as const,
-    requiresConfirmation: false,
-    visibility: "private" as const,
-    evidence: [{ sourceId: "source-1", quote: "明天上午提醒我给女儿打电话" }],
-    status: "active" as const,
-    createdAt: "2026-05-11T08:00:00.000Z",
-  };
-}
-
 function reminderRecord() {
   return {
     id: "reminder-1",
@@ -261,22 +236,6 @@ function confirmedReminderRecord() {
     confirmationRequired: false,
     confirmedBy: "elder-mvp",
     confirmedAt: "2026-05-11T08:01:00.000Z",
-  };
-}
-
-function familyTaskRecord() {
-  return {
-    id: "family-task-1",
-    tenantId: "tenant-mvp",
-    elderId: "elder-mvp",
-    type: "reminder_confirm" as const,
-    title: "请家人确认复查安排",
-    summary: "这个复查安排需要家人确认。",
-    urgency: "medium" as const,
-    visibility: "family_required" as const,
-    relatedEventId: "event-1",
-    status: "pending" as const,
-    createdAt: "2026-05-11T08:00:00.000Z",
   };
 }
 

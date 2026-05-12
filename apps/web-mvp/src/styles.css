@@ -38,3 +38,14 @@ input,
 textarea {
   -webkit-text-size-adjust: 100%;
 }
+
+@keyframes urgent-rise {
+  0% {
+    opacity: 0.78;
+    transform: translateY(10px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

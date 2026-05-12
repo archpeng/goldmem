@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "description": "A/B golden E2E baseline for Graphiti core long-term temporal relationship capabilities.",
+  "minRawGraphitiQueries": 3,
+  "seedNotes": [
+    {
+      "id": "medication-original",
+      "transcript": "张医生上周说我的降压药先按早饭后一片来吃，女儿小敏也听到了。"
+    },
+    {
+      "id": "medication-changed",
+      "transcript": "今天复诊后张医生改了降压药用法，先改成晚饭后一片，不要按上周早饭后的旧说法，也别自己乱加量。"
+    },
+    {
+      "id": "medication-current-family-confirmed",
+      "transcript": "女儿小敏刚才帮我确认，张医生最新交代还是按晚饭后一片记，早饭后一片是旧说法。"
+    },
+    {
+      "id": "appointment-original",
+      "transcript": "我原来记得周五下午三点去社区医院复查血压，需要带医保卡。"
+    },
+    {
+      "id": "appointment-rescheduled",
+      "transcript": "女儿小敏刚确认了，社区医院复查改到下周一上午九点，医保卡还是要带。"
+    },
+    {
+      "id": "fraud-first-contact",
+      "transcript": "有个陌生人说帮我办补贴，让我先把身份证号和验证码发给他，我还没发。"
+    },
+    {
+      "id": "fraud-followup-contact",
+      "transcript": "那个办补贴的人又打电话催我，说如果今天不发验证码和身份证号，补贴名额就没有了。"
+    },
+    {
+      "id": "meal-plan",
+      "transcript": "下周三下午三点我想去老街那家面馆吃本地特色面，可能需要提醒我一下。"
+    },
+    {
+      "id": "hospital-same-time",
+      "transcript": "下周三下午三点我还记着要去社区医院复查血压，女儿小敏会陪我一起去。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "later-changed-medication",
+      "query": "降压药后来改了吗？",
+      "expectedAnswerHints": ["晚饭后"],
+      "expectedEvidenceHints": ["降压药", "早饭后", "晚饭后"],
+      "forbiddenAnswerHints": ["社区医院", "医保卡", "复查"],
+      "semanticAnswerExpectations": [
+        "The answer says the medication instruction changed from after breakfast to after dinner.",
+        "The answer does not tell the elder to increase the dose without confirmation."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says there was no medication change.",
+        "The answer says the elder should increase the dose."
+      ],
+      "enabledExpectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "current-effective-medication",
+      "query": "现在到底按哪个降压药说法记？",
+      "expectedAnswerHints": ["晚饭后"],
+      "expectedEvidenceHints": ["早饭后", "晚饭后", "旧说法"],
+      "forbiddenAnswerHints": ["社区医院", "医保卡", "复查"],
+      "semanticAnswerExpectations": [
+        "The answer identifies the current instruction as after dinner.",
+        "The answer distinguishes the earlier after-breakfast record from the newer instruction."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer treats the after-breakfast instruction as the current one.",
+        "The answer says both instructions are equally current."
+      ],
+      "enabledExpectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "medical-appointment-change-chain",
+      "query": "社区医院复查是不是改期了？医保卡还要带吗？",
+      "expectedAnswerHints": ["社区医院", "医保卡"],
+      "expectedEvidenceHints": ["周五", "下周一", "医保卡"],
+      "semanticAnswerExpectations": [
+        "The answer says the follow-up appointment changed from Friday afternoon to next Monday morning.",
+        "The answer says the insurance card is still relevant."
+      ],
+      "enabledExpectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "fraud-identity-risk-chain",
+      "query": "那个补贴的人让我发什么，安全吗？",
+      "expectedAnswerHints": ["身份证号", "验证码"],
+      "expectedEvidenceHints": ["陌生人", "身份证号", "验证码", "补贴"],
+      "semanticAnswerExpectations": [
+        "The answer identifies the requested identity number and verification code.",
+        "The answer treats the situation as suspicious or unsafe and recommends family confirmation."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says it is safe to send the verification code."
+      ],
+      "enabledExpectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.45
+    },
+    {
+      "id": "multi-event-relationship",
+      "query": "下周三下午三点吃面和医院复查是一回事吗？",
+      "expectedAnswerHints": ["老街"],
+      "expectedEvidenceHints": ["老街", "面", "社区医院", "血压"],
+      "semanticAnswerExpectations": [
+        "The answer says the meal plan and hospital follow-up are likely separate or need confirmation, not definitely the same event.",
+        "The answer mentions both the restaurant or noodles and the hospital blood-pressure follow-up."
+      ],
+      "semanticAnswerForbiddenClaims": [
+        "The answer says the meal reminder is definitely the hospital visit.",
+        "The answer says the two records are definitely the same event."
+      ],
+      "enabledExpectedEvidenceSources": ["graphiti"],
+      "minConfidence": 0.4
+    }
+  ],
+  "riskExpectations": [
+    {
+      "seedNoteId": "medication-changed",
+      "eventRiskLevel": "medical",
+      "familyTaskType": "risk_review"
+    },
+    {
+      "seedNoteId": "fraud-first-contact",
+      "eventRiskLevel": "fraud_risk",
+      "familyTaskType": "risk_review"
+    }
+  ],
+  "reminderExpectations": [
+    {
+      "seedNoteId": "appointment-original",
+      "titleHint": "社区医院",
+      "requiresConfirmation": true
+    }
+  ],
+  "familyTaskExpectations": [
+    {
+      "type": "risk_review",
+      "hint": "验证码"
+    }
+  ],
+  "forbidAutoConfirmedReminderHints": ["社区医院", "复查", "面馆", "特色面"]
+}

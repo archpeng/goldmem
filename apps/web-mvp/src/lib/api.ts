@@ -1,9 +1,7 @@
-import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, Feedback, Reminder } from "@goldmem/memory-schema";
 
 export type MvpLists = {
-  events: MemoryEvent[];
   reminders: Reminder[];
-  familyTasks: FamilyTask[];
 };
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
@@ -43,12 +41,7 @@ export async function sendFeedback(input: {
 
 export async function listMvpData(elderId: string): Promise<MvpLists> {
   const encoded = encodeURIComponent(elderId);
-  const [events, reminders, familyTasks] = await Promise.all([
-    request<MemoryEvent[]>(`/elder/events?elderId=${encoded}`),
-    request<Reminder[]>(`/elder/reminders?elderId=${encoded}`),
-    request<FamilyTask[]>(`/family/elders/${encoded}/tasks`),
-  ]);
-  return { events, reminders, familyTasks };
+  return { reminders: await request<Reminder[]>(`/elder/reminders?elderId=${encoded}`) };
 }
 
 export async function confirmReminder(input: {

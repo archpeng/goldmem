@@ -25,7 +25,7 @@ const GoldenCaseSchema = z.object({
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
-      allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default(["postgres", "semantic", "context_link"]),
+      allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default(["postgres", "semantic", "graphiti", "graphiti_provenance"]),
       expectedEvidenceSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default([]),
       requiresSemantic: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),

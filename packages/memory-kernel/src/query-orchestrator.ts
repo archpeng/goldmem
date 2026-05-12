@@ -15,7 +15,6 @@ import {
   clampScore,
   evidenceBoundMatchedSources,
   mergeEvidence,
-  mergeRetrievedEvidence,
   shouldSearchTemporalMemory,
 } from "./retrieval.js";
 import { isString } from "./guards.js";
@@ -91,12 +90,9 @@ export class QueryOrchestrator {
     timings.temporalAlignMs = Date.now() - temporalAlignStartedAt;
 
     const mergeEvidenceStartedAt = Date.now();
-    const initialEvidence = mergeEvidence(structuredEvents, semanticResults, alignedTemporalResults, parsedQuery, input.query, now);
+    const evidence = mergeEvidence(structuredEvents, semanticResults, alignedTemporalResults, parsedQuery, input.query, now);
     timings.mergeEvidenceMs = Date.now() - mergeEvidenceStartedAt;
 
-    const contextLinksStartedAt = Date.now();
-    const evidence = await this.expandEvidenceWithContextLinks(tenantId, input.elderId, initialEvidence);
-    timings.contextLinksMs = Date.now() - contextLinksStartedAt;
     const retrieval = {
       postgresCount: structuredEvents.length,
       semanticCount: semanticResults.length,
@@ -112,7 +108,7 @@ export class QueryOrchestrator {
       graphitiRawAlignedCount: alignedTemporalResults.filter((result) => result.origin === "graphiti_raw").length,
       graphitiProvenanceCount: temporalResults.filter((result) => result.origin === "provenance_fallback").length,
       graphitiProvenanceAlignedCount: alignedTemporalResults.filter((result) => result.origin === "provenance_fallback").length,
-      contextLinkCount: evidence.filter((item) => item.retrievalSource === "context_link").length,
+      contextLinkCount: 0,
       evidenceCount: evidence.length,
     };
     if (evidence.length === 0) {
@@ -149,12 +145,12 @@ export class QueryOrchestrator {
     timings.answerGenerationMs = Date.now() - answerGenerationStartedAt;
     appendProviderTimings(timings, this.deps.modelGateway);
     timings.totalMs = Date.now() - startedAt;
+    const safetyCheckedAnswer = enforceQueryAnswerSafety(input.query, generatedAnswer, evidence, parsedQuery);
     const answer: MemoryAnswer = {
-      ...generatedAnswer,
-      answerText: ensureContextLinkAnswerFidelity(generatedAnswer.answerText, evidence),
+      ...safetyCheckedAnswer,
       traceId,
       retrievedEvidence: evidence,
-      matchedSources: evidenceBoundMatchedSources(generatedAnswer.matchedSources, evidence),
+      matchedSources: evidenceBoundMatchedSources(safetyCheckedAnswer.matchedSources, evidence),
     };
 
     await this.deps.auditLog.record({
@@ -333,91 +329,6 @@ export class QueryOrchestrator {
     });
   }
 
-  private async expandEvidenceWithContextLinks(tenantId: string, elderId: string, evidence: RetrievedEvidence[]): Promise<RetrievedEvidence[]> {
-    const evidenceEventIds = [...new Set(evidence.map((item) => item.eventId).filter(isString))];
-    if (evidenceEventIds.length === 0) return evidence;
-
-    const links = (await this.deps.contextLinkStore.listByEventIds({ tenantId, elderId, eventIds: evidenceEventIds }))
-      .filter((link) => link.status !== "rejected");
-    if (links.length === 0) return evidence;
-
-    const initialEventIds = new Set(evidenceEventIds);
-    const linkedEventIds = [
-      ...new Set(
-        links.flatMap((link) => [link.fromEventId, link.toEventId]),
-      ),
-    ];
-    if (linkedEventIds.length === 0) return evidence;
-
-    const eventsById = new Map(
-      (await this.deps.eventStore.getByIds({ tenantId, eventIds: linkedEventIds }))
-        .map((event) => [event.id, event]),
-    );
-
-    const linkedEvidence: RetrievedEvidence[] = links.flatMap((link) => {
-      if (!initialEventIds.has(link.toEventId) && !initialEventIds.has(link.fromEventId)) return [];
-      const fromEvent = eventsById.get(link.fromEventId);
-      const toEvent = eventsById.get(link.toEventId);
-      if (!fromEvent || !toEvent) return [];
-      const statusText = link.status === "active" ? "已建立" : "待确认";
-      return [
-        {
-          sourceId: fromEvent.sourceId,
-          eventId: fromEvent.id,
-          createdAt: fromEvent.createdAt,
-          summary: `原事项：${toEvent.summary}；补充信息：${fromEvent.summary}；关系：${link.reason}；状态：${statusText}`,
-          score: clampScore(link.confidence * 0.85),
-          canPlayAudio: true,
-          retrievalSource: "context_link" as const,
-        },
-      ];
-    });
-
-    return mergeRetrievedEvidence([...evidence, ...linkedEvidence]);
-  }
-}
-
-function ensureContextLinkAnswerFidelity(answerText: string, evidence: RetrievedEvidence[]): string {
-  const contextEvidence = evidence.find(
-    (item) => item.retrievalSource === "context_link" && item.summary.includes("原事项：") && item.summary.includes("补充信息："),
-  );
-  if (!contextEvidence) return answerText;
-
-  const anchor = extractBetween(contextEvidence.summary, "原事项：", "；补充信息：");
-  const detail = extractBetween(contextEvidence.summary, "补充信息：", "；关系：");
-  if (hasEvidenceTermOverlap(answerText, anchor) && hasEvidenceTermOverlap(answerText, detail)) return answerText;
-  return `${answerText} 补充说明：${contextEvidence.summary}`;
-}
-
-function extractBetween(value: string, start: string, end: string): string {
-  const startIndex = value.indexOf(start);
-  if (startIndex < 0) return "";
-  const contentStart = startIndex + start.length;
-  const endIndex = value.indexOf(end, contentStart);
-  return value.slice(contentStart, endIndex < 0 ? undefined : endIndex);
-}
-
-function hasEvidenceTermOverlap(answerText: string, evidenceText: string): boolean {
-  const answerTerms = new Set(cjkTerms(answerText));
-  const evidenceTerms = cjkTerms(evidenceText);
-  if (evidenceTerms.length === 0) return true;
-  let matches = 0;
-  for (const term of evidenceTerms) {
-    if (answerTerms.has(term)) matches += 1;
-    if (matches >= 2) return true;
-  }
-  return false;
-}
-
-function cjkTerms(value: string): string[] {
-  const chars = [...value].filter((char) => /[\p{Script=Han}]/u.test(char));
-  const terms = new Set<string>();
-  for (const size of [2, 3]) {
-    for (let index = 0; index <= chars.length - size; index += 1) {
-      terms.add(chars.slice(index, index + size).join(""));
-    }
-  }
-  return [...terms];
 }
 
 function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
@@ -435,6 +346,48 @@ function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEv
     suggestedActions: [],
     safetyNote: "回答来自已找到的记忆依据；如果不确定，可以再补充一句说明。",
   };
+}
+
+function enforceQueryAnswerSafety(
+  query: string,
+  answer: MemoryAnswer,
+  evidence: RetrievedEvidence[],
+  parsedQuery: ParsedMemoryQuery,
+): MemoryAnswer {
+  if (!hasSensitiveFraudOrIdentitySignal(query, answer, evidence, parsedQuery)) return answer;
+  const note = "请先不要发送身份证号、验证码、密码或转账信息，最好让家人先帮你确认。";
+  return {
+    ...answer,
+    answerText: containsFamilyConfirmation(answer.answerText) ? answer.answerText : `${answer.answerText} ${note}`,
+    safetyNote: appendSafetyNote(answer.safetyNote, note),
+  };
+}
+
+function hasSensitiveFraudOrIdentitySignal(
+  query: string,
+  answer: MemoryAnswer,
+  evidence: RetrievedEvidence[],
+  parsedQuery: ParsedMemoryQuery,
+): boolean {
+  const text = [
+    query,
+    answer.answerText,
+    answer.safetyNote ?? "",
+    parsedQuery.eventTypes.join(" "),
+    parsedQuery.entities.map((entity) => `${entity.type} ${entity.name}`).join(" "),
+    evidence.slice(0, 3).map((item) => item.summary).join(" "),
+  ].join(" ");
+  return /(诈骗|陌生人|验证码|密码|身份证|护照|转账|银行卡|fraud|scam|password|verification code|identity|passport|transfer|bank)/i.test(text);
+}
+
+function containsFamilyConfirmation(value: string): boolean {
+  return /(家人|子女|女儿|儿子|亲属|family|caregiver)/i.test(value);
+}
+
+function appendSafetyNote(current: string | undefined, note: string): string {
+  if (!current) return note;
+  if (containsFamilyConfirmation(current)) return current;
+  return `${current} ${note}`;
 }
 
 function sanitizeTemporalTimeRange(
