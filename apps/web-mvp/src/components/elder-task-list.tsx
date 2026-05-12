@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Check, Send } from "lucide-react";
+import { Check, Send } from "lucide-react";
 import type { MemoryAnswer, Reminder } from "@goldmem/memory-schema";
 import { copy } from "../lib/copy.js";
 import {
@@ -9,6 +9,7 @@ import {
   trustEvidenceLabel,
   type ElderTaskItem,
 } from "../lib/elder-view-model.js";
+import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
 import { Textarea } from "./ui/textarea.js";
@@ -55,9 +56,8 @@ export function TaskList({
         <div>
           {sections.map((section) => (
             <div className="mt-3" key={section.title}>
-              <div className="flex items-center justify-between px-1 pb-1">
-                <h3 className="text-sm font-semibold text-slate-500">{section.title}</h3>
-                <span className="text-sm font-medium text-slate-400">{section.items.length}</span>
+              <div className="px-1 pb-1 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{section.title}</p>
               </div>
               <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
                 <div className="divide-y divide-slate-200">
@@ -119,14 +119,13 @@ function TaskRow({
           />
         </div>
         <div className="min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-[1.08rem] font-semibold leading-7 text-slate-950">{item.title}</h3>
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${urgent ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-700"}`}>
-              {urgent ? "紧急" : item.statusLabel}
-            </span>
-          </div>
+          <p className="text-sm italic font-light leading-6 text-slate-500">
+            <Badge variant={urgent ? "warning" : "pill"} className="mr-1.5 not-italic">
+              {item.title}
+            </Badge>
+            {urgent ? "已标记为紧急" : item.statusLabel}
+          </p>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-sm leading-5 text-slate-500">
-            {taskIcon()}
             {item.timeLabel ? <span className="shrink-0 font-medium text-slate-600">{item.timeLabel}</span> : null}
             <span className="min-w-0 break-words">{item.subtitle}</span>
           </div>
@@ -229,8 +228,4 @@ export function LatestAnswer({
       ))}
     </section>
   );
-}
-
-function taskIcon() {
-  return <Bell className="h-3.5 w-3.5 shrink-0" />;
 }
