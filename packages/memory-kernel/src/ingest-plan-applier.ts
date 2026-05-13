@@ -3,7 +3,6 @@ import type { PersonalContextStore } from "@goldmem/memory-store";
 import { isString } from "./guards.js";
 import type { ElderMemoryKernelDeps } from "./index.js";
 import type { AppliedMemoryPlan } from "./ingest-types.js";
-import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 
 export class MemoryPlanApplier {
   constructor(private readonly deps: ElderMemoryKernelDeps) {}
@@ -100,9 +99,6 @@ export class MemoryPlanApplier {
     }
     timings.contextLinkWritesMs = Date.now() - contextLinkWritesStartedAt;
 
-    const semanticWritesStartedAt = Date.now();
-    await this.writeSemanticMemories(plan, events, traceId);
-    timings.semanticWritesMs = Date.now() - semanticWritesStartedAt;
     timings.totalMs = Date.now() - startedAt;
     return { events, reminderCandidates: reminders, contextLinks, riskFlags, familyTasks, timings };
   }
@@ -202,63 +198,4 @@ export class MemoryPlanApplier {
     });
   }
 
-  private async writeSemanticMemories(plan: MemoryPlan, events: MemoryEvent[], traceId: string): Promise<void> {
-    for (const event of events) {
-      await this.addSemanticMemory(plan, traceId, [
-        `Title: ${event.title}`,
-        `Summary: ${event.summary}`,
-        `Type: ${event.type}`,
-        `Risk: ${event.riskLevel}`,
-        `Source: ${event.sourceId}`,
-      ].join("\n"), {
-        tenantId: event.tenantId,
-        elderId: event.elderId,
-        sourceId: event.sourceId,
-        eventId: event.id,
-        eventType: event.type,
-        title: event.title,
-        summary: event.summary,
-        createdAt: event.createdAt,
-        riskLevel: event.riskLevel,
-        requiresConfirmation: event.requiresConfirmation,
-        visibility: event.visibility,
-        traceId,
-      });
-    }
-
-  }
-
-  private async addSemanticMemory(
-    plan: MemoryPlan,
-    traceId: string,
-    memory: string,
-    metadata: Record<string, unknown>,
-  ): Promise<void> {
-    try {
-      const embedding = await this.deps.modelGateway.embedText({ text: memory });
-      await this.deps.semanticMemory.addMemory({
-        tenantId: plan.tenantId,
-        elderId: plan.elderId,
-        memory,
-        embedding,
-        metadata,
-      });
-    } catch (error) {
-      await this.deps.auditLog.record({
-        type: "semantic_memory_write_failed",
-        tenantId: plan.tenantId,
-        elderId: plan.elderId,
-        sourceId: plan.sourceId,
-        traceId,
-        payload: {
-          traceId,
-          metadata,
-          errorName: error instanceof Error ? error.name : "UnknownError",
-          errorMessage: error instanceof Error ? error.message : String(error),
-          modelGateway: modelGatewayErrorPayload(error),
-          providerTimings: consumeProviderTimings(this.deps.modelGateway),
-        },
-      });
-    }
-  }
 }

@@ -51,6 +51,7 @@ describePostgres("PostgresStores integration", () => {
       type: "shopping",
       title: "买青菜",
       summary: "老人上午去买了青菜。",
+      timeText: "上午",
       timeConfidence: 0.8,
       entities: [{ type: "object", name: "青菜", aliases: [], confidence: 0.8 }],
       importance: 0.5,
@@ -162,6 +163,32 @@ describePostgres("PostgresStores integration", () => {
     expect((await stores.temporalMemoryJobStore.stats({ tenantId: source.tenantId, elderId: source.elderId })).running).toBe(1);
     expect((await stores.temporalMemoryJobStore.markSucceeded({ jobId: job.id })).status).toBe("succeeded");
     expect((await stores.temporalMemoryJobStore.stats({ tenantId: source.tenantId, elderId: source.elderId })).succeeded).toBe(1);
+
+    const processingJob = await stores.memoryProcessingJobStore.enqueue({
+      type: "ingest_source",
+      tenantId: source.tenantId,
+      elderId: source.elderId,
+      sourceId: source.id,
+      traceId: "trace-processing",
+      payload: { requiresIngestContextRecall: false },
+      nextRunAt: "2026-05-10T09:00:00.000Z",
+    });
+    expect((await stores.memoryProcessingJobStore.getBySource({
+      tenantId: source.tenantId,
+      sourceId: source.id,
+      type: "ingest_source",
+    }))?.id).toBe(processingJob.id);
+    const [claimedProcessingJob] = await stores.memoryProcessingJobStore.claimDue({
+      now: "2026-05-10T10:00:00.000Z",
+      limit: 1,
+      types: ["ingest_source"],
+    });
+    expect(claimedProcessingJob?.id).toBe(processingJob.id);
+    await stores.memoryProcessingJobStore.markSucceeded({
+      jobId: processingJob.id,
+      payload: { eventIds: [firstEvent.id], reminderIds: [reminder.id] },
+    });
+    expect((await stores.memoryProcessingJobStore.stats({ tenantId: source.tenantId, elderId: source.elderId })).succeeded).toBe(1);
   });
 
   it("creates family reminders atomically and reuses idempotency keys", async () => {
@@ -222,6 +249,7 @@ describePostgres("PostgresStores integration", () => {
       type: "general",
       title: "昨天散步",
       summary: "老人昨天傍晚散步。",
+      timeText: "昨天傍晚",
       eventTimeStart: "2026-05-08T09:00:00.000Z",
       timeConfidence: 0.8,
       entities: [],
@@ -237,6 +265,7 @@ describePostgres("PostgresStores integration", () => {
       ...yesterday,
       title: "今天散步",
       summary: "老人今天上午散步。",
+      timeText: "今天上午",
       eventTimeStart: "2026-05-09T09:00:00.000Z",
       evidence: [{ sourceId: source.id, quote: "今天上午散步。" }],
     });

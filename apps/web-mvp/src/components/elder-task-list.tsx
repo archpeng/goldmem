@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Check, Send } from "lucide-react";
+import { Check, CheckCheck, Clock, Send } from "lucide-react";
 import type { MemoryAnswer, Reminder } from "@goldmem/memory-schema";
 import { copy } from "../lib/copy.js";
 import {
   formatDate,
+  needsReminderConfirmation,
   quickReminderTimes,
   selectTrustEvidence,
   trustEvidenceLabel,
@@ -12,6 +13,13 @@ import {
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
 import { Textarea } from "./ui/textarea.js";
+
+function cardBg(statusLabel: string, urgent: boolean): string {
+  if (urgent) return "bg-[#F5C8C8]";
+  if (statusLabel === copy.tasks.needsConfirmation) return "bg-[#F5E6D3]";
+  if (statusLabel === copy.tasks.confirmedReminder) return "bg-[#C8DCF0]";
+  return "bg-[#F5F0C0]";
+}
 
 export function TaskList({
   confirmTimes,
@@ -28,49 +36,28 @@ export function TaskList({
 }) {
   const [urgentIds, setUrgentIds] = useState<Set<string>>(() => new Set());
   const toggleUrgent = (id: string) => {
-    setUrgentIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setUrgentIds((cur) => { const next = new Set(cur); next.has(id) ? next.delete(id) : next.add(id); return next; });
   };
 
   if (!items.length) {
-    return (
-      <div className="mt-3 rounded-2xl bg-white px-5 py-6 shadow-sm">
-        <p className="text-sm text-slate-400">{copy.tasks.emptyBody}</p>
-      </div>
-    );
+    return <p className="mt-6 px-2 text-sm text-slate-400">{copy.tasks.emptyBody}</p>;
   }
 
-  const sections = [
-    { title: copy.tasks.needsConfirmation, items: items.filter((i) => i.statusLabel === copy.tasks.needsConfirmation && !urgentIds.has(i.id)) },
-    { title: copy.tasks.urgent, items: items.filter((i) => urgentIds.has(i.id)) },
-    { title: copy.tasks.confirmedReminder, items: items.filter((i) => i.statusLabel === copy.tasks.confirmedReminder && !urgentIds.has(i.id)) },
-    { title: copy.tasks.todayReminder, items: items.filter((i) => i.statusLabel === copy.tasks.todayReminder && !urgentIds.has(i.id)) },
-  ].filter((s) => s.items.length);
+  const sortedItems = [...items].sort((a, b) => Number(urgentIds.has(b.id)) - Number(urgentIds.has(a.id)));
 
   return (
-    <div className="mt-3 space-y-3">
-      {sections.map((section) => (
-        <div className="rounded-2xl bg-white px-5 py-4 shadow-sm" key={section.title}>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">{section.title}</p>
-          <div className="space-y-2">
-            {section.items.map((item) => (
-              <TaskRow
-                confirmTime={confirmTimes[item.reminder.id] ?? ""}
-                item={item}
-                key={item.id}
-                loading={loading}
-                onConfirmReminder={onConfirmReminder}
-                onTimeChange={onTimeChange}
-                onToggleUrgent={toggleUrgent}
-                urgent={urgentIds.has(item.id)}
-              />
-            ))}
-          </div>
-        </div>
+    <div className="mt-2 space-y-3">
+      {sortedItems.map((item) => (
+        <TaskRow
+          confirmTime={confirmTimes[item.reminder.id] ?? ""}
+          item={item}
+          key={item.id}
+          loading={loading}
+          onConfirmReminder={onConfirmReminder}
+          onTimeChange={onTimeChange}
+          onToggleUrgent={toggleUrgent}
+          urgent={urgentIds.has(item.id)}
+        />
       ))}
     </div>
   );
@@ -94,40 +81,60 @@ function TaskRow({
   urgent: boolean;
 }) {
   const { reminder } = item;
-  const canConfirm = reminder.status !== "confirmed" && reminder.status !== "scheduled";
+  const canConfirm = needsReminderConfirmation(reminder);
+  const hasTime = !!(reminder.remindAt || confirmTime);
+  const bg = cardBg(item.statusLabel, urgent);
 
   return (
-    <div className={`rounded-xl px-4 py-3 ${urgent ? "bg-orange-50" : "bg-slate-50"}`}>
-      {/* 主行：标题 + 时间 */}
-      <div className="flex items-center justify-between gap-3">
+    <div className={`rounded-2xl px-5 py-4 ${bg}`}>
+      <div className="flex items-start justify-between gap-3">
+        {/* 左侧内容 */}
         <button
+          aria-label={urgent ? `${item.title} 取消紧急` : `${item.title} 标记紧急`}
           className="min-w-0 flex-1 text-left"
           type="button"
           onClick={() => onToggleUrgent(item.id)}
         >
-          <span className={`block truncate text-sm font-medium ${urgent ? "text-orange-700" : "text-slate-900"}`}>
-            {item.title}
-          </span>
+          <p className="text-base font-bold leading-snug text-slate-900">{item.title}</p>
+          {urgent ? <p className="mt-1 text-xs font-semibold text-orange-700">{copy.tasks.urgent}</p> : null}
+          {item.subtitle ? <p className="mt-1 text-xs leading-5 text-slate-500">{item.subtitle}</p> : null}
+          {item.timeLabel ? (
+            <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+              <Clock className="h-3 w-3" />
+              {item.timeLabel}
+            </p>
+          ) : null}
         </button>
-        {item.timeLabel ? (
-          <span className="shrink-0 text-xs font-medium text-slate-500">{item.timeLabel}</span>
+
+        {/* 右侧圆形按钮 */}
+        {canConfirm ? (
+          <button
+            aria-label={`${item.title} ${copy.reminders.confirm}`}
+            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${hasTime ? "bg-slate-950 text-white hover:bg-slate-800" : "bg-white/60 text-slate-400"}`}
+            disabled={loading || !hasTime}
+            type="button"
+            onClick={() => void onConfirmReminder(reminder)}
+          >
+            <Check className="h-4 w-4" />
+          </button>
         ) : (
-          <span className="shrink-0 text-xs text-slate-400">待定</span>
+          <div
+            aria-label={`${item.title} ${copy.tasks.confirmedReminder}`}
+            className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"
+            role="img"
+          >
+            <CheckCheck className="h-4 w-4" />
+          </div>
         )}
       </div>
 
-      {/* reason */}
-      {item.subtitle ? (
-        <p className="mt-1 text-xs leading-5 text-slate-400">{item.subtitle}</p>
-      ) : null}
-
-      {/* 待确认：时间选择 */}
+      {/* 待确认时间选择 */}
       {canConfirm && !reminder.remindAt ? (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
             {quickReminderTimes().map((t) => (
               <button
-                className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-colors ${confirmTime === t.value ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+                className={`flex-1 rounded-xl py-2 text-xs font-medium transition-colors ${confirmTime === t.value ? "bg-slate-950 text-white" : "bg-white/70 text-slate-600 hover:bg-white"}`}
                 key={t.label}
                 type="button"
                 onClick={() => onTimeChange(reminder.id, t.value)}
@@ -138,25 +145,12 @@ function TaskRow({
           </div>
           <Input
             aria-label={`${reminder.title} 的提醒时间`}
-            className="h-9 rounded-lg bg-white text-xs shadow-none"
+            className="h-9 rounded-xl border-0 bg-white/70 text-xs shadow-none"
             type="datetime-local"
             value={confirmTime}
             onChange={(e) => onTimeChange(reminder.id, e.target.value)}
           />
         </div>
-      ) : null}
-
-      {/* 确认按钮 */}
-      {canConfirm ? (
-        <button
-          className="mt-3 w-full rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white transition-opacity disabled:opacity-40"
-          disabled={loading || (!reminder.remindAt && !confirmTime)}
-          type="button"
-          onClick={() => void onConfirmReminder(reminder)}
-        >
-          <Check className="mr-1.5 inline h-3.5 w-3.5" />
-          {copy.reminders.confirm}
-        </button>
       ) : null}
     </div>
   );
@@ -176,15 +170,15 @@ export function LatestAnswer({
   const evidence = selectTrustEvidence(answer).slice(0, 2);
 
   return (
-    <div className="mt-3 rounded-2xl bg-white px-5 py-4 shadow-sm">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">{copy.tasks.latestAnswer}</p>
-      <p className="text-sm font-medium leading-6 text-slate-900">
+    <div className="mt-3 rounded-2xl border-l-4 border-blue-300 bg-slate-50 px-5 py-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{copy.tasks.latestAnswer}</p>
+      <p className="mt-2 text-base font-bold leading-snug text-slate-900">
         {answer.confidence === 0 ? copy.recall.noEvidenceBody : answer.answerText}
       </p>
       {evidence.length ? (
         <div className="mt-3 space-y-2">
           {evidence.map((item) => (
-            <div className="rounded-xl bg-slate-50 px-4 py-3" key={`${item.sourceId}:${item.summary}`}>
+            <div className="rounded-xl bg-white px-4 py-3" key={`${item.sourceId}:${item.summary}`}>
               <p className="text-xs text-slate-400">{trustEvidenceLabel(item.retrievalSource)} · {formatDate(item.createdAt)}</p>
               <p className="mt-0.5 text-xs leading-5 text-slate-600">{item.summary}</p>
             </div>
@@ -192,28 +186,21 @@ export function LatestAnswer({
         </div>
       ) : null}
       {answer.confidence > 0 && (isCorrecting ? (
-        <form
-          className="mt-3 space-y-2"
-          onSubmit={(e) => { e.preventDefault(); void onSendFeedback(answer, correctionText); }}
-        >
+        <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); void onSendFeedback(answer, correctionText); }}>
           <Textarea
             aria-label={copy.recall.correctionLabel}
-            className="min-h-16 rounded-xl bg-slate-50 text-sm shadow-none"
+            className="min-h-16 rounded-xl bg-white text-sm shadow-none"
             placeholder={copy.recall.correctionPlaceholder}
             value={correctionText}
             onChange={(e) => setCorrectionText(e.target.value)}
           />
-          <Button className="w-full rounded-xl bg-slate-900 text-sm shadow-none hover:bg-slate-800" disabled={loading || !correctionText.trim()} type="submit">
+          <Button className="w-full rounded-xl bg-slate-950 text-sm shadow-none hover:bg-slate-800" disabled={loading || !correctionText.trim()} type="submit">
             <Send className="h-3.5 w-3.5" />
             {copy.recall.sendCorrection}
           </Button>
         </form>
       ) : (
-        <button
-          className="mt-3 w-full rounded-xl bg-slate-50 py-2.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
-          type="button"
-          onClick={() => setIsCorrecting(true)}
-        >
+        <button className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100" type="button" onClick={() => setIsCorrecting(true)}>
           {copy.recall.correct}
         </button>
       ))}

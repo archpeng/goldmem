@@ -1,6 +1,7 @@
 import type {
   FamilyTask,
   ElderTurnPlan,
+  Feedback,
   MemoryAnswer,
   MemoryContextLink,
   MemoryEvent,
@@ -24,6 +25,9 @@ import type {
   EventStore,
   FamilyReminderCommandStore,
   FamilyTaskStore,
+  FeedbackStore,
+  MemoryProcessingJob,
+  MemoryProcessingJobStore,
   MemoryRecallResult,
   PersonalContextStore,
   ReminderStore,
@@ -48,10 +52,12 @@ export function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemorySt
   const audit = new InMemoryAuditLog();
   const familyReminderCommands = new InMemoryFamilyReminderCommandStore(sourceStore, reminderStore, audit);
   const familyTasks = new InMemoryFamilyTaskStore();
+  const feedbackStore = new InMemoryFeedbackStore();
   const riskFlags = new InMemoryRiskFlagStore();
   const contextLinkStore = new InMemoryContextLinkStore(eventStore);
   const semanticMemory = new InMemorySemanticMemoryStore();
   const temporalMemoryJobStore = new InMemoryTemporalMemoryJobStore();
+  const memoryProcessingJobStore = new InMemoryMemoryProcessingJobStore();
   const personalContextStore = new FakePersonalContextStore();
   const model = new FakeModelGateway(plan);
 
@@ -62,6 +68,7 @@ export function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemorySt
     reminderEngine: new DefaultReminderEngine(reminderStore),
     familyReminderCommandStore: familyReminderCommands,
     familyTaskStore: familyTasks,
+    feedbackStore,
     riskFlagStore: riskFlags,
     semanticMemory,
     personalContextStore,
@@ -71,6 +78,7 @@ export function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemorySt
     auditLog: audit,
     temporalMemory,
     temporalMemoryJobStore,
+    memoryProcessingJobStore,
   };
 
   return {
@@ -81,10 +89,12 @@ export function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemorySt
     familyReminderCommands,
     contextLinkStore,
     familyTasks,
+    feedbackStore,
     riskFlags,
     semanticMemory,
     audit,
     temporalMemoryJobStore,
+    memoryProcessingJobStore,
     personalContextStore,
     model,
   };
@@ -227,6 +237,7 @@ class FakeModelGateway implements ModelGateway {
     intent: "clarify",
     confidence: 0.5,
     clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
+    requiresIngestContextRecall: false,
   };
 
   parsedQuery: ParsedMemoryQuery = {
@@ -505,8 +516,21 @@ class InMemoryRiskFlagStore implements RiskFlagStore {
   }
 }
 
+class InMemoryFeedbackStore implements FeedbackStore {
+  feedback: Feedback[] = [];
+  failCreate = false;
+
+  async create(input: Omit<Feedback, "id" | "createdAt">): Promise<Feedback> {
+    if (this.failCreate) throw new Error("Feedback create failed");
+    const feedback = { ...input, id: `feedback-${this.feedback.length + 1}`, createdAt: now };
+    this.feedback.push(feedback);
+    return feedback;
+  }
+}
+
 class InMemorySemanticMemoryStore implements SemanticMemoryStore {
   memories: Array<Parameters<SemanticMemoryStore["addMemory"]>[0]> = [];
+  searches: Array<Parameters<SemanticMemoryStore["searchMemory"]>[0]> = [];
   searchResults?: MemoryRecallResult[];
 
   async addMemory(input: Parameters<SemanticMemoryStore["addMemory"]>[0]): Promise<void> {
@@ -514,6 +538,7 @@ class InMemorySemanticMemoryStore implements SemanticMemoryStore {
   }
 
   async searchMemory(input: Parameters<SemanticMemoryStore["searchMemory"]>[0]): Promise<MemoryRecallResult[]> {
+    this.searches.push(input);
     if (this.searchResults) return this.searchResults;
     return this.memories
       .filter((memory) => memory.tenantId === input.tenantId && memory.elderId === input.elderId)
@@ -620,6 +645,90 @@ class InMemoryTemporalMemoryJobStore implements TemporalMemoryJobStore {
   private requireJob(jobId: string): TemporalMemoryJob {
     const job = this.jobs.find((item) => item.id === jobId);
     if (!job) throw new Error(`Temporal job not found: ${jobId}`);
+    return job;
+  }
+}
+
+class InMemoryMemoryProcessingJobStore implements MemoryProcessingJobStore {
+  jobs: MemoryProcessingJob[] = [];
+
+  async enqueue(input: Parameters<MemoryProcessingJobStore["enqueue"]>[0]): Promise<MemoryProcessingJob> {
+    const job: MemoryProcessingJob = {
+      id: `memory-job-${this.jobs.length + 1}`,
+      type: input.type,
+      tenantId: input.tenantId,
+      elderId: input.elderId,
+      sourceId: input.sourceId,
+      eventId: input.eventId,
+      traceId: input.traceId,
+      status: "pending",
+      attempts: 0,
+      maxAttempts: input.maxAttempts ?? 5,
+      nextRunAt: input.nextRunAt ?? now,
+      payload: input.payload ?? {},
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.jobs.push(job);
+    return job;
+  }
+
+  async claimDue(input: Parameters<MemoryProcessingJobStore["claimDue"]>[0]): Promise<MemoryProcessingJob[]> {
+    const nowMs = new Date(input.now).getTime();
+    const due = this.jobs
+      .filter((job) => (job.status === "pending" || job.status === "failed") && new Date(job.nextRunAt).getTime() <= nowMs)
+      .filter((job) => !input.types?.length || input.types.includes(job.type))
+      .slice(0, input.limit);
+    for (const job of due) {
+      job.status = "running";
+      job.lockedAt = input.now;
+      job.updatedAt = input.now;
+    }
+    return due;
+  }
+
+  async getBySource(input: Parameters<MemoryProcessingJobStore["getBySource"]>[0]): Promise<MemoryProcessingJob | null> {
+    return [...this.jobs]
+      .reverse()
+      .find((job) => job.tenantId === input.tenantId && job.sourceId === input.sourceId && (!input.type || job.type === input.type)) ?? null;
+  }
+
+  async markSucceeded(input: Parameters<MemoryProcessingJobStore["markSucceeded"]>[0]): Promise<MemoryProcessingJob> {
+    const job = this.requireJob(input.jobId);
+    job.status = "succeeded";
+    job.lockedAt = undefined;
+    job.lastError = undefined;
+    job.payload = input.payload ?? {};
+    job.updatedAt = now;
+    return job;
+  }
+
+  async markFailed(input: Parameters<MemoryProcessingJobStore["markFailed"]>[0]): Promise<MemoryProcessingJob> {
+    const job = this.requireJob(input.jobId);
+    job.attempts += 1;
+    job.status = input.dead || job.attempts >= job.maxAttempts ? "dead" : "failed";
+    job.lockedAt = undefined;
+    job.lastError = input.errorMessage;
+    job.nextRunAt = input.nextRunAt;
+    job.payload = input.payload ?? job.payload;
+    job.updatedAt = now;
+    return job;
+  }
+
+  async stats(input: Parameters<MemoryProcessingJobStore["stats"]>[0] = {}) {
+    const output = { pending: 0, running: 0, succeeded: 0, failed: 0, dead: 0 };
+    for (const job of this.jobs) {
+      if (input?.tenantId && job.tenantId !== input.tenantId) continue;
+      if (input?.elderId && job.elderId !== input.elderId) continue;
+      if (input?.types?.length && !input.types.includes(job.type)) continue;
+      output[job.status] += 1;
+    }
+    return output;
+  }
+
+  private requireJob(jobId: string): MemoryProcessingJob {
+    const job = this.jobs.find((item) => item.id === jobId);
+    if (!job) throw new Error(`Memory processing job not found: ${jobId}`);
     return job;
   }
 }

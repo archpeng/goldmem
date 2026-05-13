@@ -13,6 +13,7 @@ vi.mock("./lib/api.js", async (importOriginal) => {
     confirmReminder: vi.fn(),
     sendFeedback: vi.fn(),
     getDebugTrace: vi.fn(),
+    getIngestStatus: vi.fn(),
   };
 });
 
@@ -20,6 +21,7 @@ const listMvpDataMock = vi.mocked(api.listMvpData);
 const sendElderTurnMock = vi.mocked(api.sendElderTurn);
 const sendFeedbackMock = vi.mocked(api.sendFeedback);
 const confirmReminderMock = vi.mocked(api.confirmReminder);
+const getIngestStatusMock = vi.mocked(api.getIngestStatus);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -34,6 +36,7 @@ beforeEach(() => {
     createdAt: "2026-05-11T08:00:00.000Z",
   });
   sendElderTurnMock.mockResolvedValue(recordTurn());
+  getIngestStatusMock.mockResolvedValue({ sourceId: "source-1", status: "ready", eventIds: [], reminderIds: ["reminder-1"] });
   confirmReminderMock.mockResolvedValue(confirmedReminderRecord());
 });
 
@@ -46,9 +49,11 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "生活记忆助手" })).toBeInTheDocument();
-    expect(screen.getByText("事项")).toBeInTheDocument();
+    expect(screen.getByLabelText("想说的话")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送给记忆助手" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeInTheDocument();
     expect(screen.queryByText("全部")).not.toBeInTheDocument();
-    expect(screen.getByText("还没有待处理事项")).toBeInTheDocument();
+    expect(screen.getByText("说一句话后，我会把需要处理的事放到这里。")).toBeInTheDocument();
     expect(screen.queryByText("说一句话，我帮你记住；想不起来时，我根据你说过的话帮你找。")).not.toBeInTheDocument();
     expect(screen.queryByText("直接说一句话就行")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "记一下" })).not.toBeInTheDocument();
@@ -71,7 +76,7 @@ describe("App", () => {
       text: expect.stringContaining("女儿"),
     }));
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("待我确认")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "给女儿打电话 确认提醒" })).toBeInTheDocument();
   });
 
   it("turns a pending reminder into confirmed state after confirmation", async () => {
@@ -83,14 +88,14 @@ describe("App", () => {
 
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "早上 7 点" }));
-    await user.click(screen.getByRole("button", { name: "确认提醒" }));
+    await user.click(screen.getByRole("button", { name: "给女儿打电话 确认提醒" }));
 
     await waitFor(() => expect(confirmReminderMock).toHaveBeenCalledWith(expect.objectContaining({
       reminderId: "reminder-1",
       timezone: "Asia/Shanghai",
     })));
-    expect((await screen.findAllByText("确认")).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "确认提醒" })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("给女儿打电话 确认")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认提醒/ })).not.toBeInTheDocument();
   });
 
   it("renders only reminder sections without top filter cards", async () => {
@@ -99,7 +104,7 @@ describe("App", () => {
     render(<App />);
 
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "确认提醒" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "给女儿打电话 确认提醒" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /待我确认/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /家人确认/ })).not.toBeInTheDocument();
     expect(screen.queryByText("等待家人确认")).not.toBeInTheDocument();
@@ -137,7 +142,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("待确认提醒 13")).toBeInTheDocument();
-    expect(await screen.findAllByRole("button", { name: "确认提醒" })).toHaveLength(13);
+    expect(await screen.findAllByRole("button", { name: /确认提醒$/ })).toHaveLength(13);
   });
 
   it("does not put already confirmed reminders back into elder confirmation", async () => {
@@ -149,9 +154,29 @@ describe("App", () => {
     });
     render(<App />);
 
-    expect((await screen.findAllByText("确认")).length).toBeGreaterThan(0);
+    expect(await screen.findByLabelText("给女儿打电话 确认")).toBeInTheDocument();
     expect(screen.queryByText("待我确认")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "确认提醒" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认提醒/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps text input available when speech recognition is unsupported", async () => {
+    const user = userEvent.setup();
+    const speechWindow = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+    const originalSpeechRecognition = speechWindow.SpeechRecognition;
+    const originalWebkitSpeechRecognition = speechWindow.webkitSpeechRecognition;
+    Object.defineProperty(window, "SpeechRecognition", { configurable: true, value: undefined });
+    Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: undefined });
+
+    try {
+      render(<App />);
+      await user.click(screen.getByRole("button", { name: "语音输入" }));
+
+      expect(await screen.findByText("当前浏览器不支持语音输入，请使用文字输入。")).toBeInTheDocument();
+      expect(screen.getByLabelText("想说的话")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "SpeechRecognition", { configurable: true, value: originalSpeechRecognition });
+      Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: originalWebkitSpeechRecognition });
+    }
   });
 
   it("renders recall answers with evidence from the unified turn result", async () => {
@@ -193,19 +218,12 @@ function recordTurn() {
   return {
     traceId: "trace-record",
     turnType: "record" as const,
-    message: "我帮你记住了。",
-    ingestResult: {
-      traceId: "trace-record",
+    message: "我先记下这句话，正在整理提醒。",
+    draft: {
       sourceId: "source-1",
-      summary: "老人说今天买了青菜。",
-      events: [],
-      reminderCandidates: [],
-      elderFacingCards: [{
-        title: "买青菜",
-        summary: "老人说今天买了青菜。",
-        needsConfirmation: false,
-        riskLevel: "normal",
-      }],
+      transcript: "老人说今天买了青菜。",
+      status: "queued" as const,
+      createdAt: "2026-05-11T08:00:00.000Z",
     },
   };
 }

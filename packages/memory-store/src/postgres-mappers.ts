@@ -1,5 +1,5 @@
 import type { FamilyTask, MemoryContextLink, MemoryEvent, MemorySource, NotificationIntent, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
-import type { TemporalMemoryJob } from "./index.js";
+import type { MemoryProcessingJob, TemporalMemoryJob } from "./index.js";
 import * as schema from "./postgres-schema.js";
 
 export function mapSource(row: typeof schema.memorySources.$inferSelect): MemorySource {
@@ -132,6 +132,27 @@ export function mapTemporalMemoryJob(row: typeof schema.temporalMemoryJobs.$infe
     lockedAt: row.lockedAt?.toISOString(),
     lastError: row.lastError ?? undefined,
     episode: row.episode as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function mapMemoryProcessingJob(row: typeof schema.memoryProcessingJobs.$inferSelect): MemoryProcessingJob {
+  return {
+    id: row.id,
+    type: row.type as MemoryProcessingJob["type"],
+    tenantId: row.tenantId,
+    elderId: row.elderId,
+    sourceId: row.sourceId ?? undefined,
+    eventId: row.eventId ?? undefined,
+    traceId: row.traceId ?? undefined,
+    status: row.status as MemoryProcessingJob["status"],
+    attempts: row.attempts,
+    maxAttempts: row.maxAttempts,
+    nextRunAt: row.nextRunAt.toISOString(),
+    lockedAt: row.lockedAt?.toISOString(),
+    lastError: row.lastError ?? undefined,
+    payload: row.payload as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

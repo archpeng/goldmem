@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   confirmReminder,
+  getIngestStatus,
   getDebugTrace,
   listMvpData,
   sendElderTurn,
@@ -16,7 +17,7 @@ beforeEach(() => {
 
 describe("web MVP api adapter", () => {
   it("posts elder turns through the API proxy", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", turnType: "record", message: "已保存", ingestResult: { traceId: "trace-1", sourceId: "source-1", summary: "已保存", events: [], reminderCandidates: [], elderFacingCards: [] } }));
+    fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", turnType: "record", message: "已保存", draft: { sourceId: "source-1", transcript: "我买了青菜。", status: "queued", createdAt: "2026-05-09T12:00:00.000Z" } }));
 
     await expect(sendElderTurn({ elderId: "elder-1", text: "我买了青菜。" })).resolves.toMatchObject({
       turnType: "record",
@@ -27,6 +28,14 @@ describe("web MVP api adapter", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。", timezone: "Asia/Shanghai" }),
     }));
+  });
+
+  it("loads ingest status for draft cards", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ sourceId: "source-1", status: "ready", eventIds: ["event-1"], reminderIds: [] }));
+
+    await expect(getIngestStatus("source-1")).resolves.toMatchObject({ status: "ready" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/elder/sources/source-1/ingest-status", expect.any(Object));
   });
 
   it("loads debug traces through the debug API", async () => {

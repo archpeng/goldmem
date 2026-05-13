@@ -1,17 +1,18 @@
 import {
   DEFAULT_TENANT_ID,
+  type CreateFeedbackRequest,
   type CreateFamilyReminderRequest,
-  type ElderTurnPlan,
   type ElderTurnResult,
+  type IngestStatus,
   type MemoryAnswer,
   type MemoryEvent,
   type MemoryPlan,
   type MemorySource,
-  type PersonalContext,
+  type Feedback,
   type Reminder,
 } from "@goldmem/memory-schema";
 import { randomUUID } from "node:crypto";
-import { ModelGatewayError, type ModelGateway } from "@goldmem/model-gateway";
+import type { ModelGateway } from "@goldmem/model-gateway";
 import type { TemporalMemoryStore } from "@goldmem/temporal-memory";
 import type {
   AuditLog,
@@ -19,6 +20,8 @@ import type {
   EventStore,
   FamilyReminderCommandStore,
   FamilyTaskStore,
+  FeedbackStore,
+  MemoryProcessingJobStore,
   PersonalContextStore,
   RiskFlagStore,
   SemanticMemoryStore,
@@ -31,13 +34,16 @@ import type { PermissionEngine } from "@goldmem/permission-engine";
 import { createFamilyReminderCommand } from "./family-reminders.js";
 import {
   confirmReminderCommand,
+  createFeedbackCommand,
   updateFamilyTaskStatusCommand,
   type ConfirmReminderInput,
   type UpdateFamilyTaskStatusInput,
 } from "./elder-commands.js";
-import { appendProviderTimings, consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
+import { appendProviderTimings } from "./model-gateway-timings.js";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { QueryOrchestrator } from "./query-orchestrator.js";
+import { MemoryProcessingOrchestrator } from "./memory-processing.js";
+import { emptyTurnContext, planElderTurnSafely } from "./elder-turn-planner.js";
 
 export type IngestTextInput = {
   tenantId?: string;
@@ -96,6 +102,7 @@ export type ElderTurnInput = {
 };
 
 export type CreateFamilyReminderInput = CreateFamilyReminderRequest;
+export type CreateFeedbackInput = CreateFeedbackRequest;
 export type { ConfirmReminderInput, UpdateFamilyTaskStatusInput };
 
 export type ElderMemoryKernelDeps = {
@@ -105,6 +112,7 @@ export type ElderMemoryKernelDeps = {
   reminderEngine: ReminderEngine;
   familyReminderCommandStore: FamilyReminderCommandStore;
   familyTaskStore: FamilyTaskStore;
+  feedbackStore: FeedbackStore;
   riskFlagStore: RiskFlagStore;
   semanticMemory: SemanticMemoryStore;
   personalContextStore: PersonalContextStore;
@@ -114,15 +122,18 @@ export type ElderMemoryKernelDeps = {
   auditLog: AuditLog;
   temporalMemory: TemporalMemoryStore;
   temporalMemoryJobStore: TemporalMemoryJobStore;
+  memoryProcessingJobStore: MemoryProcessingJobStore;
 };
 
 export class ElderMemoryKernel {
   private readonly ingestOrchestrator: IngestOrchestrator;
   private readonly queryOrchestrator: QueryOrchestrator;
+  private readonly memoryProcessing: MemoryProcessingOrchestrator;
 
   constructor(private readonly deps: ElderMemoryKernelDeps) {
     this.ingestOrchestrator = new IngestOrchestrator(deps);
     this.queryOrchestrator = new QueryOrchestrator(deps);
+    this.memoryProcessing = new MemoryProcessingOrchestrator(deps);
   }
 
   async ingestVoice(input: IngestVoiceInput): Promise<IngestResult> {
@@ -172,8 +183,20 @@ export class ElderMemoryKernel {
     return updateFamilyTaskStatusCommand(this.deps, input);
   }
 
+  async createFeedback(input: CreateFeedbackInput): Promise<Feedback> {
+    return createFeedbackCommand(this.deps, input);
+  }
+
   async queryMemory(input: QueryMemoryInput): Promise<MemoryAnswer> {
     return this.queryOrchestrator.queryMemory(input, input.traceId ?? randomUUID());
+  }
+
+  async getIngestStatus(input: { tenantId?: string; sourceId: string }): Promise<IngestStatus> {
+    return this.memoryProcessing.getStatus(input);
+  }
+
+  async processMemoryProcessingJobs(input: Parameters<MemoryProcessingOrchestrator["processJobs"]>[0] = {}) {
+    return this.memoryProcessing.processJobs(input);
   }
 
   async elderTurn(input: ElderTurnInput): Promise<ElderTurnResult> {
@@ -182,16 +205,10 @@ export class ElderMemoryKernel {
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const traceId = input.traceId ?? randomUUID();
     const now = input.now ?? new Date().toISOString();
-    const contextStartedAt = Date.now();
-    const context = await this.deps.personalContextStore.buildContext({
-      tenantId,
-      elderId: input.elderId,
-      queryText: input.text,
-    });
-    timings.buildContextMs = Date.now() - contextStartedAt;
+    const context = emptyTurnContext();
 
     const turnPlanStartedAt = Date.now();
-    const plan = await this.planElderTurnSafely({
+    const plan = await planElderTurnSafely(this.deps, {
       tenantId,
       elderId: input.elderId,
       text: input.text,
@@ -204,21 +221,22 @@ export class ElderMemoryKernel {
 
     let result: ElderTurnResult;
     if (plan.intent === "record") {
-      const ingestStartedAt = Date.now();
-      const ingestResult = await this.ingestText({
+      const enqueueStartedAt = Date.now();
+      const draft = await this.memoryProcessing.enqueueTextIngest({
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
         localCreatedAt: now,
         metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
+        requiresIngestContextRecall: plan.requiresIngestContextRecall,
       });
-      timings.ingestTextMs = Date.now() - ingestStartedAt;
+      timings.enqueueIngestMs = Date.now() - enqueueStartedAt;
       result = {
         traceId,
         turnType: "record",
-        message: "我帮你记住了。",
-        ingestResult,
+        message: "我先记下这句话，正在整理提醒。",
+        draft,
       };
     } else if (plan.intent === "recall") {
       const queryStartedAt = Date.now();
@@ -237,16 +255,17 @@ export class ElderMemoryKernel {
         answer,
       };
     } else if (plan.intent === "record_and_recall") {
-      const ingestStartedAt = Date.now();
-      const ingestResult = await this.ingestText({
+      const enqueueStartedAt = Date.now();
+      const draft = await this.memoryProcessing.enqueueTextIngest({
         tenantId,
         elderId: input.elderId,
         transcript: plan.recordText ?? input.text,
         localCreatedAt: now,
         metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
+        requiresIngestContextRecall: plan.requiresIngestContextRecall,
       });
-      timings.ingestTextMs = Date.now() - ingestStartedAt;
+      timings.enqueueIngestMs = Date.now() - enqueueStartedAt;
 
       const queryStartedAt = Date.now();
       const answer = await this.queryMemory({
@@ -260,8 +279,8 @@ export class ElderMemoryKernel {
       result = {
         traceId,
         turnType: "record_and_recall",
-        message: "我先帮你记住了，也找到了相关记忆。",
-        ingestResult,
+        message: "我先记下这句话，也先帮你找到了相关记忆。",
+        draft,
         answer,
       };
     } else {
@@ -283,7 +302,7 @@ export class ElderMemoryKernel {
         text: input.text,
         plan,
         turnType: result.turnType,
-        wroteMemory: Boolean(result.ingestResult),
+        wroteMemory: Boolean(result.ingestResult || result.draft),
         queriedMemory: Boolean(result.answer),
         timings,
       },
@@ -292,44 +311,4 @@ export class ElderMemoryKernel {
     return result;
   }
 
-  private async planElderTurnSafely(input: {
-    tenantId: string;
-    elderId: string;
-    text: string;
-    now: string;
-    traceId: string;
-    context: PersonalContext;
-  }): Promise<ElderTurnPlan> {
-    try {
-      return await this.deps.modelGateway.planElderTurn({
-        tenantId: input.tenantId,
-        elderId: input.elderId,
-        text: input.text,
-        now: input.now,
-        context: input.context,
-      });
-    } catch (error) {
-      if (!(error instanceof ModelGatewayError) || error.code !== "schema_validation_error") throw error;
-      await this.deps.auditLog.record({
-        type: "elder_turn_plan_failed",
-        tenantId: input.tenantId,
-        elderId: input.elderId,
-        traceId: input.traceId,
-        payload: {
-          traceId: input.traceId,
-          text: input.text,
-          failureType: "turn_schema_validation_error",
-          errorMessage: error.message,
-          modelGateway: modelGatewayErrorPayload(error),
-          providerTimings: consumeProviderTimings(this.deps.modelGateway),
-          fallbackUsed: true,
-        },
-      });
-      return {
-        intent: "clarify",
-        confidence: 0,
-        clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
-      };
-    }
-  }
 }

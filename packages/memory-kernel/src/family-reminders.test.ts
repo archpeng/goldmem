@@ -143,6 +143,52 @@ describe("ElderMemoryKernel family-reminders", () => {
     ]));
   });
 
+  it("creates elder feedback through Kernel-owned command audit", async () => {
+    const harness = createHarness(buildPlan({ summary: "Unused plan." }));
+
+    const feedback = await harness.kernel.createFeedback({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      actorUserId: "elder-1",
+      sourceId: "source-1",
+      eventId: "event-1",
+      feedbackType: "answer_wrong",
+      correction: { expected: "菠菜" },
+      traceId: "trace-feedback",
+    });
+
+    expect(feedback).toMatchObject({ id: "feedback-1", feedbackType: "answer_wrong" });
+    expect(harness.feedbackStore.feedback).toHaveLength(1);
+    expect(harness.audit.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "feedback_created",
+        traceId: "trace-feedback",
+        payload: expect.objectContaining({
+          feedbackId: feedback.id,
+          actorUserId: "elder-1",
+          eventId: "event-1",
+        }),
+      }),
+    ]));
+  });
+
+  it("surfaces feedback persistence failures without writing success audit", async () => {
+    const harness = createHarness(buildPlan({ summary: "Unused plan." }));
+    harness.feedbackStore.failCreate = true;
+
+    await expect(harness.kernel.createFeedback({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      actorUserId: "elder-1",
+      sourceId: "source-1",
+      feedbackType: "answer_wrong",
+      correction: { expected: "菠菜" },
+      traceId: "trace-feedback-failed",
+    })).rejects.toThrow("Feedback create failed");
+
+    expect(harness.audit.records.some((record) => record.type === "feedback_created")).toBe(false);
+  });
+
   it("rolls back family reminder command writes and audits failure when reminder creation fails", async () => {
     const harness = createHarness(buildPlan({ summary: "Unused plan." }));
     harness.familyReminderCommands.failReminderCreate = true;

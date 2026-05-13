@@ -41,6 +41,8 @@ describe("ElderMemoryKernel ingest", () => {
     expect(result.events).toHaveLength(1);
     expect(result.events[0]?.visibility).toBe("private");
     expect(result.events[0]?.status).toBe("active");
+    expect(harness.memoryProcessingJobStore.jobs.filter((job) => job.type === "semantic_index_event")).toHaveLength(1);
+    await harness.kernel.processMemoryProcessingJobs({ now, types: ["semantic_index_event"] });
     expect(harness.semanticMemory.memories).toHaveLength(1);
     expect(harness.semanticMemory.memories[0]?.metadata).toMatchObject({ traceId: "trace-ingest-1" });
     expect(harness.audit.records.at(-1)?.type).toBe("memory_ingest");

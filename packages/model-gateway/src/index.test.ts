@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@goldmem/memory-schema";
-import type { GenerateMemoryAnswerInput, GenerateMemoryPlanInput, PlanElderTurnInput } from "./index.js";
+import { ModelGatewayError, OpenAIModelGateway, type GenerateMemoryAnswerInput, type GenerateMemoryPlanInput, type PlanElderTurnInput } from "./index.js";
 import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
 import { normalizeMemoryPlanResult } from "./normalizers/memory-plan.js";
 import { normalizeParsedMemoryQueryResult } from "./normalizers/query.js";
@@ -289,6 +289,43 @@ describe("model-gateway normalization", () => {
       intent: "clarify",
       clarifyingQuestion: "您想让我记住这件事，还是帮您查以前的记忆？",
     });
+  });
+});
+
+describe("OpenAIModelGateway operation timeouts", () => {
+  it("uses the MemoryPlan-specific timeout for JSON completion failures", async () => {
+    const gateway = new OpenAIModelGateway({
+      apiKey: "test-key",
+      model: "test-model",
+      promptsDir: "../../prompts",
+      timeoutMs: 20_000,
+      operationTimeouts: { generateMemoryPlan: 60_000 },
+    });
+    const calls: Array<{ timeout?: number }> = [];
+    const client = gateway as unknown as {
+      client: {
+        chat: {
+          completions: {
+            create: (_body: unknown, options?: { timeout?: number }) => Promise<unknown>;
+          };
+        };
+      };
+    };
+    client.client.chat.completions.create = async (_body, options) => {
+      calls.push({ timeout: options?.timeout });
+      throw new Error("timeout");
+    };
+
+    await expect(gateway.generateMemoryPlan(planInput())).rejects.toMatchObject({
+      name: "ModelGatewayError",
+      code: "provider_error",
+      details: expect.objectContaining({
+        operation: "generateMemoryPlan",
+        timeoutMs: 60_000,
+        timeoutType: "client_timeout",
+      }),
+    } satisfies Partial<ModelGatewayError>);
+    expect(calls).toEqual([{ timeout: 60_000 }]);
   });
 });
 

@@ -118,6 +118,7 @@ for (const note of fixture.seedNotes) {
   }
 }
 
+await waitForMemoryProcessingIdle();
 if (graphitiMode === "required") await drainGraphitiJobs();
 
 const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
@@ -279,25 +280,63 @@ console.log(
 
 async function ingestNote(transcript: string) {
   const turn = await request<{
-    ingestResult?: {
-      traceId: string;
+    draft?: {
       sourceId: string;
-      summary: string;
-      events: MemoryEvent[];
-      reminderCandidates: Reminder[];
-      temporalMemory?: {
-        status: "queued" | "not_needed" | "failed";
-        enqueueReason?: "hard_risk" | "hard_context_link" | "hard_family_task" | "model_relation_signal" | "not_needed";
-        errorMessage?: string;
-      };
+      transcript: string;
+      status: "queued" | "processing" | "ready" | "failed";
     };
   }>("POST", "/elder/turn", {
     tenantId,
     elderId,
     text: transcript,
   });
-  if (!turn.ingestResult) throw new Error("Elder turn did not return ingestResult for seed note");
-  return turn.ingestResult;
+  if (!turn.draft) throw new Error("Elder turn did not return draft for seed note");
+  const status = await waitForIngestReady(turn.draft.sourceId);
+  const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
+  const events = (await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`)).filter((event) => event.sourceId === turn.draft?.sourceId);
+  const reminders = (await request<Reminder[]>("GET", `/elder/reminders?${tenantQuery}`)).filter((reminder) => reminder.sourceId === turn.draft?.sourceId);
+  return {
+    traceId: status.traceId ?? "",
+    sourceId: turn.draft.sourceId,
+    summary: status.summary ?? turn.draft.transcript,
+    events,
+    reminderCandidates: reminders,
+    temporalMemory: status.temporalMemory,
+  };
+}
+
+async function waitForIngestReady(sourceId: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const status = await request<{
+      sourceId: string;
+      status: "queued" | "processing" | "ready" | "failed";
+      traceId?: string;
+      summary?: string;
+      temporalMemory?: {
+        status: "queued" | "not_needed" | "failed";
+        enqueueReason?: "hard_risk" | "hard_context_link" | "hard_family_task" | "model_relation_signal" | "not_needed";
+        errorMessage?: string;
+      };
+      errorMessage?: string;
+    }>("GET", `/elder/sources/${encodeURIComponent(sourceId)}/ingest-status?tenantId=${encodeURIComponent(tenantId)}`);
+    if (status.status === "ready") return status;
+    if (status.status === "failed") throw new Error(`Seed ingest failed: ${status.errorMessage ?? "unknown"}`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Seed ingest did not become ready: ${sourceId}`);
+}
+
+async function waitForMemoryProcessingIdle(): Promise<void> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const health = await request<{ memoryProcessingJobs?: Record<string, number> }>("GET", "/health");
+    const stats = health.memoryProcessingJobs;
+    if (!stats) return;
+    const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
+    if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead: ${JSON.stringify(stats)}`);
+    if (active === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error("Memory processing jobs did not become idle");
 }
 
 async function drainGraphitiJobs(): Promise<void> {

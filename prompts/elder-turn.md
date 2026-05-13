@@ -14,7 +14,8 @@ Required JSON shape:
   "confidence": 0.0,
   "recordText": "text to write when intent includes record",
   "queryText": "question to answer when intent includes recall",
-  "clarifyingQuestion": "short Simplified Chinese question when intent is clarify"
+  "clarifyingQuestion": "short Simplified Chinese question when intent is clarify",
+  "requiresIngestContextRecall": false
 }
 
 Rules:
@@ -31,3 +32,5 @@ Rules:
 - If intent is recall, include queryText and omit recordText.
 - If intent is record_and_recall, include both.
 - If intent is clarify, do not include recordText or queryText.
+- Set requiresIngestContextRecall to true only when the record side needs old memory candidates to understand a relation, change, conflict, vague reference, or same-matter link.
+- Set requiresIngestContextRecall to false for ordinary one-off notes and clear reminders such as buying groceries, calling someone, or a standalone tomorrow reminder.

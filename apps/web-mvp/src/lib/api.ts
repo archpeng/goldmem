@@ -1,4 +1,4 @@
-import type { DebugTrace, ElderTurnResult, Feedback, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, Feedback, IngestStatus, Reminder } from "@goldmem/memory-schema";
 
 export type MvpLists = {
   reminders: Reminder[];
@@ -42,6 +42,10 @@ export async function sendFeedback(input: {
 export async function listMvpData(elderId: string): Promise<MvpLists> {
   const encoded = encodeURIComponent(elderId);
   return { reminders: await request<Reminder[]>(`/elder/reminders?elderId=${encoded}`) };
+}
+
+export async function getIngestStatus(sourceId: string): Promise<IngestStatus> {
+  return request<IngestStatus>(`/elder/sources/${encodeURIComponent(sourceId)}/ingest-status`);
 }
 
 export async function confirmReminder(input: {

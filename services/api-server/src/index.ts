@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -14,12 +13,10 @@ import { DefaultReminderEngine } from "@goldmem/reminder-engine";
 import { DefaultRiskEngine } from "@goldmem/risk-engine";
 import {
   createPostgresStores,
-  type FamilyTaskStore,
-  type AuditLog,
   type ContextLinkStore,
   type DebugTraceStore,
   type EventStore,
-  type FeedbackStore,
+  type FamilyTaskStore,
   type NotificationIntentStore,
   type ReminderStore,
 } from "@goldmem/memory-store";
@@ -29,6 +26,7 @@ import { GraphitiTemporalMemoryStore, NullTemporalMemoryStore, type TemporalMemo
 export const apiRouteContract = {
   elder: {
     turn: "POST /elder/turn",
+    ingestStatus: "GET /elder/sources/:sourceId/ingest-status",
     listEvents: "GET /elder/events",
     listReminders: "GET /elder/reminders",
     confirmReminder: "POST /elder/reminders/:id/confirm",
@@ -58,8 +56,6 @@ export type ApiServerDeps = {
   contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
   familyTaskStore: FamilyTaskStore;
-  feedbackStore: FeedbackStore;
-  auditLog: AuditLog;
   debugTraceStore?: DebugTraceStore;
   notificationIntentStore?: NotificationIntentStore;
   healthCheck?: () => Promise<Record<string, unknown>>;
@@ -78,33 +74,15 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     return deps.kernel.elderTurn(input);
   });
 
+  server.get("/elder/sources/:sourceId/ingest-status", async (request) => {
+    const params = request.params as { sourceId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    return deps.kernel.getIngestStatus({ tenantId, sourceId: params.sourceId });
+  });
+
   server.post("/elder/feedback", async (request) => {
     const input = CreateFeedbackRequestSchema.parse(request.body);
-    const traceId = input.traceId ?? randomUUID();
-    const feedback = await deps.feedbackStore.create({
-      tenantId: input.tenantId,
-      elderId: input.elderId,
-      actorUserId: input.actorUserId,
-      sourceId: input.sourceId,
-      eventId: input.eventId,
-      feedbackType: input.feedbackType,
-      correction: input.correction,
-    });
-    await deps.auditLog.record({
-      type: "feedback_created",
-      tenantId: feedback.tenantId,
-      elderId: feedback.elderId,
-      sourceId: feedback.sourceId,
-      traceId,
-      payload: {
-        traceId,
-        feedbackId: feedback.id,
-        feedbackType: feedback.feedbackType,
-        actorUserId: feedback.actorUserId,
-        eventId: feedback.eventId,
-      },
-    });
-    return feedback;
+    return deps.kernel.createFeedback(input);
   });
 
   server.get("/elder/events", async (request) => {
@@ -246,9 +224,10 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     eventStore: postgres.eventStore,
     contextLinkStore: postgres.contextLinkStore,
     reminderEngine,
-      familyReminderCommandStore: postgres.familyReminderCommandStore,
-      familyTaskStore: postgres.familyTaskStore,
-      riskFlagStore: postgres.riskFlagStore,
+    familyReminderCommandStore: postgres.familyReminderCommandStore,
+    familyTaskStore: postgres.familyTaskStore,
+    feedbackStore: postgres.feedbackStore,
+    riskFlagStore: postgres.riskFlagStore,
     semanticMemory: postgres.semanticMemoryStore,
     personalContextStore: postgres.personalContextStore,
     modelGateway,
@@ -257,6 +236,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     auditLog: postgres.auditLog,
     temporalMemory,
     temporalMemoryJobStore: postgres.temporalMemoryJobStore,
+    memoryProcessingJobStore: postgres.memoryProcessingJobStore,
   };
 
   return {
@@ -266,14 +246,13 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       contextLinkStore: postgres.contextLinkStore,
       reminderStore: postgres.reminderStore,
       familyTaskStore: postgres.familyTaskStore,
-      feedbackStore: postgres.feedbackStore,
-      auditLog: postgres.auditLog,
       debugTraceStore: postgres.debugTraceStore,
       notificationIntentStore: postgres.notificationIntentStore,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
         const graphiti = await checkGraphitiHealth(temporalMemory);
         const graphitiRetryJobs = await postgres.temporalMemoryJobStore.stats();
+        const memoryProcessingJobs = await postgres.memoryProcessingJobStore.stats();
         const graphitiRequired = isGraphitiRequired();
         return {
           ok: graphitiRequired ? graphiti === "ok" : true,
@@ -282,9 +261,11 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
           model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
           embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
           openaiTimeoutMs: parseOpenAITimeoutMs(),
+          openaiMemoryPlanTimeoutMs: parseOpenAIMemoryPlanTimeoutMs(),
           graphiti,
           graphitiRequired,
           graphitiRetryJobs,
+          memoryProcessingJobs,
         };
       },
     },
@@ -331,6 +312,7 @@ async function checkGraphitiHealth(temporalMemory: TemporalMemoryStore): Promise
 }
 
 function buildModelGatewayFromEnv(): ModelGateway {
+  const timeoutMs = parseOpenAITimeoutMs();
   if (!process.env.OPENAI_API_KEY) return new NotImplementedModelGateway();
   return new OpenAIModelGateway({
     apiKey: process.env.OPENAI_API_KEY,
@@ -340,12 +322,19 @@ function buildModelGatewayFromEnv(): ModelGateway {
     transcriptionModel: process.env.OPENAI_TRANSCRIBE_MODEL,
     promptsDir: process.env.GOLDMEM_PROMPTS_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "prompts"),
     promptVersion: process.env.GOLDMEM_PROMPT_VERSION ?? "v1",
-    timeoutMs: parseOpenAITimeoutMs(),
+    timeoutMs,
+    operationTimeouts: {
+      generateMemoryPlan: parseOpenAIMemoryPlanTimeoutMs(timeoutMs),
+    },
   });
 }
 
 function parseOpenAITimeoutMs(): number {
   return parsePositiveInt(process.env.OPENAI_TIMEOUT_MS, 15_000);
+}
+
+function parseOpenAIMemoryPlanTimeoutMs(baseTimeoutMs = parseOpenAITimeoutMs()): number {
+  return parsePositiveInt(process.env.OPENAI_MEMORY_PLAN_TIMEOUT_MS, Math.max(baseTimeoutMs, 60_000));
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -363,9 +352,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { deps, close } = buildKernelDepsFromEnv();
   const server = buildServer(deps);
   const port = Number(process.env.PORT ?? 3000);
+  const stopMemoryWorker = startMemoryProcessingWorker(deps.kernel);
   server.listen({ port, host: "0.0.0.0" }).catch(async (error) => {
     server.log.error(error);
+    stopMemoryWorker();
     await close();
     process.exit(1);
   });
+}
+
+function startMemoryProcessingWorker(kernel: ElderMemoryKernel): () => void {
+  if (process.env.GOLDMEM_API_BACKGROUND_WORKERS === "false") return () => undefined;
+  const intervalMs = parsePositiveInt(process.env.GOLDMEM_MEMORY_WORKER_POLL_MS, 2_000);
+  const limit = parsePositiveInt(process.env.GOLDMEM_MEMORY_WORKER_BATCH_SIZE, 5);
+  const timer = setInterval(() => {
+    kernel.processMemoryProcessingJobs({ limit }).catch((error) => {
+      console.error("memory processing worker failed", error);
+    });
+  }, intervalMs);
+  void kernel.processMemoryProcessingJobs({ limit }).catch((error) => {
+    console.error("memory processing worker failed", error);
+  });
+  return () => clearInterval(timer);
 }

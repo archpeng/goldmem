@@ -30,6 +30,10 @@ export const copy = {
     todayReminder: "今天提醒",
     confirmedReminder: "确认",
     latestAnswer: "最近回答",
+    draft: "文字草稿",
+    organizing: "正在整理提醒",
+    remembered: "已记住",
+    organizeFailed: "已保存原文，整理失败",
   },
   reminders: {
     confirm: "确认提醒",

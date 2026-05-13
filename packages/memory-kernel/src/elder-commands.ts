@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_TENANT_ID, type FamilyTask, type Reminder } from "@goldmem/memory-schema";
-import type { AuditLog, FamilyTaskStore } from "@goldmem/memory-store";
+import {
+  DEFAULT_TENANT_ID,
+  type CreateFeedbackRequest,
+  type FamilyTask,
+  type Feedback,
+  type Reminder,
+} from "@goldmem/memory-schema";
+import type { AuditLog, FamilyTaskStore, FeedbackStore } from "@goldmem/memory-store";
 import type { ReminderEngine } from "@goldmem/reminder-engine";
 
 export type ConfirmReminderInput = {
@@ -20,13 +26,24 @@ export type UpdateFamilyTaskStatusInput = {
   traceId?: string;
 };
 
-type ElderCommandDeps = {
+export type CreateFeedbackInput = CreateFeedbackRequest;
+
+type ConfirmReminderDeps = {
   reminderEngine: ReminderEngine;
+  auditLog: AuditLog;
+};
+
+type UpdateFamilyTaskStatusDeps = {
   familyTaskStore: FamilyTaskStore;
   auditLog: AuditLog;
 };
 
-export async function confirmReminderCommand(deps: ElderCommandDeps, input: ConfirmReminderInput): Promise<Reminder> {
+type CreateFeedbackDeps = {
+  feedbackStore: FeedbackStore;
+  auditLog: AuditLog;
+};
+
+export async function confirmReminderCommand(deps: ConfirmReminderDeps, input: ConfirmReminderInput): Promise<Reminder> {
   const traceId = input.traceId ?? randomUUID();
   const reminder = await deps.reminderEngine.confirmReminder({
     tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
@@ -53,7 +70,7 @@ export async function confirmReminderCommand(deps: ElderCommandDeps, input: Conf
 }
 
 export async function updateFamilyTaskStatusCommand(
-  deps: ElderCommandDeps,
+  deps: UpdateFamilyTaskStatusDeps,
   input: UpdateFamilyTaskStatusInput,
 ): Promise<FamilyTask> {
   const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
@@ -77,4 +94,32 @@ export async function updateFamilyTaskStatusCommand(
     },
   });
   return task;
+}
+
+export async function createFeedbackCommand(deps: CreateFeedbackDeps, input: CreateFeedbackInput): Promise<Feedback> {
+  const traceId = input.traceId ?? randomUUID();
+  const feedback = await deps.feedbackStore.create({
+    tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
+    elderId: input.elderId,
+    actorUserId: input.actorUserId,
+    sourceId: input.sourceId,
+    eventId: input.eventId,
+    feedbackType: input.feedbackType,
+    correction: input.correction,
+  });
+  await deps.auditLog.record({
+    type: "feedback_created",
+    tenantId: feedback.tenantId,
+    elderId: feedback.elderId,
+    sourceId: feedback.sourceId,
+    traceId,
+    payload: {
+      traceId,
+      feedbackId: feedback.id,
+      feedbackType: feedback.feedbackType,
+      actorUserId: feedback.actorUserId,
+      eventId: feedback.eventId,
+    },
+  });
+  return feedback;
 }

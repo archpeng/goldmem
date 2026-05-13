@@ -178,6 +178,7 @@ describe("ElderMemoryKernel query", () => {
       intent: "record",
       confidence: 0.9,
       recordText: "我今天买了青菜。",
+      requiresIngestContextRecall: false,
     };
 
     const result = await harness.kernel.elderTurn({
@@ -187,10 +188,47 @@ describe("ElderMemoryKernel query", () => {
     });
 
     expect(result.turnType).toBe("record");
-    expect(result.ingestResult?.summary).toBe("老人买了青菜。");
+    expect(result.draft?.transcript).toBe("我今天买了青菜。");
+    expect(result.ingestResult).toBeUndefined();
     expect(result.answer).toBeUndefined();
     expect(harness.sourceStore.sources).toHaveLength(1);
+    expect(harness.memoryProcessingJobStore.jobs).toHaveLength(1);
     expect(harness.audit.records.at(-1)?.type).toBe("elder_turn");
+
+    const sourceId = result.draft?.sourceId ?? "";
+    expect(await harness.kernel.getIngestStatus({ sourceId })).toMatchObject({ status: "queued" });
+    await harness.kernel.processMemoryProcessingJobs({ now, types: ["ingest_source"] });
+    expect(await harness.kernel.getIngestStatus({ sourceId })).toMatchObject({
+      status: "ready",
+      summary: "老人买了青菜。",
+    });
+    expect(harness.eventStore.events).toHaveLength(1);
+    expect(harness.semanticMemory.searches).toHaveLength(0);
+  });
+
+  it("uses turn-plan context recall signal to decide semantic candidate search in background ingest", async () => {
+    const harness = createHarness(buildPlan({
+      summary: "改期。",
+      events: [buildEvent({ title: "复查改期", summary: "复查改到下周三。", type: "appointment" })],
+    }));
+    harness.model.turnPlan = {
+      intent: "record",
+      confidence: 0.9,
+      recordText: "上次那个复查改到下周三。",
+      requiresIngestContextRecall: true,
+    };
+    harness.semanticMemory.searchResults = [];
+
+    const result = await harness.kernel.elderTurn({
+      elderId: "elder-1",
+      text: "上次那个复查改到下周三。",
+      now,
+    });
+    await harness.kernel.processMemoryProcessingJobs({ now, types: ["ingest_source"] });
+
+    expect(result.draft?.sourceId).toBeTruthy();
+    expect(harness.semanticMemory.searches).toHaveLength(1);
+    expect(harness.model.lastPlanContext?.semanticCandidateEvents).toEqual([]);
   });
 
   it("routes elder turns to recall with evidence-bound answers", async () => {
@@ -199,6 +237,7 @@ describe("ElderMemoryKernel query", () => {
       intent: "recall",
       confidence: 0.9,
       queryText: "我买了什么？",
+      requiresIngestContextRecall: false,
     };
     harness.model.parsedQuery = {
       intent: "recall_event",

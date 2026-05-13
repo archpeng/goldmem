@@ -171,6 +171,7 @@ export type OpenAIModelGatewayOptions = {
   promptsDir?: string;
   promptVersion?: string;
   timeoutMs?: number;
+  operationTimeouts?: Partial<Record<ModelGatewayOperation, number>>;
 };
 
 export class OpenAIModelGateway implements ModelGateway {
@@ -234,7 +235,7 @@ export class OpenAIModelGateway implements ModelGateway {
     } catch (error) {
       if (error instanceof ModelGatewayError) throw error;
       const details = providerRecorded
-        ? { operation, durationMs: Date.now() - startedAt, timeoutMs: this.timeoutMs() }
+        ? { operation, durationMs: Date.now() - startedAt, timeoutMs: this.timeoutMs(operation) }
         : this.recordProviderTiming({ operation, model, startedAt, status: "error", error });
       throw new ModelGatewayError("provider_error", "OpenAI embedding failed", error, details);
     }
@@ -306,6 +307,8 @@ export class OpenAIModelGateway implements ModelGateway {
           { role: "system", content: systemPrompt },
           { role: "user", content: JSON.stringify(input) },
         ],
+      }, {
+        timeout: this.timeoutMs(operation),
       });
       this.recordProviderTiming({ operation, model: this.options.model, startedAt, status: "ok" });
       providerRecorded = true;
@@ -319,7 +322,7 @@ export class OpenAIModelGateway implements ModelGateway {
     } catch (error) {
       if (error instanceof ModelGatewayError) throw error;
       const details = providerRecorded
-        ? { operation, durationMs: Date.now() - startedAt, timeoutMs: this.timeoutMs() }
+        ? { operation, durationMs: Date.now() - startedAt, timeoutMs: this.timeoutMs(operation) }
         : this.recordProviderTiming({ operation, model: this.options.model, startedAt, status: "error", error });
       throw new ModelGatewayError("provider_error", "OpenAI JSON completion failed", error, details);
     }
@@ -343,7 +346,7 @@ export class OpenAIModelGateway implements ModelGateway {
     error?: unknown;
   }): ModelGatewayErrorDetails {
     const durationMs = Date.now() - input.startedAt;
-    const timeoutMs = this.timeoutMs();
+    const timeoutMs = this.timeoutMs(input.operation);
     const timeoutType = input.status === "error" ? classifyTimeout(input.error) : undefined;
     this.providerTimings.push({
       operation: input.operation,
@@ -362,8 +365,8 @@ export class OpenAIModelGateway implements ModelGateway {
     };
   }
 
-  private timeoutMs(): number {
-    return this.options.timeoutMs ?? 15_000;
+  private timeoutMs(operation?: ModelGatewayOperation): number {
+    return (operation ? this.options.operationTimeouts?.[operation] : undefined) ?? this.options.timeoutMs ?? 15_000;
   }
 }
 

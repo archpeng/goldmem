@@ -15,7 +15,7 @@ export class IngestOrchestrator {
     this.temporalWriter = new IngestTemporalWriter(deps);
   }
 
-  async ingestSource(source: MemorySource, traceId: string): Promise<IngestResult> {
+  async ingestSource(source: MemorySource, traceId: string, options: { includeSemanticCandidates?: boolean } = {}): Promise<IngestResult> {
     const startedAt = Date.now();
     const timings: Record<string, unknown> = {};
     try {
@@ -27,10 +27,9 @@ export class IngestOrchestrator {
       });
       timings.baseContextMs = Date.now() - baseContextStartedAt;
 
-      const semanticCandidatesStartedAt = Date.now();
-      const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext, traceId);
-      timings.semanticCandidatesMs = Date.now() - semanticCandidatesStartedAt;
-      appendProviderTimings(timings, this.deps.modelGateway);
+      const context = options.includeSemanticCandidates === false
+        ? { ...baseContext, semanticCandidateEvents: [] }
+        : await this.buildTimedIngestContextWithSemanticCandidates(source, baseContext, traceId, timings);
 
       const generateMemoryPlanStartedAt = Date.now();
       const rawPlan = await this.deps.modelGateway.generateMemoryPlan({
@@ -85,6 +84,10 @@ export class IngestOrchestrator {
       timings.applyPlan = applied.timings;
       appendProviderTimings(timings, this.deps.modelGateway);
 
+      const semanticIndexEnqueueStartedAt = Date.now();
+      const semanticIndexJobs = await this.enqueueSemanticIndexJobs(source, applied.events, traceId);
+      timings.semanticIndexEnqueueMs = Date.now() - semanticIndexEnqueueStartedAt;
+
       const temporalEnqueueStartedAt = Date.now();
       const temporalMemory = await this.temporalWriter.enqueue(source, completePlan, applied, traceId);
       timings.temporalEnqueueMs = Date.now() - temporalEnqueueStartedAt;
@@ -104,6 +107,7 @@ export class IngestOrchestrator {
             reminderIds: applied.reminderCandidates.map((reminder) => reminder.id),
             contextLinkIds: applied.contextLinks.map((link) => link.id),
             riskFlagIds: applied.riskFlags.map((riskFlag) => riskFlag.id),
+            semanticIndexJobIds: semanticIndexJobs.map((job) => job.id),
             temporalMemory,
           },
           timings,
@@ -143,6 +147,35 @@ export class IngestOrchestrator {
       });
       throw error;
     }
+  }
+
+  private async buildTimedIngestContextWithSemanticCandidates(
+    source: MemorySource,
+    baseContext: PersonalContext,
+    traceId: string,
+    timings: Record<string, unknown>,
+  ): Promise<PersonalContext> {
+    const semanticCandidatesStartedAt = Date.now();
+    const context = await this.buildIngestContextWithSemanticCandidates(source, baseContext, traceId);
+    timings.semanticCandidatesMs = Date.now() - semanticCandidatesStartedAt;
+    appendProviderTimings(timings, this.deps.modelGateway);
+    return context;
+  }
+
+  private async enqueueSemanticIndexJobs(source: MemorySource, events: IngestResult["events"], traceId: string) {
+    const jobs = [];
+    for (const event of events) {
+      jobs.push(await this.deps.memoryProcessingJobStore.enqueue({
+        type: "semantic_index_event",
+        tenantId: source.tenantId,
+        elderId: source.elderId,
+        sourceId: source.id,
+        eventId: event.id,
+        traceId,
+        payload: { eventId: event.id },
+      }));
+    }
+    return jobs;
   }
 
   private async buildIngestContextWithSemanticCandidates(source: MemorySource, context: PersonalContext, traceId: string): Promise<PersonalContext> {

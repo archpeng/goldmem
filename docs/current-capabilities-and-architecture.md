@@ -7,13 +7,14 @@
 GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 
 - 老人或家属输入文本/语音来源，系统保存原始 source 证据。
+- `/elder/turn` 的记录路径会先保存 source 并返回草稿态，完整 `MemoryPlan` 整理在后台 job 中完成。
 - 模型生成 `MemoryPlan`，Kernel 进行 schema 校验、风险约束、权限约束和确定性落库。
-- PostgreSQL 保存业务 truth：source、event、reminder、risk flag、family task、context link、feedback、audit、Graphiti retry job。
-- pgvector semantic recall index 作为低延迟召回索引，写入 PostgreSQL 派生摘要和 embedding。
+- PostgreSQL 保存业务 truth：source、event、reminder、risk flag、family task、context link、feedback、audit、memory processing job、Graphiti retry job。
+- pgvector semantic recall index 作为低延迟召回索引，后台写入 PostgreSQL 派生摘要和 embedding。
 - Graphiti 作为后台长期关系/时间记忆核心路径，通过 sidecar 写入 curated temporal episode，并通过 Postgres provenance 对齐 source/event。
 - Query 通过 PostgreSQL、pgvector semantic recall、Graphiti 合并证据后生成答案；无 evidence 时不编造答案。
 - 提醒确认、家属任务确认、风险 review 均由确定性 engine/store/API path 控制。
-- Graphiti 在 ingest 后进入后台队列；入队失败会通过 audit 和 ingest result 暴露。
+- Graphiti 在后台 ingest 后进入 temporal 队列；入队失败会通过 audit 和 ingest status 暴露。
 - Web MVP 提供中文优先的单页控制台：保存记忆、询问回忆、查看事件/提醒/家属任务、确认提醒/任务。
 
 ## 2. 模块职责
@@ -24,7 +25,7 @@ GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 | `services/api-server` | Fastify HTTP adapter、请求解析、依赖装配、健康检查 | 不能直接写业务 truth，不能绕过 Kernel 生成回答 |
 | `packages/memory-kernel` | ingest/query orchestration、guardrails、evidence fusion、audit、Graphiti episode 构建 | 不能实现通用图引擎，不能让 provider 直接裁决业务 truth |
 | `packages/memory-schema` | Zod schema 与共享领域类型 | schema 变更不能只在 adapter 层私自处理 |
-| `packages/memory-store` | PostgreSQL truth adapter、pgvector semantic recall store、Graphiti retry job store | 不能依赖 model-gateway，不能暴露 provider 内部图为业务 truth |
+| `packages/memory-store` | PostgreSQL truth adapter、memory processing job store、pgvector semantic recall store、Graphiti retry job store | 不能依赖 model-gateway，不能暴露 provider 内部图为业务 truth |
 | `packages/model-gateway` | OpenAI-compatible LLM/ASR 边界，规范化模型输出并做 schema validation | 不能写 truth，不能把 malformed answer 当成功输出 |
 | `packages/temporal-memory` | Graphiti-targeted temporal memory interface 与 adapter | 不能触发提醒/通知/权限/风险状态改变 |
 | `packages/risk-engine` | 医疗、金融、诈骗、身份、密码等确定性风险约束 | 不能依赖 prompt 作为唯一安全机制 |
@@ -88,18 +89,26 @@ sequenceDiagram
   participant Graphiti as Graphiti Sidecar
 
   Client->>API: text / voice note
-  API->>Kernel: ingestText / ingestVoice
+  API->>Kernel: /elder/turn
   Kernel->>PG: create memory_source
+  Kernel->>PG: enqueue ingest_source job
+  Kernel-->>API: draft source + queued status
+  API-->>Client: text draft / organizing state
+  Note over Kernel,PG: background memory worker claims ingest_source
+  Kernel->>PG: build base context
+  opt relation/change signal
+    Kernel->>Semantic: semantic candidate search
+  end
   Kernel->>Model: generate MemoryPlan
   Model-->>Kernel: normalized MemoryPlan
   Kernel->>Kernel: schema + risk + permission guardrails
   Kernel->>PG: create events/reminders/risk/tasks/context links
-  Kernel->>Semantic: index canonical summary embedding
+  Kernel->>PG: enqueue semantic_index_event jobs
   Kernel->>PG: decide/enqueue temporal job when relation value or safety requires it
   Kernel->>PG: audit memory_ingest with queued/not_needed/failed temporal status
-  Note over PG,Graphiti: background worker later writes curated temporal episode
-  Kernel-->>API: ingest result + temporalMemory status
-  API-->>Client: elder-facing cards / candidates
+  Note over PG,Semantic: background worker later writes canonical semantic summaries
+  Note over PG,Graphiti: temporal worker later writes curated temporal episode
+  Kernel->>PG: mark ingest status ready
 ```
 
 ### Ingest 已具备的安全特性

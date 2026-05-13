@@ -154,6 +154,27 @@ export interface PersonalContextStore {
 }
 
 export type TemporalMemoryJobStatus = "pending" | "running" | "succeeded" | "failed" | "dead";
+export type MemoryProcessingJobType = "ingest_source" | "semantic_index_event";
+export type MemoryProcessingJobStatus = "pending" | "running" | "succeeded" | "failed" | "dead";
+
+export type MemoryProcessingJob = {
+  id: string;
+  type: MemoryProcessingJobType;
+  tenantId: string;
+  elderId: string;
+  sourceId?: string;
+  eventId?: string;
+  traceId?: string;
+  status: MemoryProcessingJobStatus;
+  attempts: number;
+  maxAttempts: number;
+  nextRunAt: string;
+  lockedAt?: string;
+  lastError?: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type TemporalMemoryJob = {
   id: string;
@@ -185,6 +206,25 @@ export interface TemporalMemoryJobStore {
   markSucceeded(input: { jobId: string }): Promise<TemporalMemoryJob>;
   markFailed(input: { jobId: string; errorMessage: string; nextRunAt: string; dead: boolean }): Promise<TemporalMemoryJob>;
   stats(input?: { tenantId?: string; elderId?: string }): Promise<Record<TemporalMemoryJobStatus, number>>;
+}
+
+export interface MemoryProcessingJobStore {
+  enqueue(input: {
+    type: MemoryProcessingJobType;
+    tenantId: string;
+    elderId: string;
+    sourceId?: string;
+    eventId?: string;
+    traceId?: string;
+    payload?: Record<string, unknown>;
+    nextRunAt?: string;
+    maxAttempts?: number;
+  }): Promise<MemoryProcessingJob>;
+  claimDue(input: { now: string; limit: number; types?: MemoryProcessingJobType[] }): Promise<MemoryProcessingJob[]>;
+  getBySource(input: { tenantId: string; sourceId: string; type?: MemoryProcessingJobType }): Promise<MemoryProcessingJob | null>;
+  markSucceeded(input: { jobId: string; payload?: Record<string, unknown> }): Promise<MemoryProcessingJob>;
+  markFailed(input: { jobId: string; errorMessage: string; nextRunAt: string; dead: boolean; payload?: Record<string, unknown> }): Promise<MemoryProcessingJob>;
+  stats(input?: { tenantId?: string; elderId?: string; types?: MemoryProcessingJobType[] }): Promise<Record<MemoryProcessingJobStatus, number>>;
 }
 
 export class NullRiskFlagStore implements RiskFlagStore {

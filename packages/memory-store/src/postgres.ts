@@ -8,6 +8,7 @@ import type {
   FamilyTaskStore,
   FeedbackStore,
   DebugTraceStore,
+  MemoryProcessingJobStore,
   NotificationIntentStore,
   PersonalContextStore,
   ReminderStore,
@@ -23,6 +24,7 @@ import { PostgresFamilyReminderCommandStore } from "./postgres-family-reminder-c
 import { PostgresFamilyTaskStore } from "./postgres-family-tasks.js";
 import { PostgresFeedbackStore } from "./postgres-feedback.js";
 import { PostgresDebugTraceStore } from "./postgres-debug-traces.js";
+import { PostgresMemoryProcessingJobStore } from "./postgres-memory-processing-jobs.js";
 import { PostgresNotificationIntentStore } from "./postgres-notification-intents.js";
 import { PostgresPersonalContextStore } from "./postgres-read-models.js";
 import { PostgresReminderStore } from "./postgres-reminders.js";
@@ -51,6 +53,7 @@ export type PostgresStores = {
   personalContextStore: PersonalContextStore;
   auditLog: AuditLog;
   temporalMemoryJobStore: TemporalMemoryJobStore;
+  memoryProcessingJobStore: MemoryProcessingJobStore;
   semanticMemoryStore: SemanticMemoryStore;
   close(): Promise<void>;
 };
@@ -75,6 +78,7 @@ export function createPostgresStores(options: PostgresStoreOptions): PostgresSto
     personalContextStore: new PostgresPersonalContextStore(db),
     auditLog: new PostgresAuditLog(db),
     temporalMemoryJobStore: new PostgresTemporalMemoryJobStore(db),
+    memoryProcessingJobStore: new PostgresMemoryProcessingJobStore(db),
     semanticMemoryStore: new PostgresSemanticMemoryStore(pool),
     close: () => pool.end(),
   };

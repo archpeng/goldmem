@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
-import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, IngestStatus, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 describe("api-server", () => {
   it("handles elder turn, reminder list, and family task endpoints", async () => {
@@ -24,7 +24,14 @@ describe("api-server", () => {
     });
     expect(recordTurn.statusCode).toBe(200);
     expect(recordTurn.json().turnType).toBe("record");
-    expect(recordTurn.json().ingestResult.sourceId).toBe("source-1");
+    expect(recordTurn.json().draft.sourceId).toBe("source-1");
+
+    const ingestStatus = await server.inject({
+      method: "GET",
+      url: "/elder/sources/source-1/ingest-status",
+    });
+    expect(ingestStatus.statusCode).toBe(200);
+    expect(ingestStatus.json().status).toBe("ready");
 
     const recallTurn = await server.inject({
       method: "POST",
@@ -250,17 +257,22 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         return {
           traceId: "trace-turn-ingest",
           turnType: "record",
-          message: "我帮你记住了。",
-          ingestResult: {
-            traceId: "trace-ingest",
+          message: "我先记下这句话，正在整理提醒。",
+          draft: {
             sourceId: "source-1",
-            summary: "Summary",
-            events: [],
-            reminderCandidates: [],
-            elderFacingCards: [],
+            transcript: input.text,
+            status: "queued",
+            createdAt: "2026-05-09T12:00:00.000Z",
           },
         };
       },
+      getIngestStatus: async (): Promise<IngestStatus> => ({
+        sourceId: "source-1",
+        status: "ready",
+        summary: "Summary",
+        eventIds: ["event-1"],
+        reminderIds: ["reminder-1"],
+      }),
       createFamilyReminder: async (input) => {
         auditRecords.push({ type: "family_reminder_created" });
         return {
@@ -276,6 +288,14 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
           confidence: 1,
           reason: input.reason,
           idempotencyKey: input.idempotencyKey,
+          createdAt: "2026-05-09T12:00:00.000Z",
+        };
+      },
+      createFeedback: async (input): Promise<Feedback> => {
+        auditRecords.push({ type: "feedback_created" });
+        return {
+          ...input,
+          id: "feedback-1",
           createdAt: "2026-05-09T12:00:00.000Z",
         };
       },
@@ -335,21 +355,6 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         confirmedBy: input.actorUserId,
         confirmedAt: "2026-05-09T12:01:00.000Z",
       }),
-    },
-    feedbackStore: {
-      create: async (input) => {
-        const feedback: Feedback = {
-          ...input,
-          id: "feedback-1",
-          createdAt: "2026-05-09T12:00:00.000Z",
-        };
-        return feedback;
-      },
-    },
-    auditLog: {
-      record: async (input) => {
-        auditRecords.push(input);
-      },
     },
     debugTraceStore: {
       getByTrace: async () => debugTrace,

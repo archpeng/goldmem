@@ -187,6 +187,25 @@ export const temporalMemoryJobs = pgTable("temporal_memory_jobs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const memoryProcessingJobs = pgTable("memory_processing_jobs", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  tenantId: text("tenant_id").notNull(),
+  elderId: text("elder_id").notNull(),
+  sourceId: text("source_id"),
+  eventId: text("event_id"),
+  traceId: text("trace_id"),
+  status: text("status").notNull(),
+  attempts: real("attempts").notNull().default(0),
+  maxAttempts: real("max_attempts").notNull().default(5),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull().defaultNow(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  payload: jsonb("payload_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const familyReminderCommands = pgTable("family_reminder_commands", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),

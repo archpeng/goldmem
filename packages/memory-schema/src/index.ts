@@ -449,6 +449,7 @@ export const ElderTurnPlanSchema = z.object({
   recordText: z.string().min(1).optional(),
   queryText: z.string().min(1).optional(),
   clarifyingQuestion: z.string().min(1).optional(),
+  requiresIngestContextRecall: z.boolean().default(false),
 });
 export type ElderTurnPlan = z.infer<typeof ElderTurnPlanSchema>;
 
@@ -462,10 +463,40 @@ export const ElderTurnRequestSchema = z.object({
 });
 export type ElderTurnRequest = z.infer<typeof ElderTurnRequestSchema>;
 
+export const IngestDraftSchema = z.object({
+  sourceId: z.string().min(1),
+  transcript: z.string().min(1),
+  status: z.enum(["queued", "processing", "ready", "failed"]),
+  createdAt: ISODateTimeSchema,
+  processingJobId: z.string().min(1).optional(),
+});
+export type IngestDraft = z.infer<typeof IngestDraftSchema>;
+
+export const IngestStatusSchema = z.object({
+  sourceId: z.string().min(1),
+  status: z.enum(["queued", "processing", "ready", "failed"]),
+  traceId: z.string().min(1).optional(),
+  summary: z.string().min(1).optional(),
+  eventIds: z.array(z.string().min(1)).default([]),
+  reminderIds: z.array(z.string().min(1)).default([]),
+  temporalMemory: z
+    .object({
+      status: z.enum(["queued", "not_needed", "failed"]),
+      errorCode: z.enum(["graphiti_enqueue_failed"]).optional(),
+      errorMessage: z.string().optional(),
+      enqueueReason: z.enum(["hard_risk", "hard_context_link", "hard_family_task", "model_relation_signal", "not_needed"]).optional(),
+      relationSignalIntents: z.array(RelationEnrichmentIntentSchema).optional(),
+    })
+    .optional(),
+  errorMessage: z.string().optional(),
+});
+export type IngestStatus = z.infer<typeof IngestStatusSchema>;
+
 export const ElderTurnResultSchema = z.object({
   traceId: z.string().min(1),
   turnType: ElderTurnIntentSchema,
   message: z.string().min(1),
+  draft: IngestDraftSchema.optional(),
   ingestResult: z
     .object({
       traceId: z.string().min(1),

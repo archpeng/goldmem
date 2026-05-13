@@ -28,8 +28,8 @@ Evals prevent regression.
 - `apps/web-mvp` is the first user-facing surface.
 - It is a React + Tailwind CSS + shadcn-style single-page MVP.
 - It uses Simplified Chinese by default.
-- It supports text memory capture, memory event display, reminder confirmation, fuzzy recall, and family task confirmation.
-- It does not implement authentication, production scheduling, mobile UI, or voice UX yet.
+- It supports text and voice-assisted memory capture, mobile task display, reminder confirmation, fuzzy recall, and family task confirmation.
+- It does not implement authentication, production scheduling, native mobile packaging, or production voice/ASR hardening yet.
 
 ## Runtime Flow
 
@@ -38,15 +38,19 @@ Evals prevent regression.
 ```text
 Web/API text input
   -> Fastify route
+  -> lightweight turn plan
   -> Kernel creates source
-  -> personal context
-  -> model-gateway generateMemoryPlan
+  -> enqueue memory processing job
+  -> draft response
+  -> background MemoryPlan processing
+  -> optional semantic candidate search when turn plan requests old-memory context
   -> Zod validation and gateway normalization
   -> risk-engine
   -> permission-engine
   -> PostgreSQL events/reminders/risk/family/audit
-  -> pgvector semantic recall index write
-  -> elder-facing result
+  -> enqueue pgvector semantic recall index write
+  -> enqueue Graphiti temporal job when relation value or safety requires it
+  -> ingest status ready
 ```
 
 ### Recall
@@ -75,7 +79,7 @@ Recall uses broad candidate retrieval plus ranking.
 - Pgvector semantic recall returns low-latency candidate memories from PostgreSQL-derived summaries. Its results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
 - Graphiti search is triggered by structured query fields (`requiresTemporalEvidence`, `relationQueryIntent`, or safety tags), not by query keyword lists.
 - PostgreSQL context links are persisted relationship candidates for ingest/debug/reminder support; query answers do not automatically expand them into evidence.
-- During ingest, semantic recall results may supply candidate PostgreSQL event IDs for context-link proposal. Provider-owned relation output is ignored as GoldMem truth.
+- During background ingest, semantic recall results may supply candidate PostgreSQL event IDs for context-link proposal only when the turn plan requests old-memory context. Provider-owned relation output is ignored as GoldMem truth.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.
@@ -94,6 +98,7 @@ Authoritative state:
 - family tasks
 - feedback
 - audit logs
+- memory processing jobs
 
 PostgreSQL must be sufficient to reconstruct business truth.
 
