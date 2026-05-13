@@ -21,16 +21,26 @@ const EvidenceSourceSchema = z.enum(["postgres", "semantic", "context_link", "gr
 const GraphitiComparisonFixtureSchema = z.object({
   version: z.number(),
   description: z.string().optional(),
+  profiles: z.array(z.object({
+    id: z.string().min(1),
+    description: z.string().optional(),
+  })).default([]),
   minRawGraphitiQueries: z.number().int().nonnegative().default(3),
-  seedNotes: z.array(z.object({ id: z.string(), transcript: z.string().min(1) })),
+  seedNotes: z.array(z.object({
+    id: z.string(),
+    profile: z.string().min(1).optional(),
+    transcript: z.string().min(1),
+  })),
   queries: z.array(z.object({
     id: z.string(),
+    profile: z.string().min(1).optional(),
     query: z.string().min(1),
     expectedAnswerHints: z.array(z.string().min(1)).default([]),
     expectedAnswerAnyHints: z.array(z.array(z.string().min(1)).min(1)).default([]),
     expectedEvidenceHints: z.array(z.string().min(1)).default([]),
     forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
     forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
+    disabledForbiddenAnswerHints: z.array(z.string().min(1)).default([]),
     semanticAnswerExpectations: z.array(z.string().min(1)).default([]),
     semanticAnswerForbiddenClaims: z.array(z.string().min(1)).default([]),
     enabledExpectedEvidenceSources: z.array(EvidenceSourceSchema).default(["graphiti"]),
@@ -38,7 +48,7 @@ const GraphitiComparisonFixtureSchema = z.object({
   })),
   riskExpectations: z.array(z.object({
     seedNoteId: z.string(),
-    eventRiskLevel: z.string(),
+    eventRiskLevels: z.array(z.string().min(1)).min(1),
     familyTaskType: z.string(),
   })).default([]),
   reminderExpectations: z.array(z.object({
@@ -67,6 +77,9 @@ const graphitiBaseUrl = requiredEnv("GRAPHITI_BASE_URL");
 const fixturePath = process.env.GRAPHITI_E2E_FIXTURE ?? join(process.cwd(), "e2e", "golden-graphiti-core.json");
 const requestTimeoutMs = Number(process.env.GRAPHITI_E2E_TIMEOUT_MS ?? 600_000);
 const modelRetries = Number(process.env.GRAPHITI_E2E_MODEL_RETRIES ?? process.env.GRAPHITI_E2E_PROVIDER_RETRIES ?? 2);
+const ingestReadyTimeoutMs = Number(process.env.GRAPHITI_E2E_INGEST_READY_TIMEOUT_MS ?? 300_000);
+const memoryProcessingIdleTimeoutMs = Number(process.env.GRAPHITI_E2E_MEMORY_IDLE_TIMEOUT_MS ?? 300_000);
+const profileConcurrency = Math.max(1, Number(process.env.GRAPHITI_E2E_PROFILE_CONCURRENCY ?? 1));
 const graphitiDrainBatches = Number(process.env.GRAPHITI_E2E_DRAIN_BATCHES ?? 20);
 const graphitiDrainBatchSize = Number(process.env.GRAPHITI_E2E_DRAIN_BATCH_SIZE ?? 20);
 const graphitiSearchSettleMs = Number(process.env.GRAPHITI_E2E_SEARCH_SETTLE_MS ?? 1000);
@@ -106,14 +119,18 @@ console.log(JSON.stringify({
     const disabled = disabledRun.queryReports.find((item) => item.id === enabled.id);
     return {
       id: enabled.id,
+      profile: enabled.profile,
       enabledSources: enabled.sources,
       disabledSources: disabled?.sources ?? [],
       graphitiRawAlignedCount: enabled.retrieval?.graphitiRawAlignedCount ?? 0,
       graphitiProvenanceAlignedCount: enabled.retrieval?.graphitiProvenanceAlignedCount ?? 0,
+      enabledDurationMs: enabled.durationMs,
+      disabledDurationMs: disabled?.durationMs,
       enabledAnswer: enabled.answerText,
       disabledAnswer: disabled?.answerText,
     };
   }),
+  profiles: summarizeProfiles(enabledRun, disabledRun),
   failures,
 }, null, 2));
 
@@ -135,16 +152,7 @@ async function runApiScenario(input: {
   }
 
   const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();
-  for (const note of fixture.seedNotes) {
-    console.log(`[${input.label}] seed start: ${note.id}`);
-    const result = await withModelRetry(`[${input.label}] seed ${note.id}`, () => ingestNote(input.baseUrl, input.elderId, note.transcript));
-    assert(result.events.length > 0 || result.reminderCandidates.length > 0, `[${input.label}] seed ${note.id} produced no records`);
-    if (input.requireGraphitiWrites) {
-      assert(result.temporalMemory?.status === "queued" || result.temporalMemory?.status === "not_needed", `[${input.label}] seed ${note.id} returned invalid temporal memory status`);
-    }
-    ingests.set(note.id, result);
-    console.log(`[${input.label}] seed ok: ${note.id} source=${result.sourceId} events=${result.events.length} reminders=${result.reminderCandidates.length} temporal=${result.temporalMemory?.status ?? "none"}`);
-  }
+  await seedNotesByProfile(input, ingests);
 
   await waitForMemoryProcessingIdle(input.baseUrl);
   if (input.requireGraphitiWrites) await drainGraphitiJobs(input.label);
@@ -153,6 +161,7 @@ async function runApiScenario(input: {
   const events = await request<MemoryEvent[]>(input.baseUrl, "GET", `/elder/events?${tenantQuery}`);
   const reminders = await request<Reminder[]>(input.baseUrl, "GET", `/elder/reminders?${tenantQuery}`);
   const familyTasks = await request<FamilyAssistTask[]>(input.baseUrl, "GET", `/family/elders/${encodeURIComponent(input.elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}&actorUserId=graphiti-family`);
+  assertFamilyAssistPrivacy(input.label, familyTasks);
   assertScenarioExpectations(input.label, ingests, reminders, familyTasks);
 
   const queryReports = [];
@@ -163,6 +172,7 @@ async function runApiScenario(input: {
   for (const queryCase of fixture.queries) {
     try {
       console.log(`[${input.label}] query start: ${queryCase.id}`);
+      const startedAt = Date.now();
       const turn = await withModelRetry(`[${input.label}] query ${queryCase.id}`, () =>
         request<{ traceId: string; answer?: unknown }>(input.baseUrl, "POST", "/elder/turn", {
           tenantId,
@@ -211,15 +221,20 @@ async function runApiScenario(input: {
       } else {
         assert(!hasTemporalEvidence, `[${input.label}] ${queryCase.id} returned Graphiti evidence while Graphiti is disabled`);
         assert((retrieval?.graphitiCount ?? 0) === 0, `[${input.label}] ${queryCase.id} debug retrieval has graphitiCount=${String(retrieval?.graphitiCount)}`);
+        for (const hint of queryCase.disabledForbiddenAnswerHints) {
+          assert(!textIncludes(answerText, hint), `[${input.label}] ${queryCase.id} disabled answer contained forbidden hint: ${hint}`);
+        }
       }
 
       queryReports.push({
         id: queryCase.id,
+        profile: queryCase.profile ?? "default",
         answerText: answer.answerText,
         confidence: answer.confidence,
         sources,
         retrieval,
         timings: extractTimings(debugTrace.auditTrail),
+        durationMs: Date.now() - startedAt,
       });
       console.log(`[${input.label}] query ok: ${queryCase.id} confidence=${answer.confidence} sources=${sources.join(",")}`);
     } catch (error) {
@@ -243,7 +258,49 @@ async function runApiScenario(input: {
   };
 }
 
+async function seedNotesByProfile(
+  input: {
+    label: string;
+    baseUrl: string;
+    elderId: string;
+    requireGraphitiWrites: boolean;
+  },
+  ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>,
+): Promise<void> {
+  const groups = groupSeedNotes();
+  let cursor = 0;
+  const workerCount = Math.min(profileConcurrency, groups.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < groups.length) {
+      const group = groups[cursor++];
+      if (!group) return;
+      for (const note of group.notes) {
+        console.log(`[${input.label}] seed start: ${note.id}`);
+        const result = await withModelRetry(`[${input.label}] seed ${note.id}`, () => ingestNote(input.baseUrl, input.elderId, note.transcript));
+        assert(result.events.length > 0 || result.reminderCandidates.length > 0, `[${input.label}] seed ${note.id} produced no records`);
+        if (input.requireGraphitiWrites) {
+          assert(result.temporalMemory?.status === "queued" || result.temporalMemory?.status === "not_needed", `[${input.label}] seed ${note.id} returned invalid temporal memory status`);
+        }
+        ingests.set(note.id, result);
+        console.log(`[${input.label}] seed ok: ${note.id} source=${result.sourceId} events=${result.events.length} reminders=${result.reminderCandidates.length} temporal=${result.temporalMemory?.status ?? "none"} submitMs=${result.submitMs} readyMs=${result.readyMs}`);
+      }
+    }
+  }));
+}
+
+function groupSeedNotes(): Array<{ profile: string; notes: typeof fixture.seedNotes }> {
+  const groups = new Map<string, typeof fixture.seedNotes>();
+  for (const note of fixture.seedNotes) {
+    const profile = note.profile ?? "default";
+    const group = groups.get(profile) ?? [];
+    group.push(note);
+    groups.set(profile, group);
+  }
+  return [...groups.entries()].map(([profile, notes]) => ({ profile, notes }));
+}
+
 async function ingestNote(baseUrl: string, elderId: string, transcript: string) {
+  const startedAt = Date.now();
   const turn = await request<{
     draft?: {
       sourceId: string;
@@ -254,9 +311,12 @@ async function ingestNote(baseUrl: string, elderId: string, transcript: string) 
     tenantId,
     elderId,
     text: transcript,
+    clientTurnId: `graphiti-e2e-${elderId}-${Math.random().toString(36).slice(2)}`,
   });
   if (!turn.draft) throw new Error("Elder turn did not return draft for seed note");
+  const submitMs = Date.now() - startedAt;
   const status = await waitForIngestReady(baseUrl, turn.draft.sourceId);
+  const readyMs = Date.now() - startedAt;
   const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
   const events = (await request<MemoryEvent[]>(baseUrl, "GET", `/elder/events?${tenantQuery}`)).filter((event) => event.sourceId === turn.draft?.sourceId);
   const reminders = (await request<Reminder[]>(baseUrl, "GET", `/elder/reminders?${tenantQuery}`)).filter((reminder) => reminder.sourceId === turn.draft?.sourceId);
@@ -267,11 +327,14 @@ async function ingestNote(baseUrl: string, elderId: string, transcript: string) 
     events,
     reminderCandidates: reminders,
     temporalMemory: status.temporalMemory,
+    submitMs,
+    readyMs,
   };
 }
 
 async function waitForIngestReady(baseUrl: string, sourceId: string) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  const deadline = Date.now() + ingestReadyTimeoutMs;
+  while (Date.now() < deadline) {
     const status = await request<{
       sourceId: string;
       status: "queued" | "processing" | "ready" | "failed";
@@ -284,11 +347,12 @@ async function waitForIngestReady(baseUrl: string, sourceId: string) {
     if (status.status === "failed") throw new Error(`Seed ingest failed: ${status.errorMessage ?? "unknown"}`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  throw new Error(`Seed ingest did not become ready: ${sourceId}`);
+  throw new Error(`Seed ingest did not become ready within ${ingestReadyTimeoutMs}ms: ${sourceId}`);
 }
 
 async function waitForMemoryProcessingIdle(baseUrl: string): Promise<void> {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  const deadline = Date.now() + memoryProcessingIdleTimeoutMs;
+  while (Date.now() < deadline) {
     const health = await request<{ memoryProcessingJobs?: Record<string, number> }>(baseUrl, "GET", "/health");
     const stats = health.memoryProcessingJobs;
     if (!stats) return;
@@ -297,7 +361,7 @@ async function waitForMemoryProcessingIdle(baseUrl: string): Promise<void> {
     if (active === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  throw new Error("Memory processing jobs did not become idle");
+  throw new Error(`Memory processing jobs did not become idle within ${memoryProcessingIdleTimeoutMs}ms`);
 }
 
 async function drainGraphitiJobs(label: string): Promise<void> {
@@ -365,8 +429,8 @@ function assertScenarioExpectations(
   for (const expectation of fixture.riskExpectations) {
     const ingest = requiredIngest(ingests, expectation.seedNoteId);
     assert(
-      ingest.events.some((event) => event.riskLevel === expectation.eventRiskLevel),
-      `[${label}] expected ${expectation.seedNoteId} to create risk level ${expectation.eventRiskLevel}`,
+      ingest.events.some((event) => expectation.eventRiskLevels.includes(event.riskLevel)),
+      `[${label}] expected ${expectation.seedNoteId} to create one of risk levels ${expectation.eventRiskLevels.join(",")}`,
     );
     assert(
       familyTasks.some((task) => task.type === expectation.familyTaskType),
@@ -495,7 +559,48 @@ function summarizeRun(run: Awaited<ReturnType<typeof runApiScenario>>) {
     familyTasks: run.familyTasks,
     rawGraphitiQueryCount: run.rawGraphitiQueryCount,
     temporalEvidenceQueryCount: run.temporalEvidenceQueryCount,
+    queryDurationP95Ms: p95(run.queryReports.map((report) => report.durationMs)),
   };
+}
+
+function summarizeProfiles(
+  enabled: Awaited<ReturnType<typeof runApiScenario>>,
+  disabled: Awaited<ReturnType<typeof runApiScenario>>,
+) {
+  const profiles = new Set([
+    ...fixture.profiles.map((profile) => profile.id),
+    ...enabled.queryReports.map((report) => report.profile),
+    ...disabled.queryReports.map((report) => report.profile),
+  ]);
+  return [...profiles].sort().map((profile) => {
+    const enabledReports = enabled.queryReports.filter((report) => report.profile === profile);
+    const disabledReports = disabled.queryReports.filter((report) => report.profile === profile);
+    return {
+      profile,
+      queries: enabledReports.length,
+      enabledTemporalEvidenceQueries: enabledReports.filter((report) => report.sources.includes("graphiti") || report.sources.includes("graphiti_provenance")).length,
+      disabledTemporalEvidenceQueries: disabledReports.filter((report) => report.sources.includes("graphiti") || report.sources.includes("graphiti_provenance")).length,
+      enabledQueryP95Ms: p95(enabledReports.map((report) => report.durationMs)),
+      disabledQueryP95Ms: p95(disabledReports.map((report) => report.durationMs)),
+    };
+  });
+}
+
+function assertFamilyAssistPrivacy(label: string, tasks: FamilyAssistTask[]): void {
+  const allowedKeys = new Set(["id", "title", "summary", "type", "urgency", "status", "visibility", "createdAt"]);
+  const forbiddenText = /raw_transcript|raw transcript|audioUrl|audio_url|fullEvidence|full evidence|debugTrace|debug trace|sourceId|eventId/i;
+  for (const task of tasks) {
+    for (const key of Object.keys(task as Record<string, unknown>)) {
+      assert(allowedKeys.has(key), `[${label}] family assist task leaked field ${key}`);
+    }
+    assert(!forbiddenText.test(JSON.stringify(task)), `[${label}] family assist task leaked raw/debug/evidence marker`);
+  }
+}
+
+function p95(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
 }
 
 function createSemanticJudge() {

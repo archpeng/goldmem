@@ -5,11 +5,13 @@ import { runGraphitiRetryBatch } from "./graphiti-retry.js";
 const databaseUrl = requiredEnv("DATABASE_URL");
 const graphitiBaseUrl = requiredEnv("GRAPHITI_BASE_URL");
 const batchSize = Number(process.env.GRAPHITI_REPLAY_BATCH_SIZE ?? 10);
+const timeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 60_000);
 
 const postgres = createPostgresStores({ databaseUrl });
 const temporalMemory = new GraphitiTemporalMemoryStore({
   baseUrl: graphitiBaseUrl,
   apiKey: process.env.GRAPHITI_API_KEY,
+  timeoutMs,
 });
 
 try {

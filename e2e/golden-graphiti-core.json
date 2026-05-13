@@ -122,12 +122,12 @@
   "riskExpectations": [
     {
       "seedNoteId": "medication-changed",
-      "eventRiskLevel": "medical",
+      "eventRiskLevels": ["medical"],
       "familyTaskType": "risk_review"
     },
     {
       "seedNoteId": "fraud-first-contact",
-      "eventRiskLevel": "fraud_risk",
+      "eventRiskLevels": ["fraud_risk"],
       "familyTaskType": "risk_review"
     }
   ],

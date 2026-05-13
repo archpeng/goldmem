@@ -2,7 +2,7 @@
 
 This roadmap series defines the medium-to-long-term technical direction for GoldMem after the initial MVP.
 
-The key architectural decision is to stop treating PostgreSQL as the long-term memory engine. PostgreSQL remains the source of truth for business state and raw evidence. Graphiti is the production target and source of truth for long-term relational memory. semantic recall index remains the short-to-medium-term multilingual recall layer.
+The key architectural decision is to stop treating PostgreSQL as the only memory layer. PostgreSQL remains the source of truth for business state, raw evidence, permissions, and audit. Graphiti is the production temporal relationship memory layer. semantic recall index remains the short-to-medium-term multilingual recall layer.
 
 ## Document series
 
@@ -17,13 +17,16 @@ The key architectural decision is to stop treating PostgreSQL as the long-term m
 9. [Production Graphiti Plan Pack](./09-production-graphiti-plan-pack.md)
 10. [Mobile Elder AI-Native Roadmap](./10-mobile-elder-ai-native-roadmap.md)
 11. [Graphiti Background Relation Roadmap](./16-graphiti-background-relation-roadmap.md)
+12. [Long-Term Understanding Gap Roadmap](./17-long-term-understanding-gap-roadmap.md)
+13. [Validation Acceleration E2E Roadmap](./18-validation-acceleration-e2e-roadmap.md)
+14. [Graphiti Density E2E Run Report](./19-graphiti-density-e2e-run-report.md)
 
 ## One-line direction
 
 ```text
 PostgreSQL = business/source truth
 semantic recall index = semantic recall / short-to-medium memory
-Graphiti = long-term relational memory truth
+Graphiti = long-term temporal relationship evidence
 GoldMem Kernel = care orchestration, guardrails, policy, scheduling, and evidence fusion
 ```
 

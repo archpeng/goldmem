@@ -1,148 +1,1395 @@
 # GoldMem Roadmap
 
-本文件是中文总览。权威的分阶段路线以 `docs/roadmap/*` 为准，尤其是
-`docs/roadmap/09-production-graphiti-plan-pack.md`。
+本文件是 GoldMem 当前业务与产品路线总览。详细工程方案仍以 `docs/roadmap/*` 为准；本文件用于统一产品定位、阶段顺序和验收重点。
 
-GoldMem 的目标不是“老人语音备忘录”，而是一个多租户、证据绑定、可持续整理的老人照护记忆系统。
+## 1. 产品定位
 
-核心路线：
+GoldMem 不是“老人监控系统”，也不是普通智能备忘录。
+
+核心定位：
 
 ```text
-PostgreSQL / Citus-ready = 业务、证据、权限、审计 truth
-pgvector semantic recall index = 中短期低延迟候选召回
-Graphiti = 长期关系记忆 truth
-Memory Kernel = 编排、安全裁决、证据融合、业务动作控制
-Nightly Consolidation + Eval = 数据飞轮
+老人本人主权的 AI 生活记忆秘书
 ```
 
-## 当前代码基线
+产品承诺：
 
-当前代码已经具备第一版 Memory Kernel MVP：
+```text
+你说过的事，我帮你记住。
+事情变来变去，我帮你理清。
+有风险时，我只在必要范围内帮你找人确认。
+```
 
-- `packages/memory-schema` 定义 MemoryPlan、source、event、reminder、risk、family task、context link、answer 等 domain schema。
-- `packages/memory-kernel` 负责 ingest、MemoryPlan validation、risk/permission/reminder guardrails、PostgreSQL persistence、semantic recall index write、recall evidence merge。
-- `packages/memory-store` 提供 PostgreSQL truth adapter 和 pgvector semantic recall store。
-- `packages/model-gateway` 提供 OpenAI-compatible MemoryPlan/query/answer boundary。
-- `packages/temporal-memory` 已建立 Graphiti 目标接口和 Null store。
-- `services/api-server` 提供 thin Fastify API。
-- `apps/web-mvp` 是中文优先的单页 Web MVP。
-- `evals` 和 `e2e/*` 已覆盖 recall、risk、context link 和 semantic recall index evidence boundary。
+因此产品重心是老人端。家人端只作为最小协助通道，不做完整 dashboard，不做全量记录流，不做“今天老人说了什么”，不做轨迹式监控。
 
-已经成立的原则：
+## 2. 核心战略
+
+GoldMem 的长期价值来自三层能力：
+
+| 层级 | 产品价值 | 业务意义 |
+|---|---|---|
+| 即时记住 | 任务、提醒、日常事项立刻保存 | 高频入口，建立使用习惯 |
+| 长期理清 | 改期、用药、复查、人物关系、风险演化 | 区别于普通备忘录，形成黏性 |
+| 必要协助 | 高风险或待确认事项才找家人 | 保留安全价值，同时保护尊严 |
+
+一句话：
+
+```text
+老人端负责日常使用和信任。
+Graphiti 负责长期差异化。
+家人端只负责必要协助。
+```
+
+## 3. 当前能力基线
+
+当前代码已经具备老人端 MVP 的主要后端和前端基础：
+
+- `apps/web-mvp`：移动优先老人端任务列表，语音/文字统一输入，草稿态展示，提醒确认。
+- `services/api-server`：thin Fastify API，只做请求解析和 Kernel 调用。
+- `packages/memory-kernel`：source ingest、MemoryPlan validation、guardrails、persistence、recall、evidence merge、audit。
+- `packages/memory-store`：PostgreSQL truth adapter、pgvector semantic recall index、processing job、temporal job。
+- `packages/model-gateway`：OpenAI-compatible LLM/ASR/embedding boundary，Zod-normalized outputs。
+- `packages/temporal-memory`：Graphiti temporal memory interface 和 adapter。
+- `packages/permission-engine`：默认 private、family_required、shared_summary 等可见性约束。
+- `packages/risk-engine`：医疗、用药、金融、诈骗、身份、验证码等 deterministic safety guardrails。
+
+已经成立的架构原则：
 
 - LLM 理解，Kernel 约束。
-- PostgreSQL 是业务和证据 truth。
-- pgvector semantic recall index 负责语义候选召回，不做事实裁决。
-- Graphiti 负责长期关系记忆，不触发业务动作。
+- PostgreSQL 是业务、证据、权限、审计 truth。
+- pgvector semantic recall index 只做语义候选召回。
+- Graphiti 做长期关系/时间记忆，不触发业务动作。
 - Recall answer 必须 evidence-bound。
-- Context links 是 MVP 轻量关系线索，不是最终长期事实图。
+- 家人端只能看到最小必要摘要，不能看到 raw transcript/audio/full evidence。
 - 中文是默认产品语言。
 
-## 分层职责
+## 4. 目标架构
+
+```text
+Elder Web
+  -> /elder/turn
+  -> Kernel
+  -> PostgreSQL truth
+  -> pgvector semantic recall index
+  -> Graphiti temporal relationship memory
+  -> evidence-bound answer / reminder state / audit
+
+Family Assist
+  -> pending assist tasks only
+  -> Kernel filtered summary DTO
+  -> audit
+```
 
 ### PostgreSQL
 
-PostgreSQL 持有确定性的业务和证据状态：
+PostgreSQL 持有确定性的业务状态：
 
-- tenants / users / elder ownership
-- sources / events
+- sources
+- events
 - reminders
 - risk flags
-- family tasks
+- family assist tasks
 - context links
 - feedback
 - audit logs
-- export/delete/RLS/Citus-ready tenant boundary
+- memory processing jobs
+- temporal memory jobs
+- semantic recall index rows
 
-PostgreSQL 不再承担“自建完整长期事实图”的终局职责。它仍然是所有业务动作、权限、安全和证据回查的硬依赖。
+PostgreSQL 不承担完整长期关系图谱的终局职责，但所有业务动作、权限、安全和证据回查都必须以 PostgreSQL 为准。
 
-### Pgvector semantic recall index
+### Pgvector
 
-pgvector semantic recall index 是中短期多语言候选召回层。GoldMem 使用它的：
+Pgvector 是中短期语义召回层：
 
-- semantic search
-- source/event aligned candidate lookup
-
-但 semantic recall index 输出只能作为 candidate 和 ranking signal，不能成为 GoldMem truth。
-
-中文策略：
-
-- OpenAI embedding 路径可以支持中文语义召回。
-- 不应让 semantic recall index 直接裁决事实。
-- canonical event memory 写入 metadata 必须带 `tenantId/sourceId/eventId`。
-- recall 结果必须回查 PostgreSQL，final evidence 优先来自 PostgreSQL 记录或 PostgreSQL-derived metadata。
+- 帮助查找可能相关的旧事件。
+- 提供 semantic candidate。
+- metadata 必须能对齐 `tenantId/elderId/sourceId/eventId/summary`。
+- final evidence 只能来自 PostgreSQL-derived metadata 或 PostgreSQL records。
 
 ### Graphiti
 
-Graphiti 是长期关系记忆 truth 的目标生产链路，负责：
+Graphiti 是长期关系记忆层：
 
-- entities
-- relationships
-- temporal facts
-- validity windows
-- supersession
-- relationship history
-- source/episode provenance
+- 事实变化链。
+- 复查/用药/预约生命周期。
+- 人、地点、事项之间的长期关系。
+- 风险演化链。
+- “后来改了吗 / 现在哪个说法有效 / 和哪件事有关”类查询。
 
-Graphiti 不能替代 PostgreSQL 的业务 truth，也不能直接调度提醒、通知家人、改变权限、确认风险或写业务状态。所有用户可见答案和业务动作仍由 Kernel 融合证据后裁决。
+Graphiti 不直接写业务 truth，不确认提醒，不通知家人，不改变权限。
 
 ### Kernel
 
-Kernel 是唯一编排层，负责：
+Kernel 是唯一编排层：
 
-- MemoryPlan 校验
-- risk / permission / reminder guardrails
-- PostgreSQL writes
-- semantic recall index write/search
-- Graphiti episode write/search
-- evidence alignment and ranking
-- no-evidence no-answer
-- high-risk uncertainty
-- audit
+- 解析 turn intent。
+- 创建 source 草稿。
+- 后台生成 MemoryPlan。
+- 执行 risk / permission / reminder guardrails。
+- 写 PostgreSQL truth。
+- 写 semantic recall index。
+- 决定是否 enqueue Graphiti。
+- 查询时融合 PostgreSQL、pgvector、Graphiti evidence。
+- 无 evidence 不回答。
+- 记录 audit。
 
-API routes 和前端必须保持 thin，不能复制后端规则，也不能直接调用 semantic recall index 或 Graphiti。
+## 5. 阶段路线
 
-## 推进顺序
+### M1: 老人端任务体验打磨
+
+目标：让老人每天愿意用。
+
+交互哲学：
 
 ```text
-1. 修复当前验证问题，确保 pnpm mvp:verify 绿色。
-2. 统一文档方向，以 docs/roadmap/* 为主路线。
-3. 补 tenantId 全链路，所有 store/API/backend call 都 tenant-aware。
-4. 实现 GraphitiTemporalMemoryStore HTTP adapter。
-5. Graphiti 写入进入 ingest 生产链路。
-6. Graphiti evidence 进入 queryMemory。
-7. 建立 Graphiti production golden cases。
-8. Nightly Consolidation 强化 Graphiti 长期记忆。
-9. Admin debugger / eval flywheel。
+不要表现得像 AI 工具。
+要表现得像可靠、克制、站在使用者这边的生活秘书。
 ```
 
-## 验收原则
+重点：
 
-- Graphiti 可以成为长期关系记忆 truth，但 PostgreSQL 仍是业务、证据、权限和审计 truth。
-- Graphiti 失败不能腐蚀 PostgreSQL truth。
-- Graphiti evidence 必须携带 `tenantId/elderId/groupId/sourceId/eventId/episodeId` 等可对齐元数据。
-- 高风险回答必须保留不确定性和证据来源。
-- 每个生产链路能力都必须有 golden case，不用等待大批量 case 才接入，但不能无验证接入。
+- 说一句话即可生成草稿。
+- 语音输入后先显示文字草稿，不等模型。
+- 后台整理完成后变成正式任务卡。
+- 任务列表保持移动端优先，高信息密度，黑白简洁。
+- 提醒确认尽量少步骤。
+- 统一第二人称“贴身秘书”语气。
+- 每张任务卡只提供一个当前最重要的主动作。
+- 查询结果先给结论，再给依据，不确定就明确说不确定。
+- 隐私状态可见但不制造焦虑。
 
-## Required Verification
+首页结构：
 
-广泛变更：
+```text
+生活记忆助手
+
+今天
+[需要确认的任务]
+[已确认的提醒]
+[最近记下的事]
+
+最近回答
+[如果刚问过问题，显示答案]
+
+底部固定输入
+[说一句话，我来记或帮你找]
+[语音输入] [发送]
+```
+
+输入反馈：
+
+- 提交后立即出现草稿卡，表达“我先记下了”。
+- 草稿卡展示文字版原话，避免用户担心丢失。
+- 后台整理时只说“正在整理提醒”，不展示模型、队列、Graphiti 等技术状态。
+- 整理完成后草稿变正式任务卡。
+
+任务卡原则：
+
+- 待确认：主动作是“确认”。
+- 时间不清楚：主动作是“选时间”。
+- 已确认：显示对勾，不继续打扰。
+- 有风险：主动作是“请家人确认”或“先别急着做”。
+- 查询结果不对：主动作是“这不对，改一下”。
+
+老人端文案禁区：
+
+- 不说 `queued`、`processing`、`semantic`、`Graphiti`、`confidence`、`family_required`。
+- 不说“老人说”“老人提到”“该老人”。
+- 不说“已通知监护人”。
+- 不用恐吓式风险提示。
+
+推荐文案：
+
+- `已记下`
+- `正在整理`
+- `需要你确认`
+- `已确认`
+- `仅你可见`
+- `只分享了确认摘要`
+- `需要家人帮忙确认`
+- `原话不会给家人看`
+- `我没有找到可靠记录`
+
+风险场景表达：
+
+```text
+这件事先别急着做。
+验证码、身份证号、转账这些信息比较重要。
+我建议先不要发出去。
+我可以请家人帮你确认一下。
+```
+
+Graphiti 能力的产品表达：
+
+- `我找到这件事后来改过`
+- `按最新记录看，是这个时间`
+- `这可能和上次社区医院复查有关`
+- `这条和之前那条说法不一致，先不要直接照做`
+- `最近几次你都提到头晕，可以留意一下`
+
+验收：
+
+- 输入后 1 秒内看到草稿。
+- 普通提醒 3 步内完成确认。
+- 375px / 430px 手机视口可用。
+- 用户无需选择“记一下 / 问一问”。
+- 用户能知道“我说的话没有丢”。
+- 用户能知道“哪些内容只自己可见，哪些只是摘要请家人确认”。
+
+### M2: 长期记忆查询
+
+目标：避免产品退化成智能备忘录。
+
+重点场景：
+
+- “后来改了吗？”
+- “现在到底哪个时间有效？”
+- “这个药是不是改过？”
+- “医保卡和哪次复查有关？”
+- “最近是不是经常提到头晕？”
+- “这个电话是不是和之前那个补贴有关？”
+
+实现方向：
+
+- 查询链路优先 PostgreSQL + pgvector 快速召回。
+- ParsedMemoryQuery 输出 `requiresTemporalEvidence` / `relationQueryIntent`。
+- 需要关系证据时调用 Graphiti。
+- Graphiti evidence 必须通过 source/event provenance 对齐。
+- 答案必须保留证据和不确定性。
+
+验收：
+
+- Graphiti enabled 明显优于 disabled。
+- 5 类 Graphiti golden case 持续 green。
+- 无证据时明确说找不到。
+- 能区分“确定记得 / 可能相关 / 没找到”。
+
+### M3: 隐私优先的家人协助
+
+目标：保留安全价值，但不变成监控。
+
+当前方向：
+
+- 家人端不做完整 dashboard。
+- 家人端不展示全量记录流。
+- 家人端不展示 raw transcript、audio、完整 evidence。
+- 家人端只看 pending assist task summary。
+- 每次家人查看必须 audit。
+
+后端规则：
+
+- normal / medical / sensitive event 默认 `private`。
+- financial / fraud_risk event 才 `family_required`。
+- medication change、验证码、转账、身份类 risk flag 触发 human/family review。
+- family-created reminder 必须待老人确认，不能直接确认。
+
+验收：
+
+- `GET /family/elders/:elderId/pending-tasks` 只返回最小 DTO。
+- 被过滤字段不得包含 sourceId、eventId、raw transcript、audio、evidence。
+- full family task route 不存在。
+- notification intent family route 不存在。
+- family assist read 写入 audit。
+
+### M4: 老人端隐私状态可视化
+
+目标：让使用者知道自己的记忆是否被分享。
+
+每条记录/任务显示简单状态：
+
+- 仅自己可见。
+- 可请家人确认。
+- 已分享摘要。
+- 高风险已请求协助。
+
+实现原则：
+
+- 不做复杂权限管理 UI。
+- 不让老人理解技术字段。
+- 不在前端复制后端规则。
+- 前端只展示后端返回的 visibility/share status。
+
+验收：
+
+- 用户能看懂哪些内容不会被家人看到。
+- 用户能看懂哪些内容只是摘要协助。
+- 家人查看记录可在 audit 中回放。
+
+### M5: Graphiti 长期关系能力深化
+
+目标：形成真正的产品护城河。
+
+重点：
+
+- 改期链。
+- 用药变化链。
+- 复查/预约生命周期。
+- 诈骗/身份风险演化链。
+- 长期症状趋势。
+- 家人确认后的事实关系。
+
+实现方向：
+
+- MemoryPlan 输出 relation enrichment signal。
+- Kernel 根据 signal + hard safety gate 决定是否 enqueue Graphiti。
+- Graphiti episode 使用 PostgreSQL truth 的结构化 metadata。
+- Graphiti 查询结果只作为 evidence，不改 truth。
+- Nightly consolidation 生成高质量长期关系 episode。
+
+验收：
+
+- 普通一次性任务不进 Graphiti。
+- 改期、冲突、同一事项、风险链、长期趋势稳定进 Graphiti。
+- Graphiti enabled / disabled A/B 能证明差异。
+- 查询答案能解释“为什么这是当前有效说法”。
+
+### M6: 商业化试点
+
+优先用户：
+
+- 慢病、复查、用药事项多的人。
+- 独居或半独居老人。
+- 子女不在身边，但老人仍希望保持自主的人。
+- 经常忘记改期、证件、医保卡、药物安排的人。
+
+第一版商业包装：
+
+```text
+给自己用的生活记忆秘书，不是给家人看的监控工具。
+```
+
+可能套餐：
+
+- 免费：基础任务和少量记忆。
+- Plus：长期记忆查询、Graphiti 关系整理、更多历史容量。
+- Family Assist：可选家人协助，不作为默认主卖点。
+- B2B2C：社区、养老服务、慢病管理机构，前提是老人授权。
+
+验收：
+
+- 老人端 7 日留存高于普通备忘录假设。
+- 至少 5 个真实用户长期查询场景成立。
+- 隐私顾虑不会成为主要流失原因。
+- 家人协助不破坏老人端使用意愿。
+
+## 6. 当前优先级
+
+近期顺序：
+
+```text
+1. 老人端任务体验继续打磨到极顺。
+2. 强化 Graphiti 长期查询黄金用例。
+3. 增加老人端隐私状态展示。
+4. 家人端保持最小协助，不扩展 dashboard。
+5. 开始小范围真实用户试点。
+```
+
+不要做：
+
+- 不要做完整家人监控端。
+- 不要展示“老人今天说了什么”的全量流。
+- 不要让家人默认看到 raw transcript/audio。
+- 不要把 Graphiti 输出当业务 truth。
+- 不要用一堆关键词规则代替模型理解。
+
+## 7. The Bitter Lesson 下的长期理解层路线
+
+这一阶段的核心问题不是“再加几个规则”，而是让系统更好地利用模型的通用理解能力，同时让工程边界足够稳定、可验证、可审计。
+
+原则：
+
+```text
+模型负责复杂理解。
+Kernel 负责边界和裁决。
+Lint 负责长期健康检查。
+Eval 负责能力是否真的进步。
+Graphiti 负责长期关系整理。
+PostgreSQL 负责业务 truth。
+```
+
+不要把“未来 appointment 改期”“用药变化”“诈骗链”“同一事项”等能力做成一串关键词规则。正确方向是：
+
+- 给模型更完整的上下文。
+- 让模型输出结构化理解和 relation value signal。
+- 用 Kernel 做少量稳定硬约束。
+- 用 deterministic lint 检查系统不变量。
+- 用 golden/A-B eval 验证长期能力是否变好。
+
+### 节奏校正：先证伪，再建飞轮
+
+当前最需要警惕的是：产品假设和 Graphiti 价值还没有被真实证据充分验证，但工程路线已经铺到 Correction Loop、Nightly Consolidation 和长期飞轮。下一阶段必须先用最小工程投入回答两个问题：
+
+```text
+老人端是否真的比普通备忘录更容易留住用户？
+Graphiti enabled 是否在高价值关系问题上显著优于 disabled？
+```
+
+因此路线拆成两段：
+
+```text
+前 6 周：验证门
+  -> Memory Lint v1 最小闭环
+  -> Graphiti A/B 高密度 golden 扩展
+  -> 老人端真实留存/信任试点
+
+通过验证后：长期飞轮
+  -> Curated Episode v1
+  -> Query-to-Correction Loop
+  -> Event-triggered / Nightly Consolidation
+```
+
+不应在验证门之前并行推进全部 P0-P5。否则如果留存假设不成立，或 Graphiti A/B 差异不显著，长期理解层投入缺少产品支点。
+
+### P0: 6 周验证门
+
+目标：
+
+- 用高密度 E2E 和小范围真实试点，快速判断长期理解飞轮是否值得继续加码。
+- 不先做大型后台飞轮，只做能验证核心假设的最小能力。
+
+验证问题：
+
+| 假设 | 验证方式 | 继续投入标准 |
+|---|---|---|
+| 老人端留存成立 | 5-10 个真实试点用户，至少 7 天 | 用户持续输入真实任务，不只体验一次 |
+| Graphiti 有明显增益 | enabled / disabled A/B golden | 关系类 query 胜率显著高于 disabled |
+| 隐私协助不伤害信任 | 家人协助最小 DTO + 访谈 | 用户接受“摘要协助”，拒绝“全量监控” |
+| 后台化不伤交互 | timing baseline | source/draft ack 不被 Graphiti 拖慢 |
+
+停止或降级条件：
+
+- Graphiti enabled 不能稳定优于 disabled。
+- 老人端真实输入频率接近普通备忘录，没有长期查询需求。
+- 家人协助导致明显隐私抵触。
+- Memory Lint 产生大量噪音且没有可消化闭环。
+
+### P1: Graphiti A/B Golden 高密度扩展
+
+Graphiti 现在还在“温饱阶段”：已经接入，但还不能被默认当成成熟飞轮支柱。因此它必须先接受高密度 A/B 验证。
+
+重点场景：
+
+- “后来改了吗？”
+- “现在到底哪个说法有效？”
+- 复查改期链。
+- 用药说法变化链。
+- 补贴/验证码/身份证诈骗链。
+- 多次头晕等长期趋势。
+- “上次那个”同一事项关联。
+- 家人确认后的事实更新链。
+
+验收：
+
+- Graphiti enabled 能明显优于 disabled。
+- Graphiti disabled 只能弱回答、无法解释关系，或需要更多确认。
+- 所有 Graphiti evidence 必须可追溯到 source/event。
+- 高风险答案必须保留不确定性。
+- A/B runner 输出分场景胜率，而不是只输出 pass/fail。
+
+### P2: Memory Lint v1 + Triage 闭环
+
+Memory Lint 不只是检查脚本。没有消化路径的 lint 会变成告警噪音。
+
+目标：
+
+- 给 Graphiti、correction、consolidation 建最小安全网。
+- 发现脏数据、缺失 provenance、状态不一致。
+- 把 lint result 接入可消化的 review 流，而不是只写 debug report。
+
+检查范围：
+
+- confirmed/scheduled reminder 不得 `confirmationRequired=true`。
+- semantic recall row 必须有 `metadata.sourceId` 和 `metadata.summary`。
+- Graphiti evidence 必须能对齐 PostgreSQL source/event/episode。
+- financial/fraud 事件必须符合 `family_required`。
+- medical/sensitive 默认不能自动分享给家人。
+- family assist DTO 不得包含 raw transcript/audio/full evidence。
+- context link 不得 orphan。
+- 长期 pending family assist task 需要进入 review。
+
+Triage 路径：
+
+```text
+lint finding
+-> severity
+-> owner
+-> review task / audit report
+-> resolved / accepted risk / regression fixture
+```
+
+工程原则：
+
+- 只检查稳定不变量，不写业务 case-by-case 判断。
+- 高风险 finding 可以创建 review task，但不能自动改 truth。
+- 可预期的低风险 finding 必须支持限时 suppression，避免噪音。
+- 重复 finding 需要聚合，不要每天制造重复 alert。
+
+### P3: 老人端真实试点与隐私验证
+
+长期理解层是否值得做，最终取决于老人端是否形成真实使用。
+
+试点目标：
+
+- 验证“任务 + 长期记忆秘书”是否比普通备忘录更有价值。
+- 验证家人协助是否破坏使用者尊严和隐私感。
+- 找出真实高频 query，不用工程想象替代用户行为。
+
+最小指标：
+
+- 7 日内真实输入次数。
+- 任务确认率。
+- 查询长期记忆次数。
+- “这件事后来改了吗 / 到底哪个有效”类问题次数。
+- 用户主动纠错次数。
+- 对家人协助的接受/拒绝比例。
+- 隐私顾虑反馈。
+
+### P4: Curated Graphiti Episode v1
+
+只有当 P1 证明 Graphiti A/B 有价值后，才值得系统性投资 curated episode。
+
+Graphiti 质量上限取决于输入质量。不要把 raw dump 丢给 Graphiti 后期待它自动变好。
+
+目标：
+
+- 把 PostgreSQL truth 整理成适合长期关系推理的 curated episode。
+- 明确事件、时间、提醒、风险、确认状态、证据来源。
+- 减少 raw transcript 暴露。
+
+episode 应表达：
+
+- 当前记录是什么。
+- 它是否可能改变旧事实。
+- 它是否和旧事项有关。
+- 它是否需要确认。
+- 哪些证据支持。
+- 哪些内容不能自动确认。
+
+工程原则：
+
+- episode 只来自 PostgreSQL truth 和模型结构化输出。
+- metadata 必须稳定携带 sourceId/eventId/reminderId/riskFlagId。
+- Graphiti 仍只产生 evidence，不写业务 truth。
+
+### P5: Query-to-Correction Loop v1
+
+用户纠正是长期记忆系统的高价值数据入口，但也是最高风险写入路径。它必须等 lint、provenance、Graphiti A/B 基本稳定后再进入 truth 写入路径。
+
+第一版不要直接覆盖旧事件。
+
+安全路径：
+
+```text
+用户纠正
+-> feedback
+-> correction job
+-> Kernel 创建 corrective event 或 review task
+-> semantic recall rebuild/index
+-> Graphiti consolidation episode
+-> 后续查询使用修正后的 evidence
+```
+
+工程原则：
+
+- 不把 query answer 直接写成 truth。
+- 不让模型自行改旧事件。
+- 不让 Graphiti raw fact 替代 PostgreSQL 状态。
+- 先追加 correction event，再由 Graphiti 表达 supersession / correction relationship。
+- 每次修正必须 audit。
+
+### P6: Event-triggered / Nightly Consolidation
+
+Karpathy 的 wiki 模式不能直接照搬。GoldMem 是低频读、高风险、多利益方系统，不一定需要每天生成大量 curated episode。
+
+更克制的第一版：
+
+- 事件触发优先：改期、冲突、风险升级、家人确认、用户纠错才整理。
+- 夜间任务只做补偿和聚合，不做大规模自由改写。
+- consolidation 发现冲突时创建 review task，而不是直接改事实。
+
+职责：
+
+- 读取当天 PostgreSQL truth。
+- 跑 memory lint。
+- 整理 feedback/correction。
+- 生成少量高价值 curated Graphiti episodes。
+- 发现冲突时创建 review task。
+- 生成 eval/golden candidate。
+
+工程原则：
+
+- 幂等。
+- 可 retry。
+- 可 audit。
+- 不自动确认提醒。
+- 不覆盖 PostgreSQL truth。
+- 不扩大分享范围。
+
+### P7: 老人端长期整理感
+
+长期能力必须转化为老人能理解的交互语言。
+
+前端表达：
+
+- `我找到这件事后来改过。`
+- `按最新记录看，是这个时间。`
+- `这两条可能是同一件事，但我还不能确定。`
+- `这条和之前那条说法不一致，先不要直接照做。`
+- `我没有找到可靠记录。`
+- `原话不会给家人看。`
+
+不要展示：
+
+- Graphiti
+- semantic candidate
+- temporal evidence
+- confidence score
+- family_required
+- queued / processing 技术状态
+
+### Bitter Lesson 与 deterministic Kernel 的分工
+
+Bitter Lesson 不是“把规则全删掉交给模型”。更准确的分工是：
+
+| 责任 | 归属 | 原因 |
+|---|---|---|
+| 复杂语义理解 | 模型 | 改期、冲突、同一事项、长期趋势依赖上下文理解 |
+| 关系价值判断 | 模型 + Kernel gate | 模型判断是否有长期整理价值，Kernel 校验证据和成本 |
+| 医疗/金融/诈骗边界 | Kernel deterministic | 高风险场景不能依赖 prompt 自觉 |
+| 权限和隐私 | Kernel deterministic | 分享范围必须可审计、可证明 |
+| reminder 状态机 | Kernel deterministic | 不能让模型自动确认模糊提醒 |
+| evidence-bound answer | Kernel deterministic | 无证据不回答是系统不变量 |
+
+随着模型变强，可以减少的是业务关键词 case-by-case 规则；不能减少的是安全、权限、状态机和 evidence boundary。
+
+### 推荐实施顺序
+
+```text
+1. Graphiti A/B Golden 高密度扩展。
+2. Memory Lint v1 + Triage 闭环。
+3. 老人端 6 周真实试点。
+4. 根据证据决定是否启动 Curated Episode v1。
+5. 再启动 Query-to-Correction Loop。
+6. 最后启动 Event-triggered / Nightly Consolidation。
+7. 持续把长期整理感翻译成老人端可理解文案。
+```
+
+如果并行开发，只允许并行验证，不并行扩大飞轮：
+
+```text
+Agent A: Graphiti A/B fixtures + runner
+Agent B: Memory Lint + triage report
+Agent C: Elder pilot instrumentation
+Main: 汇总证据，决定是否进入 P4-P6
+```
+
+Correction Loop 和 Consolidation 必须等 lint、provenance 和 Graphiti A/B 质量稳定后再进入 truth 写入路径。
+
+最终判断：
+
+```text
+这三点不是三个孤立 feature，但也不能一次性全做。
+它们必须先通过验证门，再组成长期记忆飞轮：
+
+Graphiti = 长期整理能力
+Memory Lint = 质量安全网
+Correction Loop = 真实反馈入口
+Nightly Consolidation = 后台复利机制
+```
+
+## 8. 验收与验证
+
+每次广泛变更至少运行：
 
 ```bash
 pnpm typecheck
 pnpm test
-pnpm build
-pnpm lint
-pnpm eval
 pnpm architecture:check
+pnpm --filter @goldmem/web-mvp build
 ```
 
 MVP confidence：
 
 ```bash
-pnpm mvp:verify
 pnpm mvp:smoke
 pnpm e2e:golden
 ```
 
-Graphiti 生产链路新增能力还需要对应 golden/e2e case。真实 query 或模型失败必须转化为 regression test、eval case 或 golden fixture。
+Graphiti 相关变更：
+
+```bash
+pnpm test:graphiti
+pnpm e2e:graphiti
+pnpm e2e:graphiti:compare
+```
+
+真实 query、模型失败、隐私泄露风险必须转化为 regression test、eval case 或 golden fixture。
+
+## 9. 优化目标与多角度 E2E 验证设计
+
+这一阶段的目标不是继续堆功能，而是证明 GoldMem 已经从“智能备忘录”进化为：
+
+```text
+即时可信记录
++ 后台长期整理
++ 隐私可控协助
++ 可纠错的个人记忆系统
+```
+
+E2E 设计必须从不同路径验证同一件事：系统是否真的按这个架构工作，而不是只在单点 demo 中看起来成立。
+
+### 9.1 优化目标
+
+#### 目标一：实时交互不被长期整理阻塞
+
+老人输入一句话后，系统必须先完成即时反馈：
+
+- 原始 source 已保存。
+- 前端出现草稿态或“已记下”状态。
+- 普通提醒和候选提醒可以随后补齐。
+- Graphiti、semantic index、nightly consolidation 不阻塞老人端响应。
+
+验收信号：
+
+- source ack / draft visible 延迟可被单独记录。
+- Graphiti enabled 和 disabled 时，记录链路首屏响应差异很小。
+- 后台失败不会造成老人端重复写入或卡死。
+
+#### 目标二：长期关系能力由 Graphiti 承担，并能被 A/B 证明
+
+Graphiti 的价值必须体现在关系型问题上，而不是普通查询上：
+
+- 后来改了吗。
+- 现在到底哪个说法有效。
+- 这是不是上次那个事项。
+- 风险是否在演化。
+- 多次症状是否形成长期趋势。
+
+验收信号：
+
+- Graphiti enabled 的答案能引用时间链、改期链、冲突链、风险链。
+- Graphiti disabled 只能给弱回答、近期记录回答，或明确说证据不足。
+- Graphiti evidence 必须能对齐 PostgreSQL source/event/reminder metadata。
+
+#### 目标三：Memory Lint 成为长期记忆质量安全网
+
+系统不能只依赖模型“看起来理解了”。长期记忆需要 deterministic lint 检查：
+
+- reminder 状态和 confirmationRequired 是否冲突。
+- semantic memory 是否缺 sourceId/summary。
+- Graphiti evidence 是否无法对齐 PostgreSQL。
+- family assist 是否泄露 raw transcript。
+- context link 是否 orphan。
+- medical/financial/fraud visibility 是否违规。
+
+验收信号：
+
+- lint 只报告稳定不变量，不写业务 truth。
+- 每类 lint failure 有 fixture。
+- 高风险 lint failure 能转成 regression/golden case。
+
+#### 目标四：纠错可以沉淀为长期资产，但不直接覆盖 truth
+
+用户纠正是高价值输入，但第一版必须走安全链路：
+
+```text
+feedback
+-> correction job
+-> corrective event / review task
+-> semantic rebuild
+-> Graphiti consolidation episode
+-> 后续 query 使用新 evidence
+```
+
+验收信号：
+
+- query answer 不直接写 truth。
+- Graphiti 不修改 PostgreSQL business state。
+- 原事件保留，新 correction event 可追溯。
+- 后续查询能优先使用被确认的 correction evidence。
+
+#### 目标五：家人端只做隐私保护下的协助，不做监控
+
+家人端不是 dashboard，不展示完整记录流，不展示“今天老人说了什么”。
+
+只允许：
+
+- 高风险协助。
+- 老人主动分享摘要。
+- 待确认事项摘要。
+- 分享审计。
+
+验收信号：
+
+- family assist DTO 不包含 raw transcript/audio/full evidence。
+- 默认 private。
+- high-risk 才 family_required。
+- 老人端能看到谁看过、看了什么、什么时候看。
+
+#### 目标六：老人端表达“贴身秘书”而不是“系统分析老人”
+
+前端和模型输出都必须保持第二人称、低技术感、高信赖感：
+
+- `我已经帮你记下了。`
+- `按最新记录看，是周五下午。`
+- `这件事后来改过一次。`
+- `我还没有找到可靠记录。`
+- `原话不会给家人看。`
+
+禁止用户可见表达：
+
+- 老人说、老人提到、该老人、用户表示。
+- Graphiti、semantic、temporal evidence、queued、confidence。
+- 暗示监控或评估人格的文案。
+
+### 9.2 E2E 测试路径总览
+
+| 路径 | 验证目标 | 关键断言 |
+|---|---|---|
+| 实时记录路径 | 输入后立即可信 | source 先落库，Graphiti 不阻塞，幂等不重复 |
+| 提醒候选路径 | 未来事项稳定变可操作 | future appointment 必有 pending reminder/update candidate |
+| Graphiti A/B 路径 | 长期关系真的有用 | enabled 明显优于 disabled，evidence 可追溯 |
+| 隐私协助路径 | 家人端不变成监控端 | 只返回摘要/任务，不返回原文和完整证据 |
+| 纠错闭环路径 | 用户纠正变长期资产 | 追加 correction event，不覆盖旧 truth |
+| Memory Lint 路径 | 长期记忆有质量安全网 | 脏数据被报告，不被静默吞掉 |
+| Nightly Consolidation 路径 | 后台整理可复利 | 幂等、可 retry、可 audit，不扩大 sharing |
+| 前端信任路径 | 老人端能理解且不害怕 | 第二人称、隐私标识、无技术词、移动端稳定 |
+| 无证据回答路径 | 不编造 | 无 evidence 时明确说没找到可靠记录 |
+| 性能基线路径 | 证明异步化有效 | 分节点 timing，Graphiti 不进入首屏延迟 |
+
+### 9.3 E2E 用例设计
+
+#### Case A：实时记录不被 Graphiti 阻塞
+
+目的：
+
+- 证明“先记下，再后台整理”已经落实。
+
+输入：
+
+```text
+明天下午三点去社区医院复查，记得带医保卡。
+```
+
+步骤：
+
+1. 调用 `POST /elder/turn`，带 `clientTurnId`。
+2. 立刻查询 source / ingest status。
+3. 查询 reminders。
+4. 等待后台任务完成后再次查询 reminders、semantic index、Graphiti status。
+
+断言：
+
+- `MemorySource` 只写入一次。
+- 首次响应包含 draft/recorded/processing 类状态。
+- reminder 可以在后台完成后出现，但不得重复。
+- temporal memory 状态为 `queued`、`not_needed`、`written` 之一，不允许阻塞首屏。
+- 同一个 `clientTurnId` 重放不会产生第二条 source/event/reminder。
+
+性能记录：
+
+- `frontend_submit_to_ack_ms`
+- `api_elder_turn_total_ms`
+- `source_write_ms`
+- `plan_or_background_enqueue_ms`
+- `reminder_visible_ms`
+- `graphiti_written_ms`
+
+#### Case B：未来 appointment / 改期必须产生待确认提醒
+
+目的：
+
+- 验证 eventActionDecisions + completeness gate 是否机制性解决“模型记住了 appointment 但没生成 reminder”的问题。
+
+输入链：
+
+```text
+周五下午女儿陪我去医院复查。
+刚才女儿说复查改到下周一上午十点。
+```
+
+断言：
+
+- 第一条产生 appointment event。
+- 第二条产生 change/update action decision。
+- 第二条必须产生 pending reminder 或 update candidate。
+- 医疗/复查事项不得自动确认。
+- 如果时间不完整，只能 pending confirmation，不得 scheduled。
+- context/Graphiti 只能作为 evidence，不得直接修改 reminder truth。
+
+失败信号：
+
+- 只创建 event，不创建 reminder/update candidate。
+- 改期只变成 context link。
+- 医疗改期被自动确认。
+
+#### Case C：Graphiti 改期链 A/B
+
+目的：
+
+- 证明 Graphiti 对“后来改了吗 / 现在哪个有效”有核心价值。
+
+seed：
+
+```text
+周五下午三点去社区医院复查。
+后来医生说不用周五去了，改到下周一上午十点。
+女儿确认了下周一上午十点来接我。
+```
+
+query：
+
+```text
+我复查后来改了吗？现在到底是哪天？
+```
+
+Graphiti enabled 断言：
+
+- answer 提到“后来改到下周一上午十点”。
+- evidence 包含至少一条 temporal/Graphiti evidence。
+- evidence 能对齐 PostgreSQL source/event/reminder。
+- 不声称旧时间仍有效。
+
+Graphiti disabled 断言：
+
+- 可以基于 PostgreSQL 近期记录回答，但不得出现 temporal evidence。
+- 如果无法判断，必须表达不确定。
+
+对比指标：
+
+- `temporalEvidenceCount`
+- `alignedEvidenceCount`
+- `answerUsesLatestEffectiveFact`
+- `unsupportedCertainty=false`
+
+#### Case D：用药变化安全链
+
+目的：
+
+- 验证医疗/用药变化不会被模型或 Graphiti 自动确认为可执行医嘱。
+
+输入链：
+
+```text
+医生上次说降压药早上吃一片。
+今天电话里有人说这个药不用吃了。
+```
+
+断言：
+
+- 产生 medication/medical risk。
+- 创建 pending family/elder confirmation 或 review task。
+- answer 不给确定医嘱。
+- Graphiti enabled 可以指出“说法变化/冲突”，但不能改写用药 truth。
+- family assist 只能看到摘要，不看到 raw transcript。
+
+#### Case E：诈骗/身份风险演化链
+
+目的：
+
+- 验证高风险链路实时保护 + 后台关系整理。
+
+输入链：
+
+```text
+有人说给我办补贴，让我发身份证号。
+刚才又让我把手机验证码告诉他。
+```
+
+断言：
+
+- 第一条即产生 fraud/identity risk。
+- 第二条风险升级。
+- 创建 family_required assist task。
+- 家人端 DTO 不含 raw transcript/audio/full evidence。
+- Graphiti enabled 查询“这是不是有风险”时能表达风险演化链。
+- Graphiti disabled 仍必须触发 deterministic safety guard。
+
+#### Case F：同一事项 / 上次那个 指代链
+
+目的：
+
+- 验证 Graphiti 和 semantic recall 能帮助处理模糊指代，但不把猜测写成 truth。
+
+输入链：
+
+```text
+小敏说周三下午带我去银行办社保卡。
+上次小敏说的那个时间，她刚又说要晚一点。
+```
+
+断言：
+
+- 第二条识别 same matter / possible update。
+- 如果新时间不完整，只能 pending confirmation。
+- Graphiti enabled 后续 query 能找到“上次小敏说的那个”关联。
+- 关联 evidence 必须显示不确定性，不能直接确认时间。
+
+#### Case G：长期趋势摘要
+
+目的：
+
+- 验证产品不是普通备忘录，而是能沉淀长期趋势。
+
+输入链：
+
+```text
+这两天总觉得头晕。
+今天下午又有点头晕。
+这周第三次头晕了。
+```
+
+query：
+
+```text
+我最近是不是经常头晕？
+```
+
+断言：
+
+- Graphiti enabled 能回答“多次提到头晕”，并列出时间线。
+- medical safety note 存在。
+- 不给诊断。
+- 如果 Graphiti disabled，只能基于近几条 PostgreSQL evidence 弱回答。
+
+#### Case H：用户纠错闭环
+
+目的：
+
+- 验证 query result 可以变成长期资产，但不直接覆盖旧 truth。
+
+流程：
+
+1. seed：`周三下午去医院复查。`
+2. query：`我哪天复查？`
+3. feedback：`不对，是周五下午。`
+4. 等待 correction job。
+5. 再 query：`我复查到底是哪天？`
+
+断言：
+
+- feedback 被 audit。
+- 创建 corrective event 或 review task。
+- 旧 event 保留。
+- 新 event/review 有 provenance。
+- Graphiti 只表达 correction/supersession relationship。
+- 后续答案优先使用 correction evidence，但说明来源。
+
+#### Case I：Memory Lint 脏数据夹具
+
+目的：
+
+- 证明长期记忆系统有可执行的质量安全网。
+
+fixture：
+
+- confirmed reminder 仍然 `confirmationRequired=true`。
+- semantic memory 缺 `metadata.sourceId`。
+- Graphiti fact 无法对齐 PostgreSQL event。
+- family assist DTO fixture 带 raw transcript。
+- context link 引用不存在的 event。
+- financial/fraud event visibility 不是 `family_required`。
+
+断言：
+
+- lint 报告所有违规。
+- lint 不直接修改 truth。
+- report 包含 severity、entityId、reason、suggestedOwner。
+- architecture/e2e gate 能在 high severity 时失败。
+
+建议脚本：
+
+```bash
+pnpm memory:lint
+pnpm e2e:memory-lint
+```
+
+#### Case J：Nightly Consolidation 幂等整理
+
+目的：
+
+- 验证后台整理是复利机制，不是新的不确定写入源。
+
+seed：
+
+- 当天多条医疗、提醒、风险、feedback。
+- 一条明确 correction。
+- 一条未解决冲突。
+
+步骤：
+
+1. 运行 nightly consolidation。
+2. 再运行一次。
+3. 查询 audit、Graphiti episodes、review tasks。
+
+断言：
+
+- 第二次运行不重复创建 episode/task。
+- Graphiti episode 只来自 PostgreSQL truth。
+- conflict 只创建 review task，不自动覆盖旧 event。
+- 不扩大 visibility。
+- 每个 output 都有 traceId/audit。
+
+#### Case K：隐私协助最小化
+
+目的：
+
+- 验证家人端是协助端，不是监控端。
+
+输入：
+
+```text
+有人让我把银行卡号和验证码发过去，说可以领补贴。
+```
+
+断言：
+
+- 老人端显示风险提醒和“可请家人确认/已通知家人”。
+- family assist API 只返回摘要、风险类型、需要协助动作。
+- 不返回 raw transcript/audio/full evidence。
+- elder audit API 能显示“谁看过/看了什么/什么时候看”。
+- 普通 private 记录不进入 family assist。
+
+#### Case L：老人端前端信任感
+
+目的：
+
+- 验证 AI-native 能力被表达为简单可信的 task 体验。
+
+视口：
+
+- 375px
+- 430px
+
+断言：
+
+- 输入后出现草稿态，不出现空白等待。
+- 卡片状态从“正在整理”到“待确认/已确认”可见。
+- 有隐私标识：`仅你可见`、`已分享摘要`、`等待家人确认`。
+- 不出现 `Graphiti`、`semantic`、`queued`、`confidence`、`family_required`。
+- 不出现 `老人说`、`老人提到`、`该老人`、`用户表示`。
+- 重要/紧急状态置顶且有微动效，不影响确认按钮。
+
+建议脚本：
+
+```bash
+pnpm --filter @goldmem/web-mvp build
+pnpm e2e:web
+```
+
+#### Case M：无证据回答
+
+目的：
+
+- 验证 recall evidence-bound，不编造。
+
+query：
+
+```text
+我上个月是不是去过北京看病？
+```
+
+前置：
+
+- 数据库中没有相关 evidence。
+
+断言：
+
+- answer 明确说没有找到可靠记录。
+- 不生成虚构时间、地点、医院。
+- audit 标记 no-evidence answer。
+- 不把 query answer 写入 truth。
+
+#### Case N：性能基线对比
+
+目的：
+
+- 证明后台化真的改善老人端体验。
+
+组合：
+
+- Graphiti disabled。
+- Graphiti enabled but queued。
+- Graphiti sidecar slow/failing。
+- model provider slow。
+
+断言：
+
+- source/draft ack 不受 Graphiti sidecar slow/failing 明显影响。
+- full processing latency 可以变慢，但不能阻塞首屏。
+- 每个节点有 timing。
+- provider timeout 被标记到具体模型链路：planElderTurn / generateMemoryPlan / parseMemoryQuery / generateAnswer。
+
+建议记录：
+
+```text
+turn_total_ms
+source_write_ms
+intent_plan_ms
+memory_plan_ms
+postgres_truth_write_ms
+semantic_enqueue_ms
+graphiti_enqueue_ms
+answer_generation_ms
+frontend_visible_ack_ms
+frontend_card_finalized_ms
+```
+
+### 9.4 测试文件与脚本规划
+
+建议新增或扩展：
+
+```text
+e2e/fixtures/long-term-relationships.json
+e2e/fixtures/privacy-family-assist.json
+e2e/fixtures/correction-loop.json
+e2e/fixtures/memory-lint-dirty-state.json
+e2e/fixtures/performance-baseline.json
+
+scripts/golden-e2e.ts
+scripts/graphiti-comparison-e2e.ts
+scripts/memory-lint.ts
+scripts/performance-baseline-e2e.ts
+apps/web-mvp/e2e/elder-trust-flow.spec.ts
+```
+
+分层执行：
+
+```bash
+pnpm e2e:golden
+pnpm e2e:graphiti:compare
+pnpm e2e:privacy
+pnpm e2e:correction
+pnpm e2e:memory-lint
+pnpm e2e:performance
+pnpm e2e:web
+```
+
+完整的加速验证设计见 [Validation Acceleration E2E Roadmap](./roadmap/18-validation-acceleration-e2e-roadmap.md)。
+
+### 9.5 高密度 Graphiti 数据生成与加速验证
+
+为了避免等待真实用户长期积累数据，可以先用高密度、多角度 E2E 快速制造“压缩时间”的 Graphiti 数据。
+
+核心思路：
+
+```text
+用 5-8 个虚拟老人 profile
+每个 profile 生成 30-60 条连续生活输入
+覆盖 appointment / medication / fraud / family assist / correction / long-term trend
+同时跑 Graphiti enabled 与 disabled
+用 query battery 统一评估差异
+```
+
+这不是替代真实试点，而是先用工程验证快速证伪 Graphiti 能力假设。
+
+#### Profile 设计
+
+| Profile | 数据重点 | 目标验证 |
+|---|---|---|
+| 复查改期型 | 多次预约、改期、家人确认 | 当前有效说法、supersession |
+| 用药变化型 | 医生建议、电话误导、家人确认 | 医疗安全、不自动确认 |
+| 诈骗风险型 | 补贴、身份证、验证码、转账 | 风险升级链、family_required |
+| 模糊指代型 | 上次那个、刚才说的、女儿改的 | same-matter link |
+| 长期趋势型 | 多次头晕、忘记、睡眠差 | long-term pattern |
+| 隐私协助型 | private 日常 + 高风险协助 | 分享最小化 |
+| 纠错型 | 错误答案、用户纠正、后续查询 | correction 不覆盖 truth |
+
+每个 profile 至少包含：
+
+- 20 条普通记录，验证 Graphiti 不应被滥用。
+- 10 条高价值关系记录，验证 Graphiti 应该入队。
+- 5 条查询，验证 enabled / disabled 差异。
+- 2 条用户纠正，验证 feedback/correction 安全路径。
+- 2 条家人协助，验证隐私 DTO。
+- 1 条无证据查询，验证不编造。
+
+#### 执行模式
+
+每组 profile 跑四种模式：
+
+```text
+Mode A: Graphiti disabled
+Mode B: Graphiti enabled, normal sidecar
+Mode C: Graphiti enabled, delayed sidecar
+Mode D: Graphiti enabled, sidecar failing
+```
+
+断言重点：
+
+- Mode B 在关系问题上优于 Mode A。
+- Mode C/D 不影响 source/draft 首屏响应。
+- Mode D 不污染 PostgreSQL truth。
+- disabled 模式不得出现 temporal evidence。
+
+#### Query Battery
+
+每个 profile 统一跑一组 query：
+
+- `后来改了吗？`
+- `现在到底哪个说法有效？`
+- `这和上次那个是不是同一件事？`
+- `这件事有风险吗？`
+- `最近是不是经常出现这种情况？`
+- `我刚才说的不对，应该是...`
+- `有没有可靠记录？`
+
+评估指标：
+
+- `graphiti_answer_lift`
+- `latest_effective_fact_accuracy`
+- `temporal_evidence_count`
+- `aligned_evidence_rate`
+- `unsupported_certainty_rate`
+- `privacy_leak_count`
+- `source_ack_p95_ms`
+- `graphiti_job_success_rate`
+- `duplicate_source_count`
+
+#### 继续投入门槛
+
+先设定粗门槛，避免无止境调参：
+
+- Graphiti enabled 在关系类 query 上胜率至少明显高于 disabled。
+- temporal evidence 对齐率必须接近 100%。
+- high-risk 场景不能出现自动确认或无证据确定回答。
+- family assist DTO privacy leak 必须为 0。
+- Graphiti delayed/failing 不得显著影响 source/draft ack。
+
+如果达不到：
+
+- 不启动 Correction Loop。
+- 不启动 Nightly Consolidation。
+- 先修 Graphiti episode quality、provenance 或 query evidence merge。
+
+### 9.6 最小验收门槛
+
+第一阶段不要求所有路径一次完成，但每次合并必须至少满足：
+
+- 新增能力有对应 regression / golden / E2E case。
+- Graphiti 相关行为必须有 enabled vs disabled 对比。
+- 隐私相关行为必须验证 DTO 不含 raw transcript/audio/full evidence。
+- query answer 必须 evidence-bound。
+- correction 不覆盖旧 truth。
+- family assist 不绕过 Kernel 写 truth。
+- 前端用户可见文案不出现第三人称老人表述。
+
+### 9.7 设计有效的判断标准
+
+这套 E2E 不是为了证明“模型回答对了一次”，而是证明系统边界有效：
+
+- 模型负责理解复杂语义。
+- Kernel 负责证据、安全、成本和状态机。
+- PostgreSQL 保存 truth。
+- pgvector 提供快速 semantic recall。
+- Graphiti 做后台长期关系整理。
+- Memory Lint 防止长期记忆腐化。
+- Correction Loop 把真实用户反馈变成可审计资产。
+- 前端把复杂系统表达成简单、尊重、可信的任务体验。
+
+如果这些路径都能跑通，GoldMem 的核心差异就不再是“能记提醒”，而是：
+
+```text
+它能长期、审慎、可纠错地帮你维护个人生活记忆。
+```
