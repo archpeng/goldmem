@@ -21,7 +21,7 @@ describe("DefaultRiskEngine", () => {
       expect.objectContaining({
         type: "risk_review",
         urgency: "high",
-        visibility: "shared_summary",
+        visibility: "family_required",
       }),
     ]);
   });
@@ -84,9 +84,11 @@ function basePlan(input: Partial<MemoryPlan>): MemoryPlan {
     summary: "Summary",
     events: input.events ?? [],
     reminderCandidates: input.reminderCandidates ?? [],
+    eventActionDecisions: [],
     riskFlags: input.riskFlags ?? [],
     familyTasks: input.familyTasks ?? [],
     contextLinks: [],
+    relationEnrichmentSignals: [],
     memoryUpdates: [],
     uncertainties: [],
     evidence: [evidence()],

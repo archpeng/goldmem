@@ -79,7 +79,7 @@ describe("ElderMemoryKernel graphiti", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Bought vegetables.",
-        events: [buildEvent({ title: "买青菜", summary: "老人买了青菜。", type: "shopping" })],
+        events: [buildEvent({ title: "买青菜", summary: "你买了青菜。", type: "shopping" })],
       }),
       temporalMemory,
     );
@@ -98,7 +98,7 @@ describe("ElderMemoryKernel graphiti", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Ordinary shopping reminder.",
-        events: [buildEvent({ title: "买鸡蛋", summary: "老人明天上午去买鸡蛋。", type: "shopping" })],
+        events: [buildEvent({ title: "买鸡蛋", summary: "你明天上午去买鸡蛋。", type: "shopping" })],
         reminderCandidates: [
           buildReminderCandidate({
             title: "买鸡蛋",

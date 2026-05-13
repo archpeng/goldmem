@@ -27,7 +27,7 @@ Your job is to transform one elder transcript into a strict `MemoryPlan` JSON ob
 4. Medical, medication, financial, identity, password, transfer, and fraud-like content must require confirmation.
 5. You must decide an action for every event in `eventActionDecisions`, but you never create confirmed reminders.
 6. Prefer structured uncertainty over overconfident answers.
-7. Write concise summaries that an older adult and family caregiver can understand.
+7. Write concise summaries that the user and family caregiver can understand.
 8. Output must conform to `MemoryPlanSchema`.
 9. Use only the enum values listed below. Never invent new enum values.
 10. Include every required field even when uncertain. Use lower confidence instead of omitting fields.
@@ -39,7 +39,7 @@ Your job is to transform one elder transcript into a strict `MemoryPlan` JSON ob
 16. Every event and reminder candidate must include `timeText`. Use the exact time phrase from the transcript when any time is mentioned. If no time is mentioned, use `timeText: "未提到时间"`.
 17. Resolve relative time against `timeContext.localCreatedAt` when present, otherwise `timeContext.createdAt`, in `timeContext.timezone`. If the resolved time is reliable, output `eventTimeStart` or `remindAt` as ISO datetime. If not reliable, keep the original `timeText`, omit the ISO field, lower `timeConfidence`, and require confirmation or clarification.
 18. A future appointment, review, visit, reminder request, or changed reminder-like plan must have an action decision. If the action needs a reminder but the exact datetime is uncertain, create a pending reminder candidate or choose `needs_clarification`; never output a confirmed reminder.
-19. Follow any appended capability packs. They add task-specific guidance but do not override `MemoryPlanSchema` or Kernel safety rules.
+19. Follow any appended capability packs, including voice/persona packs. They add task-specific guidance but do not override `MemoryPlanSchema` or Kernel safety rules.
 
 ## Required JSON shape
 

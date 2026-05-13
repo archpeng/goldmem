@@ -71,12 +71,56 @@ describe("App", () => {
     await user.type(screen.getByLabelText("想说的话"), "明天上午提醒我给女儿打电话。");
     await user.click(screen.getByRole("button", { name: "发送给记忆助手" }));
 
-    await waitFor(() => expect(sendElderTurnMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(sendElderTurnMock).toHaveBeenCalledWith(expect.objectContaining({
+      clientTurnId: expect.any(String),
       elderId: "elder-mvp",
       text: expect.stringContaining("女儿"),
-    }));
+    })));
     expect((await screen.findAllByText("给女儿打电话")).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "给女儿打电话 确认提醒" })).toBeInTheDocument();
+  });
+
+  it("submits a speech transcript once when recognition ends more than once", async () => {
+    const user = userEvent.setup();
+    const speechWindow = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+    const originalSpeechRecognition = speechWindow.SpeechRecognition;
+    const originalWebkitSpeechRecognition = speechWindow.webkitSpeechRecognition;
+    const instances: FakeSpeechRecognition[] = [];
+    class FakeSpeechRecognition {
+      lang = "";
+      interimResults = false;
+      onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null = null;
+      onend: (() => void) | null = null;
+      start = vi.fn();
+      stop = vi.fn();
+
+      constructor() {
+        instances.push(this);
+      }
+    }
+    Object.defineProperty(window, "SpeechRecognition", { configurable: true, value: FakeSpeechRecognition });
+    Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: undefined });
+
+    try {
+      render(<App />);
+      await user.click(screen.getByRole("button", { name: "语音输入" }));
+      const recognition = instances[0];
+      expect(recognition).toBeDefined();
+
+      recognition!.onresult?.({ results: [{ 0: { transcript: "今天五点下班" } }] });
+      recognition!.onend?.();
+      recognition!.onend?.();
+
+      await waitFor(() => expect(sendElderTurnMock).toHaveBeenCalledTimes(1));
+      expect(sendElderTurnMock).toHaveBeenCalledWith(expect.objectContaining({
+        clientTurnId: expect.any(String),
+        elderId: "elder-mvp",
+        text: "今天五点下班",
+      }));
+    } finally {
+      Object.defineProperty(window, "SpeechRecognition", { configurable: true, value: originalSpeechRecognition });
+      Object.defineProperty(window, "webkitSpeechRecognition", { configurable: true, value: originalWebkitSpeechRecognition });
+    }
   });
 
   it("turns a pending reminder into confirmed state after confirmation", async () => {
@@ -221,7 +265,7 @@ function recordTurn() {
     message: "我先记下这句话，正在整理提醒。",
     draft: {
       sourceId: "source-1",
-      transcript: "老人说今天买了青菜。",
+      transcript: "今天买了青菜。",
       status: "queued" as const,
       createdAt: "2026-05-11T08:00:00.000Z",
     },
@@ -268,7 +312,7 @@ function recallTurn() {
       matchedSources: [{
         sourceId: "source-1",
         createdAt: "2026-05-11T08:00:00.000Z",
-        summary: "老人说今天买了青菜。",
+        summary: "你今天买了青菜。",
         canPlayAudio: false,
         retrievalSource: "postgres" as const,
       }],
@@ -276,7 +320,7 @@ function recallTurn() {
         sourceId: "source-1",
         eventId: "event-1",
         createdAt: "2026-05-11T08:00:00.000Z",
-        summary: "老人说今天买了青菜。",
+        summary: "你今天买了青菜。",
         score: 0.9,
         canPlayAudio: false,
         retrievalSource: "postgres" as const,

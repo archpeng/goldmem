@@ -120,7 +120,7 @@ describe("ElderMemoryKernel family-reminders", () => {
       elderId: "elder-1",
       type: "general_review",
       title: "请确认复查时间",
-      summary: "老人提到复查时间可能改了。",
+      summary: "你提到复查时间可能改了。",
       visibility: "shared_summary",
       urgency: "medium",
     });
@@ -141,6 +141,114 @@ describe("ElderMemoryKernel family-reminders", () => {
         payload: expect.objectContaining({ taskId: task.id, actorUserId: "family-1" }),
       }),
     ]));
+  });
+
+  it("lists only summary-safe pending family assist tasks with audit", async () => {
+    const harness = createHarness(buildPlan({ summary: "Unused plan." }));
+    harness.eventStore.events.push(
+      memoryEvent({ id: "event-shared", visibility: "family_required" }),
+      memoryEvent({ id: "event-private", visibility: "private" }),
+    );
+    await harness.familyTasks.create({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "risk_review",
+      title: "请确认转账风险",
+      summary: "这件事需要你确认风险。",
+      visibility: "family_required",
+      urgency: "high",
+      relatedEventId: "event-shared",
+    });
+    await harness.familyTasks.create({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "general_review",
+      title: "私人事项",
+      summary: "这件事不能给家人看。",
+      visibility: "shared_summary",
+      urgency: "low",
+      relatedEventId: "event-private",
+    });
+    await harness.familyTasks.create({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "general_review",
+      title: "内部事项",
+      summary: "这件事没有分享权限。",
+      visibility: "private",
+      urgency: "low",
+    });
+
+    const tasks = await harness.kernel.listFamilyAssistTasks({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      actorUserId: "family-1",
+      traceId: "trace-family-assist",
+    });
+
+    expect(tasks).toEqual([
+      expect.objectContaining({
+        title: "请确认转账风险",
+        visibility: "family_required",
+      }),
+    ]);
+    expect(tasks[0]).not.toHaveProperty("relatedEventId");
+    expect(harness.audit.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "family_assist_tasks_viewed",
+        traceId: "trace-family-assist",
+        payload: expect.objectContaining({
+          actorUserId: "family-1",
+          totalPendingTaskCount: 3,
+          returnedTaskCount: 1,
+          hiddenTaskCount: 2,
+        }),
+      }),
+    ]));
+  });
+
+  it("keeps medical event truth private while exposing only the confirmation task summary", async () => {
+    const harness = createHarness(buildPlan({
+      summary: "降压药提醒需要确认。",
+      events: [buildEvent({
+        type: "medication",
+        title: "降压药调整",
+        summary: "你提到降压药可能调整了。",
+        riskLevel: "medical",
+      })],
+      reminderCandidates: [buildReminderCandidate({
+        title: "确认降压药服用时间",
+        confirmationRequired: true,
+        relatedEventIndex: 0,
+        reason: "降压药调整需要先确认。",
+      })],
+      eventActionDecisions: [buildEventActionDecision({
+        eventIndex: 0,
+        action: "create_reminder_candidate",
+        reminderCandidateIndex: 0,
+      })],
+    }));
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "医生说降压药可能要改，帮我提醒确认一下。",
+      traceId: "trace-medical-family-assist",
+    });
+    const tasks = await harness.kernel.listFamilyAssistTasks({
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      actorUserId: "family-1",
+    });
+
+    expect(result.events[0]?.visibility).toBe("private");
+    expect(tasks).toEqual([
+      expect.objectContaining({
+        type: "reminder_confirm",
+        visibility: "family_required",
+        summary: "降压药调整需要先确认。",
+      }),
+    ]);
+    expect(tasks[0]).not.toHaveProperty("relatedEventId");
   });
 
   it("creates elder feedback through Kernel-owned command audit", async () => {

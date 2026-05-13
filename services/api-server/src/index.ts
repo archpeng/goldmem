@@ -13,11 +13,8 @@ import { DefaultReminderEngine } from "@goldmem/reminder-engine";
 import { DefaultRiskEngine } from "@goldmem/risk-engine";
 import {
   createPostgresStores,
-  type ContextLinkStore,
   type DebugTraceStore,
   type EventStore,
-  type FamilyTaskStore,
-  type NotificationIntentStore,
   type ReminderStore,
 } from "@goldmem/memory-store";
 import { NotImplementedModelGateway, OpenAIModelGateway, type ModelGateway } from "@goldmem/model-gateway";
@@ -34,11 +31,9 @@ export const apiRouteContract = {
   },
   family: {
     pendingTasks: "GET /family/elders/:elderId/pending-tasks",
-    tasks: "GET /family/elders/:elderId/tasks",
     confirmTask: "POST /family/tasks/:taskId/confirm",
     rejectTask: "POST /family/tasks/:taskId/reject",
     needsMoreInfoTask: "POST /family/tasks/:taskId/needs-more-info",
-    notificationIntents: "GET /family/elders/:elderId/notification-intents",
     createRemoteReminder: "POST /family/reminders",
   },
   debug: {
@@ -53,11 +48,8 @@ export type ApiRouteContract = typeof apiRouteContract;
 export type ApiServerDeps = {
   kernel: ElderMemoryKernel;
   eventStore: EventStore;
-  contextLinkStore: ContextLinkStore;
   reminderStore: ReminderStore;
-  familyTaskStore: FamilyTaskStore;
   debugTraceStore?: DebugTraceStore;
-  notificationIntentStore?: NotificationIntentStore;
   healthCheck?: () => Promise<Record<string, unknown>>;
 };
 
@@ -114,16 +106,14 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     });
   });
 
-  server.get("/family/elders/:elderId/pending-tasks", async (request) => {
+  server.get("/family/elders/:elderId/pending-tasks", async (request, reply) => {
     const params = request.params as { elderId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    return deps.familyTaskStore.listPending({ tenantId, elderId: params.elderId });
-  });
-
-  server.get("/family/elders/:elderId/tasks", async (request) => {
-    const params = request.params as { elderId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    return deps.familyTaskStore.listByElder({ tenantId, elderId: params.elderId });
+    const query = request.query as Record<string, unknown>;
+    const actorUserId = String(query.actorUserId ?? "");
+    if (!actorUserId) return reply.code(400).send({ message: "actorUserId is required" });
+    const tenantId = String(query.tenantId ?? "tenant-mvp");
+    const traceId = typeof query.traceId === "string" ? query.traceId : undefined;
+    return deps.kernel.listFamilyAssistTasks({ tenantId, elderId: params.elderId, actorUserId, traceId });
   });
 
   server.post("/family/tasks/:taskId/confirm", async (request) => {
@@ -165,13 +155,6 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
   server.post("/family/reminders", async (request) => {
     const input = CreateFamilyReminderRequestSchema.parse(request.body);
     return deps.kernel.createFamilyReminder(input);
-  });
-
-  server.get("/family/elders/:elderId/notification-intents", async (request, reply) => {
-    if (!deps.notificationIntentStore) return reply.code(404).send({ message: "Notification intent store is not configured" });
-    const params = request.params as { elderId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    return deps.notificationIntentStore.listByElder({ tenantId, elderId: params.elderId });
   });
 
   server.get("/debug/traces/:traceId", async (request, reply) => {
@@ -243,11 +226,8 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     deps: {
       kernel: new ElderMemoryKernel(kernelDeps),
       eventStore: postgres.eventStore,
-      contextLinkStore: postgres.contextLinkStore,
       reminderStore: postgres.reminderStore,
-      familyTaskStore: postgres.familyTaskStore,
       debugTraceStore: postgres.debugTraceStore,
-      notificationIntentStore: postgres.notificationIntentStore,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
         const graphiti = await checkGraphitiHealth(temporalMemory);

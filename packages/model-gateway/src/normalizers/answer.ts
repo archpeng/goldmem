@@ -4,6 +4,7 @@ import {
   asRecord,
   booleanValue,
   clamp01,
+  elderSecretaryText,
   enumValue,
   isRecord,
   optionalIso,
@@ -18,11 +19,11 @@ export function normalizeMemoryAnswerResult(raw: unknown, input: GenerateMemoryA
 
   return {
     ...record,
-    answerText: extractAnswerText(record),
+    answerText: secretaryOptionalText(extractAnswerText(record)),
     confidence: optionalNumberValue(record.confidence ?? record.score ?? record.certainty) ?? defaultAnswerConfidence(input.evidence),
     matchedSources: normalizeMatchedSources(record.matchedSources, input.evidence),
     suggestedActions: arrayValue(record.suggestedActions).map(normalizeSuggestedAction).filter(isRecord),
-    safetyNote: optionalString(record.safetyNote),
+    safetyNote: secretaryOptionalText(optionalString(record.safetyNote)),
   };
 }
 
@@ -48,7 +49,7 @@ function normalizeMatchedSources(raw: unknown, evidence: RetrievedEvidence[]): J
   return evidence.map((item) => ({
     sourceId: item.sourceId,
     createdAt: item.createdAt,
-    summary: item.summary,
+    summary: elderSecretaryText(item.summary),
     canPlayAudio: item.canPlayAudio,
     retrievalSource: item.retrievalSource,
   }));
@@ -61,7 +62,7 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
     return {
       sourceId: matched.sourceId,
       createdAt: matched.createdAt,
-      summary: matched.summary,
+      summary: elderSecretaryText(matched.summary),
       canPlayAudio: matched.canPlayAudio,
       retrievalSource: matched.retrievalSource,
     };
@@ -76,7 +77,7 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
   return {
     sourceId,
     createdAt: optionalIso(record.createdAt) ?? matched.createdAt,
-    summary: stringValue(record.summary, matched.summary),
+    summary: elderSecretaryText(stringValue(record.summary, matched.summary)),
     canPlayAudio: booleanValue(record.canPlayAudio, matched.canPlayAudio),
     retrievalSource: enumValue(
       record.retrievalSource,
@@ -84,6 +85,10 @@ function normalizeMatchedSource(raw: unknown, evidence: RetrievedEvidence[]): Js
       matched.retrievalSource,
     ),
   };
+}
+
+function secretaryOptionalText(value: string | undefined): string | undefined {
+  return value ? elderSecretaryText(value) : undefined;
 }
 
 function normalizeSuggestedAction(raw: unknown): JsonRecord | undefined {

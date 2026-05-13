@@ -242,7 +242,7 @@ export class OpenAIModelGateway implements ModelGateway {
   }
 
   async generateMemoryPlan(input: GenerateMemoryPlanInput): Promise<MemoryPlan> {
-    const prompt = await this.composePrompt("extract-memory-plan.md", ["relation-enrichment.md"]);
+    const prompt = await this.composePrompt("extract-memory-plan.md", ["elder-secretary-voice.md", "relation-enrichment.md"]);
     const result = await this.completeJson("generateMemoryPlan", prompt, {
       ...input,
       promptVersion: this.promptVersion,
@@ -285,7 +285,7 @@ export class OpenAIModelGateway implements ModelGateway {
       throw new ModelGatewayError("empty_evidence_error", "Cannot generate memory answer without evidence");
     }
 
-    const prompt = await this.loadPrompt("answer-memory-query.md");
+    const prompt = await this.composePrompt("answer-memory-query.md", ["elder-secretary-voice.md"]);
     const result = await this.completeJson("generateMemoryAnswer", prompt, input);
     const normalized = normalizeMemoryAnswerResult(result, input);
 

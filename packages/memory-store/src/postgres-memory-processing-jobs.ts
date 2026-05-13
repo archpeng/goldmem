@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { MemoryProcessingJob, MemoryProcessingJobStore } from "./index.js";
+import { isUniqueViolation } from "./postgres-errors.js";
 import { mapMemoryProcessingJob } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";
 import type { Db } from "./postgres-types.js";
@@ -31,6 +32,20 @@ export class PostgresMemoryProcessingJobStore implements MemoryProcessingJobStor
 
     await this.db.insert(schema.memoryProcessingJobs).values(job);
     return mapMemoryProcessingJob(job);
+  }
+
+  async enqueueBySource(input: Parameters<MemoryProcessingJobStore["enqueueBySource"]>[0]) {
+    const existing = await this.getBySource({ tenantId: input.tenantId, sourceId: input.sourceId, type: input.type });
+    if (existing) return { job: existing, reused: true };
+
+    try {
+      return { job: await this.enqueue(input), reused: false };
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const job = await this.getBySource({ tenantId: input.tenantId, sourceId: input.sourceId, type: input.type });
+      if (!job) throw error;
+      return { job, reused: true };
+    }
   }
 
   async claimDue(input: Parameters<MemoryProcessingJobStore["claimDue"]>[0]): Promise<MemoryProcessingJob[]> {

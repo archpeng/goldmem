@@ -45,16 +45,13 @@ export class PostgresFamilyTaskStore implements FamilyTaskStore {
   }
 
   async listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
-    return (await this.listByElder(input)).filter((task) => task.status === "pending");
-  }
-
-  async listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
     const rows = await this.db
       .select()
       .from(schema.familyTasks)
       .where(and(
         eq(schema.familyTasks.tenantId, input.tenantId),
         eq(schema.familyTasks.elderId, input.elderId),
+        eq(schema.familyTasks.status, "pending"),
       ))
       .orderBy(desc(schema.familyTasks.createdAt));
     return rows.map(mapFamilyTask);

@@ -50,7 +50,7 @@ describePostgres("PostgresStores integration", () => {
       sourceId: source.id,
       type: "shopping",
       title: "买青菜",
-      summary: "老人上午去买了青菜。",
+      summary: "你上午去买了青菜。",
       timeText: "上午",
       timeConfidence: 0.8,
       entities: [{ type: "object", name: "青菜", aliases: [], confidence: 0.8 }],
@@ -234,6 +234,51 @@ describePostgres("PostgresStores integration", () => {
     })).sourceId).toBe(first.source.id);
   });
 
+  it("reuses elder turn sources and ingest jobs by client turn id", async () => {
+    const firstSource = await stores.sourceStore.createForClientTurn({
+      tenantId: "tenant-store",
+      elderId: "elder-client-turn",
+      type: "text",
+      transcript: "今天五点下班。",
+      createdAt: "2026-05-10T09:00:00.000Z",
+      metadata: { timezone: "Asia/Shanghai" },
+      clientTurnId: "client-turn-1",
+    });
+    const secondSource = await stores.sourceStore.createForClientTurn({
+      tenantId: "tenant-store",
+      elderId: "elder-client-turn",
+      type: "text",
+      transcript: "今天五点下班。",
+      createdAt: "2026-05-10T09:00:00.000Z",
+      metadata: { timezone: "Asia/Shanghai" },
+      clientTurnId: "client-turn-1",
+    });
+
+    expect(firstSource.reused).toBe(false);
+    expect(secondSource.reused).toBe(true);
+    expect(secondSource.source.id).toBe(firstSource.source.id);
+    expect(secondSource.source.metadata?.clientTurnId).toBe("client-turn-1");
+
+    const firstJob = await stores.memoryProcessingJobStore.enqueueBySource({
+      type: "ingest_source",
+      tenantId: firstSource.source.tenantId,
+      elderId: firstSource.source.elderId,
+      sourceId: firstSource.source.id,
+      payload: { requiresIngestContextRecall: false },
+    });
+    const secondJob = await stores.memoryProcessingJobStore.enqueueBySource({
+      type: "ingest_source",
+      tenantId: firstSource.source.tenantId,
+      elderId: firstSource.source.elderId,
+      sourceId: firstSource.source.id,
+      payload: { requiresIngestContextRecall: false },
+    });
+
+    expect(firstJob.reused).toBe(false);
+    expect(secondJob.reused).toBe(true);
+    expect(secondJob.job.id).toBe(firstJob.job.id);
+  });
+
   it("uses time ranges in event broad recall", async () => {
     const source = await stores.sourceStore.create({
       tenantId: "tenant-store",
@@ -288,12 +333,12 @@ describePostgres("PostgresStores integration", () => {
     await stores.semanticMemoryStore.addMemory({
       tenantId: "tenant-store",
       elderId: "elder-semantic",
-      memory: "Title: 买青菜\nSummary: 老人上午买了青菜。",
+      memory: "Title: 买青菜\nSummary: 你上午买了青菜。",
       embedding,
       metadata: {
         sourceId: "source-semantic",
         eventId: "event-semantic",
-        summary: "老人上午买了青菜。",
+        summary: "你上午买了青菜。",
       },
     });
     await stores.semanticMemoryStore.addMemory({

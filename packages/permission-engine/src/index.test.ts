@@ -3,7 +3,7 @@ import type { MemoryPlan } from "@goldmem/memory-schema";
 import { DefaultPermissionEngine } from "./index.js";
 
 describe("DefaultPermissionEngine", () => {
-  it("keeps normal events private unless they require confirmation", async () => {
+  it("keeps normal events private even when they require confirmation", async () => {
     const engine = new DefaultPermissionEngine();
     const plan = basePlan({
       events: [
@@ -15,7 +15,7 @@ describe("DefaultPermissionEngine", () => {
     const permissioned = await engine.applyDefaultVisibility(plan, "elder-1");
 
     expect(permissioned.events[0]?.visibility).toBe("private");
-    expect(permissioned.events[1]?.visibility).toBe("shared_summary");
+    expect(permissioned.events[1]?.visibility).toBe("private");
   });
 
   it("applies deterministic visibility for risk levels", async () => {
@@ -32,14 +32,31 @@ describe("DefaultPermissionEngine", () => {
     const permissioned = await engine.applyDefaultVisibility(plan, "elder-1");
 
     expect(permissioned.events.map((item) => item.visibility)).toEqual([
-      "shared_summary",
+      "private",
       "family_required",
       "family_required",
       "private",
     ]);
   });
 
-  it("keeps risk review task details summary-shared", async () => {
+  it("downgrades family task full sharing to summary sharing", async () => {
+    const engine = new DefaultPermissionEngine();
+    const plan = basePlan({
+      familyTasks: [{
+        type: "risk_review",
+        title: "Review risk",
+        summary: "Risk summary.",
+        urgency: "high",
+        visibility: "shared_full",
+      }],
+    });
+
+    const permissioned = await engine.applyDefaultVisibility(plan, "elder-1");
+
+    expect(permissioned.familyTasks[0]?.visibility).toBe("shared_summary");
+  });
+
+  it("keeps high-risk family tasks family-required", async () => {
     const engine = new DefaultPermissionEngine();
     const plan = basePlan({
       familyTasks: [{
@@ -53,7 +70,7 @@ describe("DefaultPermissionEngine", () => {
 
     const permissioned = await engine.applyDefaultVisibility(plan, "elder-1");
 
-    expect(permissioned.familyTasks[0]?.visibility).toBe("shared_summary");
+    expect(permissioned.familyTasks[0]?.visibility).toBe("family_required");
   });
 });
 
@@ -65,9 +82,11 @@ function basePlan(input: Partial<MemoryPlan>): MemoryPlan {
     summary: "Summary",
     events: input.events ?? [],
     reminderCandidates: [],
+    eventActionDecisions: [],
     riskFlags: [],
     familyTasks: input.familyTasks ?? [],
     contextLinks: [],
+    relationEnrichmentSignals: [],
     memoryUpdates: [],
     uncertainties: [],
     evidence: [{ sourceId: "source-1", quote: "source quote" }],

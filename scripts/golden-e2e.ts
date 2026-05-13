@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import {
   MemoryAnswerSchema,
+  type FamilyAssistTask,
   type FamilyTask,
   type MemoryEvent,
   type Reminder,
@@ -124,7 +125,7 @@ if (graphitiMode === "required") await drainGraphitiJobs();
 const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
 const events = await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`);
 const reminders = await request<Reminder[]>("GET", `/elder/reminders?${tenantQuery}`);
-const familyTasks = await request<FamilyTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/tasks?tenantId=${encodeURIComponent(tenantId)}`);
+const familyTasks = await request<FamilyAssistTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}&actorUserId=golden-family`);
 
 for (const expectation of fixture.riskExpectations) {
   const ingest = requiredIngest(ingests, expectation.seedNoteId);

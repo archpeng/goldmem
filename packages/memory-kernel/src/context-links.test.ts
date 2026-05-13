@@ -54,7 +54,7 @@ describe("ElderMemoryKernel context-links", () => {
       id: "event-prior",
       sourceId: "source-prior",
       title: "下周一吃当地特色面条",
-      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+      summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
     }));
     harness.personalContextStore.context = {
       ...emptyContext(),
@@ -63,7 +63,7 @@ describe("ElderMemoryKernel context-links", () => {
           eventId: "event-prior",
           sourceId: "source-prior",
           title: "下周一吃当地特色面条",
-          summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+          summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
           createdAt: now,
         },
       ],
@@ -128,7 +128,7 @@ describe("ElderMemoryKernel context-links", () => {
         id: "event-prior",
         sourceId: "source-prior",
         title: "下周一吃当地特色面条",
-        summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+        summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
       }),
     });
     harness.personalContextStore.context = {
@@ -138,7 +138,7 @@ describe("ElderMemoryKernel context-links", () => {
           eventId: "event-prior",
           sourceId: "source-prior",
           title: "下周一吃当地特色面条",
-          summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
+          summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没有具体几点。",
           createdAt: now,
         },
       ],
@@ -177,7 +177,7 @@ describe("ElderMemoryKernel context-links", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Weak related note.",
-        events: [buildEvent({ title: "可能相关", summary: "老人提到一个可能相关的事情。" })],
+        events: [buildEvent({ title: "可能相关", summary: "你提到一个可能相关的事情。" })],
         contextLinks: [
           {
             fromEventIndex: 0,
@@ -210,7 +210,7 @@ describe("ElderMemoryKernel context-links", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Semantic context candidate only.",
-        events: [buildEvent({ title: "老字号吃饭提醒", summary: "老人提到下午三点去老字号吃饭。" })],
+        events: [buildEvent({ title: "老字号吃饭提醒", summary: "你提到下午三点去老字号吃饭。" })],
       }),
     );
     harness.eventStore.events.push(
@@ -258,7 +258,7 @@ describe("ElderMemoryKernel context-links", () => {
     const harness = createHarness(
       buildPlan({
         summary: "Semantic candidate link.",
-        events: [buildEvent({ title: "老字号吃饭提醒", summary: "老人提到下午三点去老字号吃饭。" })],
+        events: [buildEvent({ title: "老字号吃饭提醒", summary: "你提到下午三点去老字号吃饭。" })],
         contextLinks: [
           {
             fromEventIndex: 0,
@@ -312,7 +312,7 @@ describe("ElderMemoryKernel context-links", () => {
       id: "event-noodle",
       sourceId: "source-noodle",
       title: "下周一吃当地特色面条",
-      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
+      summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
     });
     const timeEvent = memoryEvent({
       id: "event-time",
@@ -374,7 +374,7 @@ describe("ElderMemoryKernel context-links", () => {
       id: "event-noodle",
       sourceId: "source-noodle",
       title: "下周一吃当地特色面条",
-      summary: "老人说下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
+      summary: "你下周一准备出门吃当地特色面条，可能需要提醒，但没说具体几点。",
     });
     const timeEvent = memoryEvent({
       id: "event-time",
@@ -434,7 +434,7 @@ describe("ElderMemoryKernel context-links", () => {
         id: "event-shopping",
         sourceId: "source-shopping",
         title: "买牙膏",
-        summary: "老人说要买牙膏。",
+        summary: "你要买牙膏。",
       }),
     ];
     harness.semanticMemory.searchResults = [];

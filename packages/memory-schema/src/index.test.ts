@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CreateFamilyReminderRequestSchema,
+  ElderTurnRequestSchema,
   MemoryAnswerSchema,
   MemoryPlanSchema,
+  MemorySourceSchema,
   ParsedMemoryQuerySchema,
 } from "./index.js";
 
@@ -20,16 +22,37 @@ describe("memory-schema safety contracts", () => {
     }));
   });
 
+  it("accepts client turn ids for elder turn source idempotency", () => {
+    expect(ElderTurnRequestSchema.parse({
+      elderId: "elder-1",
+      text: "今天下午五点下班。",
+      clientTurnId: "turn-1",
+    })).toMatchObject({
+      tenantId: "tenant-mvp",
+      clientTurnId: "turn-1",
+    });
+
+    expect(MemorySourceSchema.parse({
+      id: "source-1",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "今天下午五点下班。",
+      createdAt: "2026-05-11T08:00:00.000Z",
+      metadata: { timezone: "Asia/Shanghai", clientTurnId: "turn-1" },
+    }).metadata?.clientTurnId).toBe("turn-1");
+  });
+
   it("requires event evidence in MemoryPlan truth candidates", () => {
     expect(() => MemoryPlanSchema.parse({
       tenantId: "tenant-mvp",
       sourceId: "source-1",
       elderId: "elder-1",
-      summary: "老人买了青菜。",
+      summary: "你买了青菜。",
       events: [{
         type: "shopping",
         title: "买青菜",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
         timeConfidence: 0.8,
         importance: 0.5,
         confidence: 0.8,
@@ -46,11 +69,11 @@ describe("memory-schema safety contracts", () => {
       tenantId: "tenant-mvp",
       sourceId: "source-1",
       elderId: "elder-1",
-      summary: "老人要去社区医院复查。",
+      summary: "你要去社区医院复查。",
       events: [{
         type: "appointment",
         title: "社区医院复查",
-        summary: "老人下周三下午三点要去社区医院复查血压。",
+        summary: "你下周三下午三点要去社区医院复查血压。",
         timeText: "下周三下午三点",
         timeConfidence: 0.8,
         entities: [],
@@ -152,7 +175,7 @@ describe("memory-schema safety contracts", () => {
       retrievedEvidence: [{
         sourceId: "source-1",
         createdAt: "2026-05-11T00:00:00.000Z",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
         score: 1.2,
         canPlayAudio: true,
         retrievalSource: "postgres",
@@ -165,14 +188,14 @@ describe("memory-schema safety contracts", () => {
       matchedSources: [{
         sourceId: "source-1",
         createdAt: "2026-05-11T00:00:00.000Z",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
         canPlayAudio: true,
         retrievalSource: "postgres",
       }],
       retrievedEvidence: [{
         sourceId: "source-1",
         createdAt: "2026-05-11T00:00:00.000Z",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
         score: 0.9,
         canPlayAudio: true,
         retrievalSource: "postgres",

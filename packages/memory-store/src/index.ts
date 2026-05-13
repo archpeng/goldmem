@@ -15,6 +15,7 @@ import type {
 } from "@goldmem/memory-schema";
 
 export type CreateSourceInput = Omit<MemorySource, "id">;
+export type CreateSourceForClientTurnResult = { source: MemorySource; reused: boolean };
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
 export type CreateReminderInput = Omit<Reminder, "id" | "createdAt">;
 export type CreateContextLinkInput = Omit<MemoryContextLink, "id" | "createdAt">;
@@ -28,6 +29,7 @@ export type CreateRiskFlagInput = RiskFlag & {
 export interface SourceStore {
   saveAudio(audio: Uint8Array): Promise<string>;
   create(input: CreateSourceInput): Promise<MemorySource>;
+  createForClientTurn(input: CreateSourceInput & { clientTurnId: string }): Promise<CreateSourceForClientTurnResult>;
   get(input: { tenantId: string; sourceId: string }): Promise<MemorySource | null>;
 }
 
@@ -69,7 +71,6 @@ export interface FamilyTaskStore {
     visibility: string;
     relatedEventId?: string;
   }): Promise<FamilyTask>;
-  listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]>;
   listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]>;
   confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
   reject(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask>;
@@ -175,6 +176,18 @@ export type MemoryProcessingJob = {
   createdAt: string;
   updatedAt: string;
 };
+export type EnqueueMemoryProcessingJobResult = { job: MemoryProcessingJob; reused: boolean };
+export type EnqueueMemoryProcessingJobInput = {
+  type: MemoryProcessingJobType;
+  tenantId: string;
+  elderId: string;
+  sourceId?: string;
+  eventId?: string;
+  traceId?: string;
+  payload?: Record<string, unknown>;
+  nextRunAt?: string;
+  maxAttempts?: number;
+};
 
 export type TemporalMemoryJob = {
   id: string;
@@ -209,17 +222,8 @@ export interface TemporalMemoryJobStore {
 }
 
 export interface MemoryProcessingJobStore {
-  enqueue(input: {
-    type: MemoryProcessingJobType;
-    tenantId: string;
-    elderId: string;
-    sourceId?: string;
-    eventId?: string;
-    traceId?: string;
-    payload?: Record<string, unknown>;
-    nextRunAt?: string;
-    maxAttempts?: number;
-  }): Promise<MemoryProcessingJob>;
+  enqueue(input: EnqueueMemoryProcessingJobInput): Promise<MemoryProcessingJob>;
+  enqueueBySource(input: EnqueueMemoryProcessingJobInput & { sourceId: string }): Promise<EnqueueMemoryProcessingJobResult>;
   claimDue(input: { now: string; limit: number; types?: MemoryProcessingJobType[] }): Promise<MemoryProcessingJob[]>;
   getBySource(input: { tenantId: string; sourceId: string; type?: MemoryProcessingJobType }): Promise<MemoryProcessingJob | null>;
   markSucceeded(input: { jobId: string; payload?: Record<string, unknown> }): Promise<MemoryProcessingJob>;

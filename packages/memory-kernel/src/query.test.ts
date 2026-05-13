@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { ELDER_THIRD_PERSON_PATTERN, type MemoryPlan, type ParsedMemoryQuery } from "@goldmem/memory-schema";
 import { ModelGatewayError } from "@goldmem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
@@ -67,7 +67,7 @@ describe("ElderMemoryKernel query", () => {
 
     expect(answer.answerText).toContain("vegetables");
     expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "semantic")).toBe(true);
-    expect(answer.retrievedEvidence.some((item) => item.summary === "The elder bought vegetables at the market.")).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.summary === "You bought vegetables at the market.")).toBe(true);
     expect(answer.retrievedEvidence.some((item) => item.summary.includes("Provider-only semantic"))).toBe(false);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
     expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
@@ -117,7 +117,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-shopping",
         type: "shopping",
         title: "买青菜",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
       }),
     ];
 
@@ -128,8 +128,9 @@ describe("ElderMemoryKernel query", () => {
     });
 
     expect(answer.matchedSources).toEqual([
-      expect.objectContaining({ sourceId: "source-shopping", summary: "老人买了青菜。" }),
+      expect.objectContaining({ sourceId: "source-shopping", summary: "你买了青菜。" }),
     ]);
+    expect(JSON.stringify(answer)).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
     expect(answer.matchedSources.some((source) => source.sourceId === "source-hallucinated")).toBe(false);
   });
 
@@ -151,7 +152,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-shopping",
         type: "shopping",
         title: "买青菜",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
       }),
     ];
 
@@ -161,18 +162,19 @@ describe("ElderMemoryKernel query", () => {
       now,
     });
 
-    expect(answer.answerText).toContain("老人买了青菜");
+    expect(answer.answerText).toContain("你买了青菜");
     expect(answer.matchedSources).toEqual([
-      expect.objectContaining({ sourceId: "source-shopping", summary: "老人买了青菜。" }),
+      expect.objectContaining({ sourceId: "source-shopping", summary: "你买了青菜。" }),
     ]);
+    expect(JSON.stringify(answer)).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
     expect(harness.audit.records.some((record) => record.type === "memory_query_answer_generation_failed")).toBe(true);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
   });
 
   it("routes elder turns to memory writes without frontend intent branching", async () => {
     const harness = createHarness(buildPlan({
-      summary: "老人买了青菜。",
-      events: [buildEvent({ title: "买青菜", summary: "老人买了青菜。", type: "shopping" })],
+      summary: "你买了青菜。",
+      events: [buildEvent({ title: "买青菜", summary: "你买了青菜。", type: "shopping" })],
     }));
     harness.model.turnPlan = {
       intent: "record",
@@ -200,7 +202,7 @@ describe("ElderMemoryKernel query", () => {
     await harness.kernel.processMemoryProcessingJobs({ now, types: ["ingest_source"] });
     expect(await harness.kernel.getIngestStatus({ sourceId })).toMatchObject({
       status: "ready",
-      summary: "老人买了青菜。",
+      summary: "你买了青菜。",
     });
     expect(harness.eventStore.events).toHaveLength(1);
     expect(harness.semanticMemory.searches).toHaveLength(0);
@@ -261,7 +263,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-shopping",
         type: "shopping",
         title: "买青菜",
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
       }),
     ];
 
@@ -284,7 +286,7 @@ describe("ElderMemoryKernel query", () => {
       sourceId: "source-normal-code",
       type: "general",
       title: "门禁验证码",
-      summary: "老人说门禁验证码贴在冰箱旁边。",
+      summary: "你说门禁验证码贴在冰箱旁边。",
       riskLevel: "normal",
     });
     harness.sourceStore.sources.push({
@@ -402,7 +404,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-1",
         type: "shopping",
         title: "上午去城里买生活用品",
-        summary: "老人说上午去一趟城里，想买生活用品，比如牙膏。",
+        summary: "你说上午去一趟城里，想买生活用品，比如牙膏。",
         timeConfidence: 0.5,
         entities: [{ type: "place", name: "城里", aliases: [], confidence: 0.8 }],
         importance: 0.6,
@@ -448,7 +450,7 @@ describe("ElderMemoryKernel query", () => {
       expect.arrayContaining([
         expect.objectContaining({
           eventId: "event-city-shopping",
-          summary: "老人说上午去一趟城里，想买生活用品，比如牙膏。",
+          summary: "你说上午去一趟城里，想买生活用品，比如牙膏。",
         }),
       ]),
     );

@@ -54,7 +54,7 @@ export class MemoryPlanApplier {
           summary: draft.reason,
           type: "reminder_confirm",
           urgency: draft.timeConfidence < 0.7 ? "medium" : "low",
-          visibility: "shared_summary",
+          visibility: reminderConfirmationVisibility(draft, relatedEvent),
           relatedEventId: relatedEvent?.id,
         });
         familyTasks.push(task);
@@ -198,4 +198,15 @@ export class MemoryPlanApplier {
     });
   }
 
+}
+
+function reminderConfirmationVisibility(
+  draft: MemoryPlan["reminderCandidates"][number],
+  event: MemoryEvent | undefined,
+): "shared_summary" | "family_required" {
+  if (draft.suggestedConfirmers.some((confirmer) => confirmer.role === "family")) return "family_required";
+  if (event?.riskLevel === "medical" || event?.riskLevel === "financial" || event?.riskLevel === "fraud_risk") {
+    return "family_required";
+  }
+  return "shared_summary";
 }

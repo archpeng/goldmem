@@ -58,6 +58,9 @@ export function App() {
   const [inputText, setInputText] = useState("");
   const [state, setState] = useState<RequestState>({ loading: false });
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const transcriptRef = useRef("");
+  const submitInFlightRef = useRef<string | null>(null);
+  const lastSubmittedRef = useRef<{ text: string; at: number } | null>(null);
 
   const now = useMemo(() => new Date(), [reminders]);
   const taskItems = useMemo(() => buildTaskItems(reminders, now), [reminders, now]);
@@ -67,10 +70,16 @@ export function App() {
   async function handleSubmit(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const localDraftId = `draft:${Date.now()}`;
+    const nowMs = Date.now();
+    const lastSubmitted = lastSubmittedRef.current;
+    if (submitInFlightRef.current || (lastSubmitted?.text === trimmed && nowMs - lastSubmitted.at < 3_000)) return;
+    const clientTurnId = createClientTurnId();
+    const localDraftId = `draft:${clientTurnId}`;
+    submitInFlightRef.current = trimmed;
+    lastSubmittedRef.current = { text: trimmed, at: nowMs };
     setDrafts((cur) => [{ id: localDraftId, transcript: trimmed, status: "draft" }, ...cur]);
     const ok = await runRequest(setState, copy.status.turnCompleted, async () => {
-      const result = await sendElderTurn({ elderId, text: trimmed });
+      const result = await sendElderTurn({ elderId, text: trimmed, clientTurnId });
       setLatestAnswer(result.answer ?? null);
       setDebugTraceId(result.traceId);
       if (result.draft) {
@@ -85,6 +94,7 @@ export function App() {
         setDrafts((cur) => cur.filter((draft) => draft.id !== localDraftId));
       }
       setTranscript("");
+      transcriptRef.current = "";
       setInputText("");
       setIsListening(false);
       await refreshLists(elderId, setLists, setState, false);
@@ -92,6 +102,7 @@ export function App() {
     if (!ok) {
       setDrafts((cur) => cur.map((draft) => draft.id === localDraftId ? { ...draft, status: "failed" } : draft));
     }
+    if (submitInFlightRef.current === trimmed) submitInFlightRef.current = null;
   }
 
   async function pollIngestStatus(sourceId: string) {
@@ -133,8 +144,18 @@ export function App() {
     const rec = new SpeechRecognitionApi();
     rec.lang = "zh-CN";
     rec.interimResults = true;
-    rec.onresult = (e) => setTranscript(Array.from(e.results).map((result) => result[0].transcript).join(""));
-    rec.onend = () => { setIsListening(false); setTranscript((t) => { if (t.trim()) void handleSubmit(t); return t; }); };
+    transcriptRef.current = "";
+    setTranscript("");
+    rec.onresult = (e) => {
+      const nextTranscript = Array.from(e.results).map((result) => result[0].transcript).join("");
+      transcriptRef.current = nextTranscript;
+      setTranscript(nextTranscript);
+    };
+    rec.onend = () => {
+      setIsListening(false);
+      const finalTranscript = transcriptRef.current.trim();
+      if (finalTranscript) void handleSubmit(finalTranscript);
+    };
     recognitionRef.current = rec;
     rec.start();
     setIsListening(true);
@@ -355,4 +376,8 @@ async function runRequest(setState: (s: RequestState) => void, successMessage: s
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function createClientTurnId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `turn:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }

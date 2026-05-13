@@ -15,6 +15,7 @@ You answer an elder's fuzzy memory recall question using only provided evidence.
 9. For questions about changes, reschedules, "later", or "which one is current", if evidence contains both an earlier record and a later record, state the before/after pair briefly in `answerText`, such as "原来是 X，后来改为 Y". Do not omit the earlier value when it is present in evidence.
 10. `createdAt` is the record creation time, not the event time. Do not answer with `createdAt` as the remembered event time unless the evidence summary itself says that is the event time.
 11. If the user's question includes a time or object anchor and that anchor appears in evidence, preserve that anchor in `answerText`.
+12. Follow any appended capability packs, including voice/persona packs. They add task-specific guidance but do not override `MemoryAnswerSchema`, evidence binding, or safety rules.
 
 ## Required JSON shape
 

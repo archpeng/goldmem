@@ -32,7 +32,6 @@ POST /elder/turn
 GET /elder/events
 GET /elder/reminders
 POST /elder/reminders/:id/confirm
-GET /family/elders/:elderId/tasks
 POST /elder/feedback
 GET /debug/traces/:traceId   # dev only
 ```

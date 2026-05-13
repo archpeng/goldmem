@@ -9,7 +9,7 @@ import {
 } from "./retrieval.js";
 import { appendProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import type { ElderMemoryKernelDeps, QueryMemoryInput } from "./index.js";
-import { enforceQueryAnswerSafety, generateAnswerWithFallback } from "./query-answer.js";
+import { applyElderSecretaryVoice, enforceQueryAnswerSafety, generateAnswerWithFallback } from "./query-answer.js";
 import { searchSemanticMemorySafely } from "./query-semantic.js";
 import { alignTemporalEvidence, searchTemporalFactsSafely } from "./query-temporal-evidence.js";
 
@@ -147,12 +147,12 @@ export class QueryOrchestrator {
     appendProviderTimings(timings, this.deps.modelGateway);
     timings.totalMs = Date.now() - startedAt;
     const safetyCheckedAnswer = enforceQueryAnswerSafety(generatedAnswer, evidence, parsedQuery);
-    const answer: MemoryAnswer = {
+    const answer: MemoryAnswer = applyElderSecretaryVoice({
       ...safetyCheckedAnswer,
       traceId,
       retrievedEvidence: evidence,
       matchedSources: evidenceBoundMatchedSources(safetyCheckedAnswer.matchedSources, evidence),
-    };
+    });
 
     await this.deps.auditLog.record({
       type: "memory_query",

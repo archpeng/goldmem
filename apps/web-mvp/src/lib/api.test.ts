@@ -19,14 +19,14 @@ describe("web MVP api adapter", () => {
   it("posts elder turns through the API proxy", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ traceId: "trace-1", turnType: "record", message: "已保存", draft: { sourceId: "source-1", transcript: "我买了青菜。", status: "queued", createdAt: "2026-05-09T12:00:00.000Z" } }));
 
-    await expect(sendElderTurn({ elderId: "elder-1", text: "我买了青菜。" })).resolves.toMatchObject({
+    await expect(sendElderTurn({ elderId: "elder-1", text: "我买了青菜。", clientTurnId: "turn-1" })).resolves.toMatchObject({
       turnType: "record",
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/elder/turn", expect.objectContaining({
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。", timezone: "Asia/Shanghai" }),
+      body: JSON.stringify({ elderId: "elder-1", text: "我买了青菜。", clientTurnId: "turn-1", timezone: "Asia/Shanghai" }),
     }));
   });
 

@@ -7,7 +7,7 @@ export type MvpLists = {
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 const requestTimeoutMs = 60_000;
 
-export async function sendElderTurn(input: { elderId: string; text: string }): Promise<ElderTurnResult> {
+export async function sendElderTurn(input: { elderId: string; text: string; clientTurnId?: string }): Promise<ElderTurnResult> {
   return request<ElderTurnResult>("/elder/turn", {
     method: "POST",
     body: {

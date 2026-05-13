@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { ELDER_THIRD_PERSON_PATTERN, ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@goldmem/memory-schema";
 import { ModelGatewayError, OpenAIModelGateway, type GenerateMemoryAnswerInput, type GenerateMemoryPlanInput, type PlanElderTurnInput } from "./index.js";
 import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
 import { normalizeMemoryPlanResult } from "./normalizers/memory-plan.js";
 import { normalizeParsedMemoryQueryResult } from "./normalizers/query.js";
 import { normalizeElderTurnPlanResult } from "./normalizers/turn-plan.js";
+import { composePrompt } from "./prompt-composer.js";
 
 describe("model-gateway normalization", () => {
   it("fails schema validation when answer text is missing", () => {
@@ -59,7 +60,7 @@ describe("model-gateway normalization", () => {
 
     const parsed = MemoryAnswerSchema.parse(normalized);
     expect(parsed.matchedSources).toEqual([
-      expect.objectContaining({ sourceId: "source-1", summary: "老人买了青菜。" }),
+      expect.objectContaining({ sourceId: "source-1", summary: "你买了青菜。" }),
     ]);
   });
 
@@ -77,6 +78,27 @@ describe("model-gateway normalization", () => {
     expect(parsed.matchedSources).toEqual([
       expect.objectContaining({ sourceId: "source-1", summary: "模型摘要。", retrievalSource: "postgres" }),
     ]);
+  });
+
+  it("normalizes answer user-facing fields into secretary voice", () => {
+    const normalized = normalizeMemoryAnswerResult(
+      {
+        answerText: "老人说今天买了青菜。",
+        confidence: 0.8,
+        matchedSources: [{ sourceId: "source-1", summary: "用户表示今天买了青菜。", canPlayAudio: false }],
+        safetyNote: "该老人如果不确定，可以再补充一句说明。",
+      },
+      {
+        ...answerInput(),
+        evidence: [{ ...answerInput().evidence[0]!, summary: "老人提到今天买了青菜。" }],
+      },
+    );
+
+    const parsed = MemoryAnswerSchema.parse(normalized);
+    expect(parsed.answerText).toBe("你说今天买了青菜。");
+    expect(parsed.matchedSources[0]?.summary).toBe("你提到今天买了青菜。");
+    expect(parsed.safetyNote).toBe("你如果不确定，可以再补充一句说明。");
+    expect(JSON.stringify(parsed)).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
   });
 
   it("normalizes structured temporal query intent without keyword fallback", () => {
@@ -106,10 +128,10 @@ describe("model-gateway normalization", () => {
   it("fails schema validation when required event evidence is missing", () => {
     const normalized = normalizeMemoryPlanResult(
       {
-        summary: "老人买了青菜。",
+        summary: "你买了青菜。",
         events: [{
           title: "买青菜",
-          summary: "老人买了青菜。",
+          summary: "你买了青菜。",
           confidence: 0.8,
         }],
         modelInfo: { provider: "test", model: "test", promptVersion: "test" },
@@ -154,7 +176,7 @@ describe("model-gateway normalization", () => {
   it("normalizes explicit memory plan action decisions without inferring actions", () => {
     const normalized = normalizeMemoryPlanResult(
       {
-        summary: "老人要去社区医院复查。",
+        summary: "你要去社区医院复查。",
         events: [{
           title: "社区医院复查",
           summary: "老人下周三下午三点要去社区医院复查血压。",
@@ -190,6 +212,47 @@ describe("model-gateway normalization", () => {
       reminderCandidateIndex: 0,
       confidence: 0.9,
     });
+  });
+
+  it("normalizes MemoryPlan user-facing fields into secretary voice", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "老人说今天要去买青菜。",
+        events: [{
+          title: "老人买青菜",
+          summary: "老人提到今天要去买青菜。",
+          timeText: "今天",
+          confidence: 0.8,
+          evidence: ["今天要去买青菜"],
+        }],
+        reminderCandidates: [{
+          title: "老人买青菜",
+          timeText: "今天",
+          confirmationRequired: true,
+          reason: "用户表示这件事需要提醒。",
+        }],
+        familyTasks: [{
+          type: "general_review",
+          title: "该老人事项确认",
+          summary: "老人提到这件事可能需要家人确认。",
+          urgency: "medium",
+          visibility: "family_required",
+        }],
+        modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+        confidence: 0.8,
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    const parsed = MemoryPlanSchema.parse(normalized);
+    expect(JSON.stringify({
+      summary: parsed.summary,
+      events: parsed.events.map((event) => ({ title: event.title, summary: event.summary })),
+      reminderCandidates: parsed.reminderCandidates.map((reminder) => ({ title: reminder.title, reason: reminder.reason })),
+      familyTasks: parsed.familyTasks.map((task) => ({ title: task.title, summary: task.summary })),
+    })).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
   });
 
   it("normalizes relation enrichment signals without inventing evidence", () => {
@@ -292,7 +355,69 @@ describe("model-gateway normalization", () => {
   });
 });
 
+describe("model-gateway prompt capabilities", () => {
+  it("composes MemoryPlan prompt with secretary voice and relation enrichment capabilities", async () => {
+    const prompt = await composePrompt({
+      promptsDir: "../../prompts",
+      base: "extract-memory-plan.md",
+      capabilities: ["elder-secretary-voice.md", "relation-enrichment.md"],
+    });
+
+    expect(prompt).toContain("Elder Secretary Voice");
+    expect(prompt).toContain("Capability: Relation Enrichment");
+    expect(prompt).toContain("Never use elder-facing phrases like");
+  });
+
+  it("composes answer prompt with secretary voice capability", async () => {
+    const prompt = await composePrompt({
+      promptsDir: "../../prompts",
+      base: "answer-memory-query.md",
+      capabilities: ["elder-secretary-voice.md"],
+    });
+
+    expect(prompt).toContain("Elder Secretary Voice");
+    expect(prompt).toContain("matchedSources[].summary");
+  });
+});
+
 describe("OpenAIModelGateway operation timeouts", () => {
+  it("sends secretary voice capabilities to MemoryPlan and answer operations", async () => {
+    const gateway = new OpenAIModelGateway({
+      apiKey: "test-key",
+      model: "test-model",
+      promptsDir: "../../prompts",
+    });
+    const prompts: string[] = [];
+    const client = gateway as unknown as {
+      client: {
+        chat: {
+          completions: {
+            create: (body: { messages: Array<{ content: string }> }) => Promise<unknown>;
+          };
+        };
+      };
+    };
+    client.client.chat.completions.create = async (body) => {
+      prompts.push(body.messages[0]?.content ?? "");
+      return {
+        choices: [{
+          message: {
+            content: JSON.stringify(prompts.length === 1
+              ? { summary: "你买了青菜。", events: [], modelInfo: { provider: "test", model: "test-model", promptVersion: "test" }, confidence: 0.8 }
+              : { answerText: "我找到了你之前记过的内容：你买了青菜。", confidence: 0.8, matchedSources: [], suggestedActions: [] }),
+          },
+        }],
+      };
+    };
+
+    await expect(gateway.generateMemoryPlan(planInput())).resolves.toMatchObject({ summary: "你买了青菜。" });
+    await expect(gateway.generateMemoryAnswer(answerInput())).resolves.toMatchObject({ answerText: expect.stringContaining("你买了青菜") });
+
+    expect(prompts[0]).toContain("Elder Secretary Voice");
+    expect(prompts[0]).toContain("Capability: Relation Enrichment");
+    expect(prompts[1]).toContain("Elder Secretary Voice");
+  });
+
   it("uses the MemoryPlan-specific timeout for JSON completion failures", async () => {
     const gateway = new OpenAIModelGateway({
       apiKey: "test-key",
@@ -337,7 +462,7 @@ function answerInput(): GenerateMemoryAnswerInput {
       sourceId: "source-1",
       eventId: "event-1",
       createdAt: "2026-05-10T09:00:00.000Z",
-      summary: "老人买了青菜。",
+      summary: "你买了青菜。",
       score: 0.9,
       canPlayAudio: true,
       retrievalSource: "postgres",

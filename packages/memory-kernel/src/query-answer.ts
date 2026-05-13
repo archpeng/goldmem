@@ -1,4 +1,4 @@
-import { MemoryAnswerSchema, type MemoryAnswer, type ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { MemoryAnswerSchema, toElderSecretaryVoiceText, type MemoryAnswer, type ParsedMemoryQuery } from "@goldmem/memory-schema";
 import { ModelGatewayError, type ModelGateway, type RetrievedEvidence } from "@goldmem/model-gateway";
 import type { AuditLog } from "@goldmem/memory-store";
 import { clampScore, evidenceBoundMatchedSources } from "./retrieval.js";
@@ -58,11 +58,27 @@ export function enforceQueryAnswerSafety(
   };
 }
 
+export function applyElderSecretaryVoice(answer: MemoryAnswer): MemoryAnswer {
+  return {
+    ...answer,
+    answerText: elderSecretaryText(answer.answerText),
+    matchedSources: answer.matchedSources.map((source) => ({
+      ...source,
+      summary: elderSecretaryText(source.summary),
+    })),
+    retrievedEvidence: answer.retrievedEvidence.map((item) => ({
+      ...item,
+      summary: elderSecretaryText(item.summary),
+    })),
+    safetyNote: answer.safetyNote ? elderSecretaryText(answer.safetyNote) : undefined,
+  };
+}
+
 function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
   const top = evidence[0];
   const confidence = top ? clampScore(top.score) : 0;
   const matchedSources = evidenceBoundMatchedSources([], evidence);
-  return {
+  return applyElderSecretaryVoice({
     traceId,
     answerText: top
       ? `我找到了相关记忆：${top.summary}`
@@ -72,7 +88,7 @@ function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEv
     retrievedEvidence: evidence,
     suggestedActions: [],
     safetyNote: "回答来自已找到的记忆依据；如果不确定，可以再补充一句说明。",
-  };
+  });
 }
 
 function querySafetyNote(
@@ -95,4 +111,8 @@ function appendSafetyNote(current: string | undefined, note: string): string {
   if (!current) return note;
   if (current.includes(note)) return current;
   return `${current} ${note}`;
+}
+
+function elderSecretaryText(text: string): string {
+  return toElderSecretaryVoiceText(text);
 }

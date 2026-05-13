@@ -3,6 +3,7 @@ import {
   type CreateFeedbackRequest,
   type CreateFamilyReminderRequest,
   type ElderTurnResult,
+  type FamilyAssistTask,
   type IngestStatus,
   type MemoryAnswer,
   type MemoryEvent,
@@ -32,6 +33,7 @@ import type { ReminderEngine } from "@goldmem/reminder-engine";
 import type { RiskEngine } from "@goldmem/risk-engine";
 import type { PermissionEngine } from "@goldmem/permission-engine";
 import { createFamilyReminderCommand } from "./family-reminders.js";
+import { listFamilyAssistTasksCommand, type ListFamilyAssistTasksInput } from "./family-assist.js";
 import {
   confirmReminderCommand,
   createFeedbackCommand,
@@ -52,6 +54,7 @@ export type IngestTextInput = {
   localCreatedAt?: string;
   metadata?: MemorySource["metadata"];
   traceId?: string;
+  clientTurnId?: string;
 };
 
 export type IngestVoiceInput = {
@@ -99,11 +102,12 @@ export type ElderTurnInput = {
   now?: string;
   timezone?: string;
   traceId?: string;
+  clientTurnId?: string;
 };
 
 export type CreateFamilyReminderInput = CreateFamilyReminderRequest;
 export type CreateFeedbackInput = CreateFeedbackRequest;
-export type { ConfirmReminderInput, UpdateFamilyTaskStatusInput };
+export type { ConfirmReminderInput, ListFamilyAssistTasksInput, UpdateFamilyTaskStatusInput };
 
 export type ElderMemoryKernelDeps = {
   sourceStore: SourceStore;
@@ -175,6 +179,10 @@ export class ElderMemoryKernel {
     return createFamilyReminderCommand(this.deps, input, input.traceId ?? randomUUID());
   }
 
+  async listFamilyAssistTasks(input: ListFamilyAssistTasksInput): Promise<FamilyAssistTask[]> {
+    return listFamilyAssistTasksCommand(this.deps, input);
+  }
+
   async confirmReminder(input: ConfirmReminderInput): Promise<Reminder> {
     return confirmReminderCommand(this.deps, input);
   }
@@ -229,6 +237,7 @@ export class ElderMemoryKernel {
         localCreatedAt: now,
         metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
+        clientTurnId: input.clientTurnId,
         requiresIngestContextRecall: plan.requiresIngestContextRecall,
       });
       timings.enqueueIngestMs = Date.now() - enqueueStartedAt;
@@ -263,6 +272,7 @@ export class ElderMemoryKernel {
         localCreatedAt: now,
         metadata: { timezone: input.timezone ?? "Asia/Shanghai" },
         traceId,
+        clientTurnId: input.clientTurnId,
         requiresIngestContextRecall: plan.requiresIngestContextRecall,
       });
       timings.enqueueIngestMs = Date.now() - enqueueStartedAt;
@@ -299,6 +309,7 @@ export class ElderMemoryKernel {
       traceId,
       payload: {
         traceId,
+        clientTurnId: input.clientTurnId,
         text: input.text,
         plan,
         turnType: result.turnType,

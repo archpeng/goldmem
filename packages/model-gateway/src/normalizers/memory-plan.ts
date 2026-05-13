@@ -5,6 +5,7 @@ import {
   booleanValue,
   CONTEXT_LINK_STATUSES,
   CONTEXT_LINK_TYPES,
+  elderSecretaryText,
   ENTITY_TYPES,
   enumValue,
   EVENT_ACTIONS,
@@ -42,7 +43,7 @@ export function normalizeMemoryPlanResult(
   promptVersion: string,
 ): unknown {
   const record = asRecord(raw);
-  const summary = stringValue(record.summary, input.transcript.slice(0, 240));
+  const summary = secretaryText(record.summary, input.transcript.slice(0, 240));
   const events = arrayValue(record.events).map((event) => normalizeEventDraft(event, input)).filter(isRecord);
 
   return {
@@ -89,7 +90,7 @@ function normalizeRelationEnrichmentSignal(raw: unknown, input: GenerateMemoryPl
     confidence: numberValue(record.confidence, 0.5),
     relatedEventIndexes: arrayValue(record.relatedEventIndexes).map(integerValue).filter((index): index is number => index !== undefined),
     relatedReminderCandidateIndexes: arrayValue(record.relatedReminderCandidateIndexes).map(integerValue).filter((index): index is number => index !== undefined),
-    reason: stringValue(record.reason, "Model identified long-term relationship value."),
+    reason: secretaryText(record.reason, "Model identified long-term relationship value."),
     evidence: normalizeEvidenceRefs(record.evidence, input, true),
   };
 }
@@ -105,7 +106,7 @@ function normalizeEventActionDecision(raw: unknown, input: GenerateMemoryPlanInp
     action: enumValue(record.action, EVENT_ACTIONS, "none"),
     reminderCandidateIndex: integerValue(record.reminderCandidateIndex),
     targetReminderId: optionalString(record.targetReminderId),
-    reason: stringValue(record.reason, "Model action decision for this event."),
+    reason: secretaryText(record.reason, "Model action decision for this event."),
     confidence: numberValue(record.confidence, 0.5),
     evidence: normalizeEvidenceRefs(record.evidence, input, true),
   };
@@ -113,8 +114,8 @@ function normalizeEventActionDecision(raw: unknown, input: GenerateMemoryPlanInp
 
 function normalizeEventDraft(raw: unknown, input: GenerateMemoryPlanInput): JsonRecord | undefined {
   const record = typeof raw === "string" ? { summary: raw, title: raw } : asRecord(raw);
-  const summary = stringValue(record.summary, stringValue(record.title, input.transcript.slice(0, 240)));
-  const title = stringValue(record.title, summary.slice(0, 80) || "Memory note");
+  const summary = secretaryText(record.summary, stringValue(record.title, input.transcript.slice(0, 240)));
+  const title = secretaryText(record.title, summary.slice(0, 80) || "Memory note");
   const textForInference = `${title} ${summary} ${input.transcript}`;
 
   return {
@@ -138,7 +139,7 @@ function normalizeEventDraft(raw: unknown, input: GenerateMemoryPlanInput): Json
 
 function normalizeReminderDraft(raw: unknown, eventCount: number): JsonRecord | undefined {
   const record = typeof raw === "string" ? { title: raw } : asRecord(raw);
-  const title = stringValue(record.title, stringValue(record.description, ""));
+  const title = secretaryText(record.title, stringValue(record.description, ""));
   if (!title) return undefined;
 
   const relatedEventIndex = integerValue(record.relatedEventIndex);
@@ -146,7 +147,7 @@ function normalizeReminderDraft(raw: unknown, eventCount: number): JsonRecord | 
   return {
     ...record,
     title,
-    description: optionalString(record.description),
+    description: secretaryOptionalText(optionalString(record.description)),
     timeText: optionalString(record.timeText),
     remindAt: optionalIso(record.remindAt),
     timeConfidence: numberValue(record.timeConfidence, 0.5),
@@ -154,13 +155,13 @@ function normalizeReminderDraft(raw: unknown, eventCount: number): JsonRecord | 
     confirmationRequired: booleanValue(record.confirmationRequired, true),
     suggestedConfirmers: arrayValue(record.suggestedConfirmers).map(normalizeSuggestedConfirmer).filter(isRecord),
     confidence: numberValue(record.confidence, 0.5),
-    reason: stringValue(record.reason, "Reminder candidate extracted from elder note."),
+    reason: secretaryText(record.reason, "Reminder candidate extracted from note."),
   };
 }
 
 function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRecord | undefined {
   const record = typeof raw === "string" ? { summary: raw, reason: raw } : asRecord(raw);
-  const summary = stringValue(record.summary, stringValue(record.reason, ""));
+  const summary = secretaryText(record.summary, stringValue(record.reason, ""));
   if (!summary) return undefined;
   const textForInference = `${summary} ${stringValue(record.reason, "")}`;
   const evidence = normalizeEvidenceRefs(record.evidence, input, false);
@@ -170,7 +171,7 @@ function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRe
     type: enumValue(record.type, RISK_TYPES, inferRiskType(textForInference)),
     severity: enumValue(record.severity, SEVERITIES, inferSeverity(textForInference)),
     summary,
-    reason: stringValue(record.reason, summary),
+    reason: secretaryText(record.reason, summary),
     requiresFamilyReview: booleanValue(record.requiresFamilyReview, inferRequiresFamilyReview(textForInference)),
     requiresHumanConfirmation: booleanValue(record.requiresHumanConfirmation, true),
     evidence: evidence.length > 0 ? evidence : [sourceEvidence(input)],
@@ -179,16 +180,16 @@ function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRe
 
 function normalizeFamilyTask(raw: unknown): JsonRecord | undefined {
   const record = typeof raw === "string" ? { title: raw, summary: raw } : asRecord(raw);
-  const title = stringValue(record.title, stringValue(record.summary, ""));
+  const title = secretaryText(record.title, stringValue(record.summary, ""));
   if (!title) return undefined;
 
   return {
     ...record,
     type: enumValue(record.type, FAMILY_TASK_TYPES, "general_review"),
     title,
-    summary: stringValue(record.summary, title),
+    summary: secretaryText(record.summary, title),
     urgency: enumValue(record.urgency, URGENCIES, "medium"),
-    visibility: enumValue(record.visibility, VISIBILITIES, "family_required"),
+    visibility: enumValue(record.visibility, VISIBILITIES, "shared_summary"),
     relatedEventIndex: integerValue(record.relatedEventIndex),
   };
 }
@@ -215,7 +216,7 @@ function normalizeContextLink(raw: unknown, input: GenerateMemoryPlanInput, even
 
   const toEventIndex = integerValue(record.toEventIndex);
   const toEventId = optionalString(record.toEventId);
-  const reason = stringValue(record.reason, "Related context proposed from the transcript and recent context.");
+  const reason = secretaryText(record.reason, "Related context proposed from the transcript and recent context.");
 
   return {
     ...record,
@@ -233,7 +234,7 @@ function normalizeContextLink(raw: unknown, input: GenerateMemoryPlanInput, even
 
 function normalizeUncertainty(raw: unknown): JsonRecord | undefined {
   const record = typeof raw === "string" ? { description: raw } : asRecord(raw);
-  const description = stringValue(record.description, "");
+  const description = secretaryText(record.description, "");
   if (!description) return undefined;
 
   return {
@@ -242,6 +243,14 @@ function normalizeUncertainty(raw: unknown): JsonRecord | undefined {
     description,
     suggestedAction: enumValue(record.suggestedAction, UNCERTAINTY_ACTIONS, "review_later"),
   };
+}
+
+function secretaryText(value: unknown, fallback: string): string {
+  return elderSecretaryText(stringValue(value, fallback));
+}
+
+function secretaryOptionalText(value: string | undefined): string | undefined {
+  return value ? elderSecretaryText(value) : undefined;
 }
 
 function normalizeEntity(raw: unknown): JsonRecord | undefined {

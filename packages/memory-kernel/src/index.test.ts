@@ -103,7 +103,7 @@ describe("ElderMemoryKernel ingest", () => {
         events: [
           buildEvent({
             title: "社区医院复查",
-            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            summary: "你下周三下午三点要去社区医院复查血压。",
             type: "appointment",
             timeText: "下周三下午三点",
           }),
@@ -138,7 +138,7 @@ describe("ElderMemoryKernel ingest", () => {
         events: [
           buildEvent({
             title: "社区医院复查",
-            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            summary: "你下周三下午三点要去社区医院复查血压。",
             type: "appointment",
           }),
         ],
@@ -237,7 +237,7 @@ describe("ElderMemoryKernel ingest", () => {
         events: [
           buildEvent({
             title: "社区医院复查",
-            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            summary: "你下周三下午三点要去社区医院复查血压。",
             type: "appointment",
           }),
         ],
@@ -263,7 +263,7 @@ describe("ElderMemoryKernel ingest", () => {
         events: [
           buildEvent({
             title: "社区医院复查血压",
-            summary: "老人说下周三下午三点要去社区医院复查血压。",
+            summary: "你下周三下午三点要去社区医院复查血压。",
             type: "appointment",
             riskLevel: "medical",
             requiresConfirmation: false,
@@ -414,7 +414,7 @@ describe("ElderMemoryKernel ingest", () => {
     });
 
     expect(result.events[0]?.requiresConfirmation).toBe(true);
-    expect(result.events[0]?.visibility).toBe("shared_summary");
+    expect(result.events[0]?.visibility).toBe("private");
     expect(harness.riskFlags.flags[0]?.requiresFamilyReview).toBe(true);
     expect(harness.riskFlags.flags[0]?.requiresHumanConfirmation).toBe(true);
   });

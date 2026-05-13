@@ -9,25 +9,15 @@ export class DefaultPermissionEngine implements PermissionEngine {
     const next = clonePlan(plan);
 
     for (const event of next.events) {
-      if (event.riskLevel === "normal") {
-        event.visibility = event.requiresConfirmation ? "shared_summary" : "private";
-      }
-
-      if (event.riskLevel === "medical") {
-        event.visibility = "shared_summary";
-      }
-
       if (event.riskLevel === "financial" || event.riskLevel === "fraud_risk") {
         event.visibility = "family_required";
-      }
-
-      if (event.riskLevel === "sensitive") {
+      } else {
         event.visibility = "private";
       }
     }
 
     for (const task of next.familyTasks) {
-      if (task.type === "risk_review") {
+      if (task.visibility === "shared_full") {
         task.visibility = "shared_summary";
       }
     }

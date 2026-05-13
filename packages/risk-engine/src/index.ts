@@ -19,7 +19,7 @@ export class DefaultRiskEngine implements RiskEngine {
           title: "Possible fraud or financial risk needs review",
           summary: event.summary,
           urgency: "high",
-          visibility: "shared_summary",
+          visibility: "family_required",
         });
       }
     }

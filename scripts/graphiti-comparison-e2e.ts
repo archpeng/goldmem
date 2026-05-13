@@ -6,7 +6,7 @@ import { z } from "zod";
 import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import {
   MemoryAnswerSchema,
-  type FamilyTask,
+  type FamilyAssistTask,
   type MemoryEvent,
   type Reminder,
 } from "../packages/memory-schema/src/index.js";
@@ -152,7 +152,7 @@ async function runApiScenario(input: {
   const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(input.elderId)}`;
   const events = await request<MemoryEvent[]>(input.baseUrl, "GET", `/elder/events?${tenantQuery}`);
   const reminders = await request<Reminder[]>(input.baseUrl, "GET", `/elder/reminders?${tenantQuery}`);
-  const familyTasks = await request<FamilyTask[]>(input.baseUrl, "GET", `/family/elders/${encodeURIComponent(input.elderId)}/tasks?tenantId=${encodeURIComponent(tenantId)}`);
+  const familyTasks = await request<FamilyAssistTask[]>(input.baseUrl, "GET", `/family/elders/${encodeURIComponent(input.elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}&actorUserId=graphiti-family`);
   assertScenarioExpectations(input.label, ingests, reminders, familyTasks);
 
   const queryReports = [];
@@ -360,7 +360,7 @@ function assertScenarioExpectations(
   label: string,
   ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>,
   reminders: Reminder[],
-  familyTasks: FamilyTask[],
+  familyTasks: FamilyAssistTask[],
 ) {
   for (const expectation of fixture.riskExpectations) {
     const ingest = requiredIngest(ingests, expectation.seedNoteId);

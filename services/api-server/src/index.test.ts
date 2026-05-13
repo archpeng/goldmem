@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
-import type { DebugTrace, ElderTurnResult, FamilyTask, Feedback, IngestStatus, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, FamilyAssistTask, FamilyTask, Feedback, IngestStatus, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
 
 describe("api-server", () => {
-  it("handles elder turn, reminder list, and family task endpoints", async () => {
+  it("handles elder turn, reminder list, and family assist endpoints", async () => {
     const deps = createDeps();
     const server = buildServer(deps);
 
@@ -76,10 +76,30 @@ describe("api-server", () => {
 
     const tasks = await server.inject({
       method: "GET",
-      url: "/family/elders/elder-1/tasks",
+      url: "/family/elders/elder-1/pending-tasks?actorUserId=family-1",
     });
     expect(tasks.statusCode).toBe(200);
     expect(tasks.json()).toHaveLength(1);
+    expect(tasks.json()[0]).not.toHaveProperty("relatedEventId");
+    expect(deps.auditRecords.some((record) => record.type === "family_assist_tasks_viewed")).toBe(true);
+
+    const missingActor = await server.inject({
+      method: "GET",
+      url: "/family/elders/elder-1/pending-tasks",
+    });
+    expect(missingActor.statusCode).toBe(400);
+
+    const removedTasksRoute = await server.inject({
+      method: "GET",
+      url: "/family/elders/elder-1/tasks",
+    });
+    expect(removedTasksRoute.statusCode).toBe(404);
+
+    const removedNotificationRoute = await server.inject({
+      method: "GET",
+      url: "/family/elders/elder-1/notification-intents",
+    });
+    expect(removedNotificationRoute.statusCode).toBe(404);
 
     const confirmed = await server.inject({
       method: "POST",
@@ -299,6 +319,19 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
           createdAt: "2026-05-09T12:00:00.000Z",
         };
       },
+      listFamilyAssistTasks: async (input): Promise<FamilyAssistTask[]> => {
+        auditRecords.push({ type: "family_assist_tasks_viewed" });
+        return [{
+          id: task.id,
+          title: task.title,
+          summary: task.summary,
+          type: task.type,
+          urgency: task.urgency,
+          status: task.status,
+          visibility: task.visibility,
+          createdAt: task.createdAt,
+        }];
+      },
       confirmReminder: async (input) => {
         auditRecords.push({ type: "reminder_confirmed" });
         return {
@@ -333,42 +366,10 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
       listByElder: async () => [reminder],
       update: async (_id, patch) => ({ ...reminder, ...patch }),
     },
-    familyTaskStore: {
-      create: async (input) => ({ ...task, ...input }),
-      listByElder: async () => [task],
-      listPending: async () => [task],
-      confirm: async (input) => ({
-        ...task,
-        status: "confirmed",
-        confirmedBy: input.actorUserId,
-        confirmedAt: "2026-05-09T12:01:00.000Z",
-      }),
-      reject: async (input) => ({
-        ...task,
-        status: "rejected",
-        confirmedBy: input.actorUserId,
-        confirmedAt: "2026-05-09T12:01:00.000Z",
-      }),
-      requestMoreInfo: async (input) => ({
-        ...task,
-        status: "needs_more_info",
-        confirmedBy: input.actorUserId,
-        confirmedAt: "2026-05-09T12:01:00.000Z",
-      }),
-    },
     debugTraceStore: {
       getByTrace: async () => debugTrace,
       getBySource: async () => debugTrace,
       getByAuditId: async () => debugTrace,
-    },
-    notificationIntentStore: {
-      create: async (input) => ({
-        ...input,
-        id: "notification-1",
-        status: input.status ?? "pending",
-        createdAt: "2026-05-09T12:00:00.000Z",
-      }),
-      listByElder: async () => [],
     },
     healthCheck: async () => ({ postgres: "ok" }),
     auditRecords,

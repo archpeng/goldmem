@@ -1,3 +1,5 @@
+import { toElderSecretaryVoiceText } from "@goldmem/memory-schema";
+
 export type JsonRecord = Record<string, unknown>;
 
 export const EVENT_TYPES = [
@@ -76,6 +78,10 @@ export function stringValue(value: unknown, fallback: string): string {
 
 export function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+export function elderSecretaryText(value: string): string {
+  return toElderSecretaryVoiceText(value);
 }
 
 export function numberValue(value: unknown, fallback: number): number {

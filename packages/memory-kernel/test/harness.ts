@@ -323,6 +323,20 @@ class InMemorySourceStore implements SourceStore {
     return source;
   }
 
+  async createForClientTurn(input: CreateSourceInput & { clientTurnId: string }) {
+    const { clientTurnId, ...sourceInput } = input;
+    const existing = this.sources.find((source) =>
+      source.tenantId === sourceInput.tenantId &&
+      source.elderId === sourceInput.elderId &&
+      source.metadata?.clientTurnId === clientTurnId
+    );
+    if (existing) return { source: existing, reused: true };
+    return {
+      source: await this.create({ ...sourceInput, metadata: { ...sourceInput.metadata, clientTurnId } }),
+      reused: false,
+    };
+  }
+
   async get(input: { tenantId: string; sourceId: string }): Promise<MemorySource | null> {
     return this.sources.find((source) => source.tenantId === input.tenantId && source.id === input.sourceId) ?? null;
   }
@@ -474,10 +488,6 @@ class InMemoryFamilyTaskStore implements FamilyTaskStore {
 
   async listPending(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
     return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId && task.status === "pending");
-  }
-
-  async listByElder(input: { tenantId: string; elderId: string }): Promise<FamilyTask[]> {
-    return this.tasks.filter((task) => task.tenantId === input.tenantId && task.elderId === input.elderId);
   }
 
   async confirm(input: { tenantId: string; taskId: string; actorUserId: string }): Promise<FamilyTask> {
@@ -671,6 +681,12 @@ class InMemoryMemoryProcessingJobStore implements MemoryProcessingJobStore {
     };
     this.jobs.push(job);
     return job;
+  }
+
+  async enqueueBySource(input: Parameters<MemoryProcessingJobStore["enqueueBySource"]>[0]) {
+    const existing = await this.getBySource({ tenantId: input.tenantId, sourceId: input.sourceId, type: input.type });
+    if (existing) return { job: existing, reused: true };
+    return { job: await this.enqueue(input), reused: false };
   }
 
   async claimDue(input: Parameters<MemoryProcessingJobStore["claimDue"]>[0]): Promise<MemoryProcessingJob[]> {

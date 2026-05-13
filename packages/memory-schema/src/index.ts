@@ -3,6 +3,18 @@ import { z } from "zod";
 export const ISODateTimeSchema = z.string().datetime();
 export const DEFAULT_TENANT_ID = "tenant-mvp";
 export const TenantIdSchema = z.string().min(1).default(DEFAULT_TENANT_ID);
+export const ELDER_THIRD_PERSON_PATTERN = /老人说|老人提到|该老人|用户表示/;
+
+export function toElderSecretaryVoiceText(value: string): string {
+  return value
+    .replaceAll("该老人", "你")
+    .replaceAll("用户表示", "你提到")
+    .replaceAll("老人说", "你说")
+    .replaceAll("老人提到", "你提到")
+    .replaceAll("老人", "你")
+    .replaceAll("The elder", "You")
+    .replaceAll("the elder", "you");
+}
 
 export const SourceTypeSchema = z.enum(["voice", "text", "family_input"]);
 export const EventTypeSchema = z.enum([
@@ -78,6 +90,7 @@ export const MemorySourceSchema = z.object({
       locationHint: z.string().optional(),
       appVersion: z.string().optional(),
       timezone: z.string().optional(),
+      clientTurnId: z.string().min(1).optional(),
     })
     .optional(),
 });
@@ -198,6 +211,18 @@ export const FamilyTaskSchema = FamilyConfirmationTaskDraftSchema.omit({ related
   createdAt: ISODateTimeSchema,
 });
 export type FamilyTask = z.infer<typeof FamilyTaskSchema>;
+
+export const FamilyAssistTaskSchema = FamilyTaskSchema.pick({
+  id: true,
+  title: true,
+  summary: true,
+  type: true,
+  urgency: true,
+  status: true,
+  visibility: true,
+  createdAt: true,
+});
+export type FamilyAssistTask = z.infer<typeof FamilyAssistTaskSchema>;
 
 export const NotificationIntentSchema = z.object({
   id: z.string().min(1),
@@ -460,6 +485,7 @@ export const ElderTurnRequestSchema = z.object({
   now: ISODateTimeSchema.optional(),
   timezone: z.string().min(1).optional(),
   traceId: z.string().min(1).optional(),
+  clientTurnId: z.string().min(1).optional(),
 });
 export type ElderTurnRequest = z.infer<typeof ElderTurnRequestSchema>;
 

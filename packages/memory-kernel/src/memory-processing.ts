@@ -1,6 +1,6 @@
 import { DEFAULT_TENANT_ID, type IngestDraft, type IngestStatus, type MemorySource } from "@goldmem/memory-schema";
 import { randomUUID } from "node:crypto";
-import type { MemoryProcessingJob } from "@goldmem/memory-store";
+import type { CreateSourceInput, MemoryProcessingJob } from "@goldmem/memory-store";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { SemanticIndexer } from "./semantic-indexer.js";
 import type { ElderMemoryKernelDeps, IngestTextInput } from "./index.js";
@@ -15,7 +15,7 @@ export class MemoryProcessingOrchestrator {
   }
 
   async enqueueTextIngest(input: IngestTextInput & { requiresIngestContextRecall: boolean }): Promise<IngestDraft> {
-    const source = await this.deps.sourceStore.create({
+    const sourceInput: CreateSourceInput = {
       tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
       elderId: input.elderId,
       type: "text",
@@ -23,8 +23,12 @@ export class MemoryProcessingOrchestrator {
       createdAt: new Date().toISOString(),
       localCreatedAt: input.localCreatedAt,
       metadata: input.metadata,
-    });
-    const job = await this.deps.memoryProcessingJobStore.enqueue({
+    };
+    const sourceResult = input.clientTurnId
+      ? await this.deps.sourceStore.createForClientTurn({ ...sourceInput, clientTurnId: input.clientTurnId })
+      : { source: await this.deps.sourceStore.create(sourceInput), reused: false };
+    const source = sourceResult.source;
+    const jobResult = await this.deps.memoryProcessingJobStore.enqueueBySource({
       type: "ingest_source",
       tenantId: source.tenantId,
       elderId: source.elderId,
@@ -32,22 +36,26 @@ export class MemoryProcessingOrchestrator {
       traceId: input.traceId,
       payload: { requiresIngestContextRecall: input.requiresIngestContextRecall },
     });
+    const job = jobResult.job;
     await this.deps.auditLog.record({
-      type: "memory_ingest_queued",
+      type: sourceResult.reused || jobResult.reused ? "memory_ingest_reused" : "memory_ingest_queued",
       tenantId: source.tenantId,
       elderId: source.elderId,
       sourceId: source.id,
       traceId: input.traceId,
       payload: {
         traceId: input.traceId,
+        clientTurnId: input.clientTurnId,
         processingJobId: job.id,
+        sourceReused: sourceResult.reused,
+        jobReused: jobResult.reused,
         requiresIngestContextRecall: input.requiresIngestContextRecall,
       },
     });
     return {
       sourceId: source.id,
       transcript: source.transcript,
-      status: "queued",
+      status: toDraftStatus(job.status),
       createdAt: source.createdAt,
       processingJobId: job.id,
     };
@@ -154,6 +162,13 @@ export class MemoryProcessingOrchestrator {
     if (!source) throw new Error(`Memory source not found: ${job.sourceId}`);
     return source;
   }
+}
+
+function toDraftStatus(status: MemoryProcessingJob["status"]): IngestDraft["status"] {
+  if (status === "succeeded") return "ready";
+  if (status === "running") return "processing";
+  if (status === "dead") return "failed";
+  return "queued";
 }
 
 function retryAt(attempts: number): Date {
