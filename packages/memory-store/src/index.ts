@@ -253,7 +253,7 @@ export interface TemporalMemoryJobStore {
     nextRunAt?: string;
     maxAttempts?: number;
   }): Promise<TemporalMemoryJob>;
-  claimDue(input: { now: string; limit: number }): Promise<TemporalMemoryJob[]>;
+  claimDue(input: { now: string; limit: number; tenantId?: string; elderId?: string }): Promise<TemporalMemoryJob[]>;
   markSucceeded(input: { jobId: string }): Promise<TemporalMemoryJob>;
   markFailed(input: { jobId: string; errorMessage: string; nextRunAt: string; dead: boolean }): Promise<TemporalMemoryJob>;
   stats(input?: { tenantId?: string; elderId?: string }): Promise<Record<TemporalMemoryJobStatus, number>>;

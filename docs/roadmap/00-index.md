@@ -20,6 +20,9 @@ The key architectural decision is to stop treating PostgreSQL as the only memory
 12. [Long-Term Understanding Gap Roadmap](./17-long-term-understanding-gap-roadmap.md)
 13. [Validation Acceleration E2E Roadmap](./18-validation-acceleration-e2e-roadmap.md)
 14. [Graphiti Density E2E Run Report](./19-graphiti-density-e2e-run-report.md)
+15. [Capability Boundary E2E Test Plan](./20-capability-boundary-e2e-test-plan.md)
+16. [P1 Graphiti Technical Test Startup](./21-p1-graphiti-technical-test-startup.md)
+17. [Neko Model Speed Benchmark](./22-neko-model-speed-benchmark.md)
 
 ## One-line direction
 

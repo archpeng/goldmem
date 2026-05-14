@@ -384,6 +384,8 @@ async function drainGraphitiJobs(label: string, elderId: string): Promise<void> 
         postgres,
         temporalMemory,
         batchSize: graphitiDrainBatchSize,
+        tenantId,
+        elderId,
       });
       if (stats.claimed > 0) {
         console.log(`[${label}] graphiti drain batch: ${JSON.stringify(stats)}`);

@@ -12,8 +12,15 @@ export async function runGraphitiRetryBatch(input: {
   postgres: PostgresStores;
   temporalMemory: TemporalMemoryStore;
   batchSize: number;
+  tenantId?: string;
+  elderId?: string;
 }): Promise<GraphitiRetryBatchStats> {
-  const jobs = await input.postgres.temporalMemoryJobStore.claimDue({ now: new Date().toISOString(), limit: input.batchSize });
+  const jobs = await input.postgres.temporalMemoryJobStore.claimDue({
+    now: new Date().toISOString(),
+    limit: input.batchSize,
+    tenantId: input.tenantId,
+    elderId: input.elderId,
+  });
   let succeeded = 0;
   let failed = 0;
   let dead = 0;

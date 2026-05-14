@@ -32,7 +32,9 @@ const GoldenCaseSchema = z.object({
       allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default(["postgres", "semantic", "graphiti", "graphiti_provenance"]),
       expectedEvidenceSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default([]),
       requiresSemantic: z.boolean().default(false),
+      expectNoEvidence: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.4),
+      maxConfidence: z.number().min(0).max(1).optional(),
     }),
   ),
   riskExpectations: z
@@ -40,7 +42,7 @@ const GoldenCaseSchema = z.object({
       z.object({
         seedNoteId: z.string(),
         eventRiskLevel: z.string(),
-        familyTaskType: z.string(),
+        familyTaskType: z.string().optional(),
       }),
     )
     .default([]),
@@ -66,6 +68,7 @@ const GoldenCaseSchema = z.object({
     expectedStatus: z.enum(["confirmed", "rejected", "needs_more_info"]),
   })).default([]),
   forbidAutoConfirmedReminderHints: z.array(z.string().min(1)).default([]),
+  forbiddenFamilyTaskHints: z.array(z.string().min(1)).default([]),
 });
 
 const SemanticJudgeResultSchema = z.object({
@@ -84,6 +87,7 @@ const graphitiDrainBatches = Number(process.env.GOLDEN_E2E_DRAIN_BATCHES ?? 20);
 const graphitiDrainBatchSize = Number(process.env.GOLDEN_E2E_DRAIN_BATCH_SIZE ?? 20);
 const graphitiSearchSettleMs = Number(process.env.GOLDEN_E2E_SEARCH_SETTLE_MS ?? 5000);
 const graphitiTimeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 60_000);
+const modelRetries = Number(process.env.GOLDEN_E2E_MODEL_RETRIES ?? process.env.GOLDEN_E2E_PROVIDER_RETRIES ?? 2);
 const fixture = GoldenCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
 const semanticJudge = createSemanticJudge();
 const graphitiMode = process.env.GOLDEN_E2E_GRAPHITI_MODE
@@ -107,7 +111,7 @@ if (graphitiMode === "disabled") {
 const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();
 for (const note of fixture.seedNotes) {
   console.log(`golden seed start: ${note.id}`);
-  const result = await ingestNote(note.transcript);
+  const result = await ingestNote(note);
   console.log(
     `golden seed ok: ${note.id} source=${result.sourceId} events=${result.events.length} reminders=${result.reminderCandidates.length}`,
   );
@@ -126,6 +130,7 @@ const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeUR
 const events = await request<MemoryEvent[]>("GET", `/elder/events?${tenantQuery}`);
 const reminders = await request<Reminder[]>("GET", `/elder/reminders?${tenantQuery}`);
 const familyTasks = await request<FamilyAssistTask[]>("GET", `/family/elders/${encodeURIComponent(elderId)}/pending-tasks?tenantId=${encodeURIComponent(tenantId)}&actorUserId=golden-family`);
+assertFamilyAssistPrivacy(familyTasks);
 
 for (const expectation of fixture.riskExpectations) {
   const ingest = requiredIngest(ingests, expectation.seedNoteId);
@@ -133,10 +138,12 @@ for (const expectation of fixture.riskExpectations) {
     ingest.events.some((event) => event.riskLevel === expectation.eventRiskLevel),
     `Expected ${expectation.seedNoteId} to create risk level ${expectation.eventRiskLevel}`,
   );
-  assert(
-    familyTasks.some((task) => task.type === expectation.familyTaskType),
-    `Expected family task type ${expectation.familyTaskType}`,
-  );
+  if (expectation.familyTaskType) {
+    assert(
+      familyTasks.some((task) => task.type === expectation.familyTaskType),
+      `Expected family task type ${expectation.familyTaskType}`,
+    );
+  }
 }
 
 for (const expectation of fixture.reminderExpectations) {
@@ -178,6 +185,13 @@ for (const expectation of fixture.familyTaskExpectations) {
   );
 }
 
+for (const hint of fixture.forbiddenFamilyTaskHints) {
+  assert(
+    !familyTasks.some((task) => textIncludes(`${task.title}\n${task.summary}`, hint)),
+    `Family assist task leaked forbidden hint: ${hint}`,
+  );
+}
+
 for (const expectation of fixture.familyTaskActionExpectations) {
   const task = familyTasks.find((item) => {
     const text = `${item.title}\n${item.summary}`;
@@ -207,11 +221,15 @@ for (const hint of fixture.forbidAutoConfirmedReminderHints) {
 let semanticEvidenceQueries = 0;
 for (const queryCase of fixture.queries) {
   console.log(`golden query start: ${queryCase.id}`);
-  const turn = await request<{ traceId: string; answer?: unknown }>("POST", "/elder/turn", {
-    tenantId,
-    elderId,
-    text: queryCase.query,
-  });
+  const turn = await withModelRetry(`query ${queryCase.id}`, () =>
+    request<{ traceId: string; answer?: unknown; turnType?: string; message?: string }>("POST", "/elder/turn", {
+      tenantId,
+      elderId,
+      text: queryCase.query,
+      clientTurnId: `golden-query-${elderId}-${queryCase.id}`,
+    }),
+  );
+  assert(turn.answer, `${queryCase.id} returned no answer; turnType=${turn.turnType ?? "unknown"} message=${turn.message ?? ""} traceId=${turn.traceId}`);
   const answer = MemoryAnswerSchema.parse(turn.answer);
   assert(Boolean(answer.traceId), `${queryCase.id} did not return traceId`);
   const debugTrace = await request<{ auditTrail?: unknown[] }>("GET", `/debug/traces/${encodeURIComponent(answer.traceId ?? "")}?tenantId=${encodeURIComponent(tenantId)}`);
@@ -220,8 +238,17 @@ for (const queryCase of fixture.queries) {
   const evidenceText = normalizeText(answer.retrievedEvidence.map((item) => item.summary).join("\n"));
   const evidenceSources = new Set(answer.retrievedEvidence.map((item) => item.retrievalSource));
 
-  assert(answer.confidence >= queryCase.minConfidence, `${queryCase.id} confidence too low: ${answer.confidence}`);
-  assert(answer.retrievedEvidence.length > 0, `${queryCase.id} returned no retrieved evidence`);
+  if (queryCase.expectNoEvidence) {
+    assert(answer.confidence <= (queryCase.maxConfidence ?? 0.1), `${queryCase.id} confidence too high for no-evidence answer: ${answer.confidence}`);
+    assert(answer.retrievedEvidence.length === 0, `${queryCase.id} expected no retrieved evidence`);
+    assert(answer.matchedSources.length === 0, `${queryCase.id} expected no matched sources`);
+  } else {
+    assert(answer.confidence >= queryCase.minConfidence, `${queryCase.id} confidence too low: ${answer.confidence}`);
+    assert(answer.retrievedEvidence.length > 0, `${queryCase.id} returned no retrieved evidence`);
+  }
+  if (queryCase.maxConfidence !== undefined) {
+    assert(answer.confidence <= queryCase.maxConfidence, `${queryCase.id} confidence too high: ${answer.confidence}`);
+  }
   assert(
     answer.retrievedEvidence.every((item) => queryCase.allowedSources.includes(item.retrievalSource)),
     `${queryCase.id} returned unexpected retrieval source`,
@@ -279,18 +306,21 @@ console.log(
   `golden e2e ok: elderId=${elderId} seeds=${fixture.seedNotes.length} events=${events.length} reminders=${reminders.length} familyTasks=${familyTasks.length} semanticQueries=${semanticEvidenceQueries}`,
 );
 
-async function ingestNote(transcript: string) {
-  const turn = await request<{
-    draft?: {
-      sourceId: string;
-      transcript: string;
-      status: "queued" | "processing" | "ready" | "failed";
-    };
-  }>("POST", "/elder/turn", {
-    tenantId,
-    elderId,
-    text: transcript,
-  });
+async function ingestNote(note: { id: string; transcript: string }) {
+  const turn = await withModelRetry(`seed ${note.id}`, () =>
+    request<{
+      draft?: {
+        sourceId: string;
+        transcript: string;
+        status: "queued" | "processing" | "ready" | "failed";
+      };
+    }>("POST", "/elder/turn", {
+      tenantId,
+      elderId,
+      text: note.transcript,
+      clientTurnId: `golden-seed-${elderId}-${note.id}`,
+    }),
+  );
   if (!turn.draft) throw new Error("Elder turn did not return draft for seed note");
   const status = await waitForIngestReady(turn.draft.sourceId);
   const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(elderId)}`;
@@ -328,14 +358,31 @@ async function waitForIngestReady(sourceId: string) {
 }
 
 async function waitForMemoryProcessingIdle(): Promise<void> {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    const health = await request<{ memoryProcessingJobs?: Record<string, number> }>("GET", "/health");
-    const stats = health.memoryProcessingJobs;
-    if (!stats) return;
-    const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
-    if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead: ${JSON.stringify(stats)}`);
-    if (active === 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const health = await request<{ memoryProcessingJobs?: Record<string, number> }>("GET", "/health");
+      const stats = health.memoryProcessingJobs;
+      if (!stats) return;
+      const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
+      if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead: ${JSON.stringify(stats)}`);
+      if (active === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error("Memory processing jobs did not become idle");
+  }
+
+  const postgres = createPostgresStores({ databaseUrl });
+  try {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const stats = await postgres.memoryProcessingJobStore.stats({ tenantId, elderId });
+      const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
+      if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead for current E2E elder: ${JSON.stringify(stats)}`);
+      if (active === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } finally {
+    await postgres.close();
   }
   throw new Error("Memory processing jobs did not become idle");
 }
@@ -351,7 +398,7 @@ async function drainGraphitiJobs(): Promise<void> {
   });
   try {
     for (let attempt = 0; attempt < graphitiDrainBatches; attempt += 1) {
-      const stats = await runGraphitiRetryBatch({ postgres, temporalMemory, batchSize: graphitiDrainBatchSize });
+      const stats = await runGraphitiRetryBatch({ postgres, temporalMemory, batchSize: graphitiDrainBatchSize, tenantId, elderId });
       if (stats.failed > 0 || stats.dead > 0) throw new Error(`Graphiti temporal job drain failed: ${JSON.stringify(stats)}`);
       if (stats.claimed === 0) {
         if (graphitiSearchSettleMs > 0) await new Promise((resolve) => setTimeout(resolve, graphitiSearchSettleMs));
@@ -387,10 +434,51 @@ async function request<T>(method: string, path: string, body?: Json): Promise<T>
   return parsed as T;
 }
 
+async function withModelRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= modelRetries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= modelRetries || !isRetryableModelError(error)) throw error;
+      const delayMs = 1000 * (attempt + 1);
+      console.warn(`golden retry ${label}: attempt=${attempt + 1} delayMs=${delayMs} error=${error instanceof Error ? error.message : String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function isRetryableModelError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("OpenAI JSON completion failed") ||
+    message.includes("provider_error") ||
+    message.includes("schema_validation_error") ||
+    message.includes("timeout") ||
+    message.includes("aborted") ||
+    message.includes("500")
+  );
+}
+
 function requiredIngest(ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>, id: string) {
   const ingest = ingests.get(id);
   if (!ingest) throw new Error(`Missing seed ingest result: ${id}`);
   return ingest;
+}
+
+function assertFamilyAssistPrivacy(tasks: FamilyAssistTask[]): void {
+  const allowedKeys = new Set(["id", "title", "summary", "type", "urgency", "status", "visibility", "createdAt"]);
+  for (const task of tasks as Array<Record<string, unknown>>) {
+    for (const key of Object.keys(task)) {
+      assert(allowedKeys.has(key), `Family assist task leaked forbidden field: ${key}`);
+    }
+  }
+
+  const raw = JSON.stringify(tasks);
+  const forbidden = /raw_transcript|audioUrl|audio_url|fullEvidence|debugTrace|sourceId|eventId|traceId|transcript/i;
+  assert(!forbidden.test(raw), `Family assist task leaked internal or raw evidence field: ${raw}`);
 }
 
 function assert(condition: unknown, message: string): asserts condition {

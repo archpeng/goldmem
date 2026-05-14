@@ -46,17 +46,18 @@ export class PostgresTemporalMemoryJobStore implements TemporalMemoryJobStore {
     return mapTemporalMemoryJob(job);
   }
 
-  async claimDue(input: { now: string; limit: number }): Promise<TemporalMemoryJob[]> {
+  async claimDue(input: { now: string; limit: number; tenantId?: string; elderId?: string }): Promise<TemporalMemoryJob[]> {
     const now = new Date(input.now);
+    const filters = [
+      inArray(schema.temporalMemoryJobs.status, ["pending", "failed"]),
+      lte(schema.temporalMemoryJobs.nextRunAt, now),
+      input.tenantId ? eq(schema.temporalMemoryJobs.tenantId, input.tenantId) : undefined,
+      input.elderId ? eq(schema.temporalMemoryJobs.elderId, input.elderId) : undefined,
+    ].filter(Boolean);
     const rows = await this.db
       .select()
       .from(schema.temporalMemoryJobs)
-      .where(
-        and(
-          inArray(schema.temporalMemoryJobs.status, ["pending", "failed"]),
-          lte(schema.temporalMemoryJobs.nextRunAt, now),
-        ),
-      )
+      .where(and(...filters))
       .orderBy(schema.temporalMemoryJobs.nextRunAt, schema.temporalMemoryJobs.createdAt)
       .limit(input.limit);
 
