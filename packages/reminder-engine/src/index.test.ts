@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Reminder } from "@goldmem/memory-schema";
-import type { CreateReminderInput, ReminderStore } from "@goldmem/memory-store";
+import type { Reminder } from "@mem/memory-schema";
+import type { CreateReminderInput, ReminderStore } from "@mem/memory-store";
 import { DefaultReminderEngine } from "./index.js";
 
 describe("DefaultReminderEngine", () => {
@@ -67,7 +67,7 @@ describe("DefaultReminderEngine", () => {
       status: "pending_family_confirm",
       confirmationRequired: true,
       confidence: 0.9,
-      reason: "老人提到上午要去城里买生活用品，但没有说明具体是哪一天上午。",
+      reason: "用户提到上午要去城里买生活用品，但没有说明具体是哪一天上午。",
     });
 
     const confirmed = await engine.confirmReminder({
@@ -121,6 +121,27 @@ class InMemoryReminderStore implements ReminderStore {
 
   async listByElder(input: { tenantId: string; elderId: string }): Promise<Reminder[]> {
     return this.reminders.filter((reminder) => reminder.tenantId === input.tenantId && reminder.elderId === input.elderId);
+  }
+
+  async findByRemindAtRange(input: Parameters<ReminderStore["findByRemindAtRange"]>[0]): Promise<Reminder[]> {
+    return this.reminders.filter((reminder) =>
+      reminder.tenantId === input.tenantId &&
+      reminder.elderId === input.elderId &&
+      !!reminder.remindAt &&
+      reminder.remindAt >= input.fromIso &&
+      reminder.remindAt < input.toIso &&
+      (!input.statuses?.length || input.statuses.includes(reminder.status))
+    );
+  }
+
+  async findByConfirmedAtRange(input: Parameters<ReminderStore["findByConfirmedAtRange"]>[0]): Promise<Reminder[]> {
+    return this.reminders.filter((reminder) =>
+      reminder.tenantId === input.tenantId &&
+      reminder.elderId === input.elderId &&
+      !!reminder.confirmedAt &&
+      reminder.confirmedAt >= input.fromIso &&
+      reminder.confirmedAt < input.toIso
+    );
   }
 
   async update(input: { tenantId: string; reminderId: string; patch: Partial<Reminder> }): Promise<Reminder> {

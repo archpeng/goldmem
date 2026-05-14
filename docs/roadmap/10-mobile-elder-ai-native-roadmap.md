@@ -1,13 +1,13 @@
 # 10. Mobile Elder AI-Native Roadmap
 
-本文定义老人端当前产品路线：`apps/web-mvp` 是手机优先的单一 AI 对话体验，而不是 Kernel 控制台，也不是“记一下 / 问一问”分页面应用。
+本文定义用户端当前产品路线：`apps/web-mvp` 是手机优先的单一 AI 对话体验，而不是 Kernel 控制台，也不是“记一下 / 问一问”分页面应用。
 
 ## Product Direction
 
 下一阶段主线：
 
 ```text
-老人端优先
+用户端优先
 手机优先
 单一对话入口优先
 由后端 /elder/turn 判断 record / recall / record_and_recall / clarify
@@ -25,7 +25,7 @@
 
 ## Architecture Fit
 
-老人端只调用薄前端 API adapter：
+用户端只调用薄前端 API adapter：
 
 ```text
 POST /elder/turn
@@ -36,7 +36,7 @@ POST /elder/feedback
 GET /debug/traces/:traceId   # dev only
 ```
 
-`/elder/turn` 是唯一老人端主入口：
+`/elder/turn` 是唯一用户端主入口：
 
 ```text
 text
@@ -70,7 +70,7 @@ Conversation stream
 Fixed bottom input: text area + mic state + send
 ```
 
-老人端普通界面不出现：
+用户端普通界面不出现：
 
 - tenant / trace / schema
 - semantic recall index / Graphiti / provider 名称
@@ -199,7 +199,7 @@ Next:
 
 - 语音录音接入后仍提交识别文本到 `/elder/turn`。
 - clarification turn 的继续追问体验。
-- reminder candidate 的确认语气继续老人化。
+- reminder candidate 的确认语气继续用户化。
 
 ### M3: Verification And Regression
 

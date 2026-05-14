@@ -4,10 +4,10 @@ Date: 2026-05-12
 
 ## Product Decision
 
-GoldMem's elder-facing first principle is immediate capture:
+mem's user-facing first principle is immediate capture:
 
 ```text
-I said it -> GoldMem remembered it -> I can see it, replay it, and act on it.
+I said it -> mem remembered it -> I can see it, replay it, and act on it.
 ```
 
 Graphiti should not sit on the real-time "record one thing" path. Its value is in later relationship enrichment:
@@ -137,7 +137,7 @@ Worker-internal statuses remain in `temporal_memory_jobs`:
 pending | running | succeeded | failed | dead
 ```
 
-Do not expose worker-internal states to elder-facing UI unless building admin/debug tooling.
+Do not expose worker-internal states to user-facing UI unless building admin/debug tooling.
 
 ## Enqueue Policy
 
@@ -248,7 +248,7 @@ Admin/debug may show:
 Small checks:
 
 ```bash
-pnpm --filter @goldmem/memory-kernel test
+pnpm --filter @mem/memory-kernel test
 pnpm typecheck
 pnpm architecture:check
 ```

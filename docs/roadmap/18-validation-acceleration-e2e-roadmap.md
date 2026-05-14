@@ -4,7 +4,7 @@
 
 ```text
 Graphiti 长期关系层是否真的带来产品级增益？
-老人端“生活记忆秘书”是否有真实使用支点？
+用户端“生活记忆秘书”是否有真实使用支点？
 隐私协助是否能保留安全价值而不破坏尊严？
 ```
 
@@ -14,7 +14,7 @@ Graphiti 长期关系层是否真的带来产品级增益？
 
 当前最重要的假设：
 
-- 老人端任务体验能形成持续使用，而不是一次性新鲜感。
+- 用户端任务体验能形成持续使用，而不是一次性新鲜感。
 - Graphiti enabled 在关系型问题上明显优于 disabled。
 - 家人端最小协助不会伤害使用者隐私感。
 - 后台化 Graphiti 不影响即时记录体验。
@@ -26,7 +26,7 @@ Graphiti 长期关系层是否真的带来产品级增益？
 真实长期数据需要数周甚至数月。E2E 阶段可以用“压缩时间”的方式生成高密度数据：
 
 ```text
-多个虚拟老人 profile
+多个虚拟用户 profile
 连续多天生活事件
 多次改期、纠错、家人确认、风险升级
 统一 query battery
@@ -63,7 +63,7 @@ Graphiti、pgvector、前端或测试脚本不得绕过 Kernel 写正常业务 t
 |---|---|---|
 | Graphiti A/B 高密度 E2E | 分场景胜率、evidence 对齐率、失败样例 | 不做复杂自动修复 |
 | Memory Lint v1 + triage | lint report、review task、suppression | 不自动改 truth |
-| 老人端试点 instrumentation | 7 日使用、确认、查询、隐私反馈 | 不扩展家人 dashboard |
+| 用户端试点 instrumentation | 7 日使用、确认、查询、隐私反馈 | 不扩展家人 dashboard |
 | 性能基线 | source ack、background completion、provider timing | 不把 Graphiti 放回实时阻塞链路 |
 
 继续投入标准：
@@ -85,7 +85,7 @@ Graphiti、pgvector、前端或测试脚本不得绕过 Kernel 写正常业务 t
 
 ## 3. 高密度 Profile 设计
 
-每个 profile 是一个压缩时间的老人生活样本。推荐先做 7 个 profile。
+每个 profile 是一个压缩时间的用户生活样本。推荐先做 7 个 profile。
 
 | Profile | 输入密度 | 核心链路 | 关键问题 |
 |---|---:|---|---|
@@ -208,7 +208,7 @@ Memory Lint 不只输出 report，还必须有 triage 闭环。
 - 重复 finding 被聚合。
 - accepted risk 必须有过期时间。
 
-## 8. 老人端真实试点指标
+## 8. 用户端真实试点指标
 
 工程 E2E 只能证明机制，不能证明产品价值。6 周内需要同步小范围真实试点。
 
@@ -222,7 +222,7 @@ Memory Lint 不只输出 report，还必须有 triage 闭环。
 - 用户纠错次数。
 - 隐私提示理解度。
 - 对家人协助的接受/拒绝比例。
-- 家人协助是否让老人减少使用。
+- 家人协助是否让用户减少使用。
 
 试点判断：
 
@@ -273,9 +273,9 @@ Stage A 结束后必须做一次明确决策：
 - 真实试点中长期关系 query 真实出现。
 - privacy assist 没有明显伤害信任。
 - lint finding 可被 triage 消化。
-- 性能基线证明 Graphiti 后台化不影响老人端首屏体验。
+- 性能基线证明 Graphiti 后台化不影响用户端首屏体验。
 
-如果不满足，不应继续堆 Correction Loop 和 Nightly Consolidation。应先回到老人端任务体验、提醒可靠性、隐私信任感。
+如果不满足，不应继续堆 Correction Loop 和 Nightly Consolidation。应先回到用户端任务体验、提醒可靠性、隐私信任感。
 
 一句话：
 

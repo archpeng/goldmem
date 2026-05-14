@@ -1,6 +1,6 @@
-import type { MemorySource, ParsedMemoryQuery } from "@goldmem/memory-schema";
-import type { AuditLog, EventStore, SourceStore } from "@goldmem/memory-store";
-import { buildTemporalGroupId, type TemporalEvidence, type TemporalMemoryStore } from "@goldmem/temporal-memory";
+import type { MemorySource, ParsedMemoryQuery } from "@mem/memory-schema";
+import type { AuditLog, EventStore, SourceStore } from "@mem/memory-store";
+import { buildTemporalGroupId, type TemporalEvidence, type TemporalMemoryStore } from "@mem/temporal-memory";
 import { isString } from "./guards.js";
 import { shouldSearchTemporalMemory } from "./retrieval.js";
 

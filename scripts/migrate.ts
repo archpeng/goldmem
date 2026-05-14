@@ -2,8 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL ?? "postgres://goldmem:goldmem@localhost:5432/goldmem";
-const migrationsDir = process.env.GOLDMEM_MIGRATIONS_DIR ?? "infra/db/migrations";
+const databaseUrl = process.env.DATABASE_URL ?? "postgres://mem:mem@localhost:5432/mem";
+const migrationsDir = process.env.MEM_MIGRATIONS_DIR ?? "infra/db/migrations";
 const pool = new Pool({ connectionString: databaseUrl });
 
 try {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
-import type { MemoryContextLink, MemoryEvent } from "@goldmem/memory-schema";
+import type { MemoryContextLink, MemoryEvent } from "@mem/memory-schema";
 import type { ContextLinkStore, CreateContextLinkInput } from "./index.js";
 import { mapContextLink, mapEvent } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";

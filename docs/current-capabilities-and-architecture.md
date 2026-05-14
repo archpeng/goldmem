@@ -1,12 +1,12 @@
-# GoldMem 当前能力与架构总览
+# mem 当前能力与架构总览
 
-本文总结 GoldMem 当前代码库已经具备的能力、模块职责、核心边界和验证门禁。它面向工程协作与 AI coder 维护，目标是让后续修改能快速定位 owner，并避免破坏 `AGENTS.md` 中定义的架构约束。
+本文总结 mem 当前代码库已经具备的能力、模块职责、核心边界和验证门禁。它面向工程协作与 AI coder 维护，目标是让后续修改能快速定位 owner，并避免破坏 `AGENTS.md` 中定义的架构约束。
 
 ## 1. 当前产品能力
 
-GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
+mem 当前已经形成一个可运行的用户记忆与提醒 MVP：
 
-- 老人或家属输入文本/语音来源，系统保存原始 source 证据。
+- 用户或家属输入文本/语音来源，系统保存原始 source 证据。
 - `/elder/turn` 的记录路径会先保存 source 并返回草稿态，完整 `MemoryPlan` 整理在后台 job 中完成。
 - 模型生成 `MemoryPlan`，Kernel 进行 schema 校验、风险约束、权限约束和确定性落库。
 - PostgreSQL 保存业务 truth：source、event、reminder、risk flag、family task、context link、feedback、audit、memory processing job、Graphiti retry job。
@@ -37,9 +37,9 @@ GoldMem 当前已经形成一个可运行的老人记忆与提醒 MVP：
 
 ```mermaid
 flowchart TB
-  Elder[老人 / 家属输入] --> Web[Web MVP]
+  Elder[用户 / 家属输入] --> Web[Web MVP]
   Web --> API[Fastify API Server]
-  API --> Kernel[Elder Memory Kernel]
+  API --> Kernel[Memory Kernel]
 
   Kernel --> Schema[memory-schema<br/>Zod contracts]
   Kernel --> Risk[risk-engine]

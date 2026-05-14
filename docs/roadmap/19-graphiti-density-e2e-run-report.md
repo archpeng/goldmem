@@ -10,7 +10,7 @@ Use high-density, multi-profile E2E runs to quickly validate whether Graphiti is
 
 - Enabled API: `http://127.0.0.1:3000`
 - Disabled API: `http://127.0.0.1:3001`
-- Disabled database: `goldmem_disabled`
+- Disabled database: `mem_disabled`
 - Model: `gpt-5.4-mini`
 - Semantic memory: `pgvector`
 - Graphiti sidecar: healthy for enabled API, missing config for disabled API

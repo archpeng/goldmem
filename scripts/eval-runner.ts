@@ -24,7 +24,7 @@ type EvalFailure = {
   message: string;
 };
 
-const evalDir = process.env.GOLDMEM_EVAL_DIR ?? "evals";
+const evalDir = process.env.MEM_EVAL_DIR ?? "evals";
 const files = (await readdir(evalDir)).filter((file) => file.endsWith(".json")).sort();
 const failures: EvalFailure[] = [];
 

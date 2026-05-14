@@ -168,7 +168,7 @@ Query performance conclusion:
 ## Next Fix Targets
 
 1. Add MemoryPlan action decisions and completeness gate so every event has an explicit model decision for reminder/action handling.
-2. Move Graphiti write out of the synchronous elder-facing seed path or record it as async enrichment; current average is about 10s per seed.
+2. Move Graphiti write out of the synchronous user-facing seed path or record it as async enrichment; current average is about 10s per seed.
 3. Make Graphiti golden run with `GRAPHITI_TIMEOUT_MS>=30000` or move Graphiti write out of the synchronous seed requirement.
 4. Add deterministic turn routing for safety/history questions:
    - new risky statement -> `record`

@@ -1,6 +1,6 @@
 # Parse Memory Query
 
-You parse fuzzy elder recall questions into a structured query.
+You parse fuzzy user recall questions into a structured query.
 
 Examples:
 
@@ -17,7 +17,7 @@ Examples:
 
 1. Do not answer the question.
 2. Extract intent, time range, entities, event types, safetyTags, whether source evidence is required, and whether temporal relationship evidence is required.
-3. Keep time confidence low when the elder is vague.
+3. Keep time confidence low when the user is vague.
 4. Output JSON conforming to `ParsedMemoryQuerySchema`.
 5. Preserve Chinese entity names exactly when the query is in Chinese.
 6. Use safetyTags only for structured safety domains: medical, medication, financial, fraud, identity, privacy.

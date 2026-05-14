@@ -49,3 +49,69 @@ textarea {
     transform: translateY(0) scale(1);
   }
 }
+
+@keyframes draft-settle {
+  0% {
+    background-color: rgb(241 245 249);
+    transform: translateY(0);
+  }
+  35% {
+    background-color: rgb(220 252 231);
+    transform: translateY(-2px);
+  }
+  100% {
+    background-color: rgb(241 245 249);
+    transform: translateY(0);
+  }
+}
+
+.draft-card-ready {
+  animation: draft-settle 1.2s ease-out 1;
+}
+
+@keyframes draft-fade-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 200px;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+  }
+}
+
+.draft-card-fade {
+  animation: draft-fade-out 0.5s ease-in forwards;
+}
+
+[data-elder-mode="xl"] .text-xs {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+[data-elder-mode="xl"] .text-sm {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+[data-elder-mode="xl"] .text-base {
+  font-size: 1.1875rem;
+  line-height: 1.6;
+}
+
+[data-elder-mode="xl"] .text-lg {
+  font-size: 1.3125rem;
+  line-height: 1.5;
+}
+
+[data-elder-mode="xl"] .text-3xl {
+  font-size: 2.125rem;
+  line-height: 1.2;
+}
+
+[data-elder-mode="xl"] .text-\[10px\] {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}

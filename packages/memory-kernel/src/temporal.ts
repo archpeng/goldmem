@@ -1,9 +1,9 @@
-import type { MemoryContextLink, MemoryEvent, MemorySource, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
+import type { MemoryContextLink, MemoryEvent, MemorySource, Reminder, RiskFlagRecord } from "@mem/memory-schema";
 import {
   buildTemporalGroupId,
   type AddTemporalEpisodeInput,
   type TemporalMemoryStore,
-} from "@goldmem/temporal-memory";
+} from "@mem/temporal-memory";
 
 export type BuildTemporalEpisodeInput = {
   tenantId: string;
@@ -21,7 +21,7 @@ export type WriteTemporalEpisodeInput = BuildTemporalEpisodeInput & {
 };
 
 /**
- * Builds a curated Graphiti episode from already-persisted GoldMem truth records.
+ * Builds a curated Graphiti episode from already-persisted mem truth records.
  *
  * This is used after PostgreSQL writes are complete so Graphiti receives stable
  * source/event identifiers and never becomes the business write authority.

@@ -1,6 +1,6 @@
 # 09. Production Graphiti Plan Pack
 
-This plan pack turns the long-term memory direction into an implementation sequence for a new-build GoldMem codebase with no historical production burden.
+This plan pack turns the long-term memory direction into an implementation sequence for a new-build mem codebase with no historical production burden.
 
 The direction is production-first:
 
@@ -28,7 +28,7 @@ Goal: make the current pulled state green before adding production Graphiti beha
 
 Tasks:
 
-- Run `pnpm install` to refresh workspace links so `@goldmem/temporal-memory` resolves from `@goldmem/memory-kernel`.
+- Run `pnpm install` to refresh workspace links so `@mem/temporal-memory` resolves from `@mem/memory-kernel`.
 - Fix `packages/temporal-memory` typecheck:
   - Preferred: make `NullTemporalMemoryStore` method signatures accept the same parameters as `TemporalMemoryStore`.
   - Also align its `tsconfig.json` with other packages by excluding `src/**/*.test.ts` from package typecheck.
@@ -39,9 +39,9 @@ Tasks:
 
 Acceptance:
 
-- Workspace install produces a node_modules link for `@goldmem/temporal-memory`.
-- `@goldmem/temporal-memory` tests pass.
-- `@goldmem/memory-kernel` tests pass.
+- Workspace install produces a node_modules link for `@mem/temporal-memory`.
+- `@mem/temporal-memory` tests pass.
+- `@mem/memory-kernel` tests pass.
 - Full MVP verification is green before Graphiti production work starts.
 
 ## Step 2: Unify Roadmap Direction
@@ -159,7 +159,7 @@ Tasks:
   - do not rollback PostgreSQL
   - do not mark reminder/risk/family truth as failed
   - audit `graphiti_enqueue_failed`
-  - return elder-facing result with internal temporal status metadata
+  - return user-facing result with internal temporal status metadata
 
 Acceptance:
 
@@ -339,8 +339,8 @@ pnpm mvp:verify
 Graphiti adapter:
 
 ```bash
-pnpm --filter @goldmem/temporal-memory test
-pnpm --filter @goldmem/memory-kernel test
+pnpm --filter @mem/temporal-memory test
+pnpm --filter @mem/memory-kernel test
 ```
 
 Production query path:

@@ -1,4 +1,4 @@
-import type { MemoryAnswer, Reminder } from "@goldmem/memory-schema";
+import type { MemoryAnswer, Reminder } from "@mem/memory-schema";
 import { copy } from "./copy.js";
 
 export type ElderTaskItem = {

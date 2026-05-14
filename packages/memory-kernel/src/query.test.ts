@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ELDER_THIRD_PERSON_PATTERN, type MemoryPlan, type ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError } from "@goldmem/model-gateway";
+import { ELDER_THIRD_PERSON_PATTERN, type MemoryPlan, type ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
   buildEvent,
@@ -464,7 +464,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-yesterday",
         type: "general",
         title: "昨天散步",
-        summary: "老人昨天傍晚散步。",
+        summary: "用户昨天傍晚散步。",
         eventTimeStart: "2026-05-08T09:00:00.000Z",
         importance: 0.6,
         confidence: 0.8,
@@ -474,7 +474,7 @@ describe("ElderMemoryKernel query", () => {
         sourceId: "source-today",
         type: "general",
         title: "今天散步",
-        summary: "老人今天上午散步。",
+        summary: "用户今天上午散步。",
         eventTimeStart: "2026-05-09T09:00:00.000Z",
         importance: 0.6,
         confidence: 0.8,

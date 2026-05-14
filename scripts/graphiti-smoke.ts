@@ -1,10 +1,10 @@
 import { buildTemporalGroupId } from "../packages/temporal-memory/src/index.js";
 
 const baseUrl = requiredEnv("GRAPHITI_BASE_URL").replace(/\/$/, "");
-const tenantId = process.env.GRAPHITI_SMOKE_TENANT_ID ?? "goldmem-smoke";
+const tenantId = process.env.GRAPHITI_SMOKE_TENANT_ID ?? "mem-smoke";
 const elderId = process.env.GRAPHITI_SMOKE_ELDER_ID ?? "elder-smoke";
 const groupId = buildTemporalGroupId({ tenantId, elderId });
-const marker = `goldmem-graphiti-smoke-${Date.now()}`;
+const marker = `mem-graphiti-smoke-${Date.now()}`;
 
 const health = await request<Record<string, unknown>>("GET", "/health");
 if (health.ok !== true) throw new Error(`Graphiti health check failed: ${JSON.stringify(health)}`);
@@ -13,7 +13,7 @@ await requestFailure("POST", "/add_episode", 422, {
   name: `${groupId}:invalid-time:${marker}`,
   episode_body: { source: { id: `source-invalid-${marker}`, transcript: "invalid time should fail" }, events: [] },
   source: "json",
-  source_description: "GoldMem invalid datetime probe",
+  source_description: "mem invalid datetime probe",
   reference_time: "not-a-date",
   group_id: groupId,
   metadata: {
@@ -44,7 +44,7 @@ await request("POST", "/add_episode", {
     ],
   },
   source: "json",
-  source_description: "GoldMem Graphiti smoke episode",
+  source_description: "mem Graphiti smoke episode",
   reference_time: new Date().toISOString(),
   group_id: groupId,
   metadata: {

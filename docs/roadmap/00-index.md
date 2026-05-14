@@ -1,6 +1,6 @@
-# GoldMem Long-Term Memory Roadmap
+# mem Long-Term Memory Roadmap
 
-This roadmap series defines the medium-to-long-term technical direction for GoldMem after the initial MVP.
+This roadmap series defines the medium-to-long-term technical direction for mem after the initial MVP.
 
 The key architectural decision is to stop treating PostgreSQL as the only memory layer. PostgreSQL remains the source of truth for business state, raw evidence, permissions, and audit. Graphiti is the production temporal relationship memory layer. semantic recall index remains the short-to-medium-term multilingual recall layer.
 
@@ -27,12 +27,12 @@ The key architectural decision is to stop treating PostgreSQL as the only memory
 PostgreSQL = business/source truth
 semantic recall index = semantic recall / short-to-medium memory
 Graphiti = long-term temporal relationship evidence
-GoldMem Kernel = care orchestration, guardrails, policy, scheduling, and evidence fusion
+mem Kernel = care orchestration, guardrails, policy, scheduling, and evidence fusion
 ```
 
 ## Why this matters
 
-The most valuable memory in GoldMem is not a larger text archive. The most valuable memory is long-term care context:
+The most valuable memory in mem is not a larger text archive. The most valuable memory is long-term care context:
 
 ```text
 who is involved
@@ -43,11 +43,11 @@ which source supports it
 what risk emerged over time
 ```
 
-Graphiti is purpose-built for temporal context graphs. It tracks facts, relationships, validity windows, and provenance. Rebuilding those mechanisms inside PostgreSQL would turn GoldMem into a custom memory engine project. The updated direction is to let specialized memory infrastructure handle memory evolution, while GoldMem owns care-specific business boundaries.
+Graphiti is purpose-built for temporal context graphs. It tracks facts, relationships, validity windows, and provenance. Rebuilding those mechanisms inside PostgreSQL would turn mem into a custom memory engine project. The updated direction is to let specialized memory infrastructure handle memory evolution, while mem owns care-specific business boundaries.
 
 ## Current code baseline
 
-Current PR: `#1 Initialize Elder Memory Kernel architecture`.
+Current PR: `#1 Initialize Memory Kernel architecture`.
 
 Current code already has:
 

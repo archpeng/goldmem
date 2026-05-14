@@ -3,9 +3,12 @@ import {
   confirmReminder,
   getIngestStatus,
   getDebugTrace,
+  getElderProfile,
+  getTodaySnapshot,
   listMvpData,
   sendElderTurn,
   sendFeedback,
+  upsertElderProfile,
 } from "./api.js";
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -98,6 +101,37 @@ describe("web MVP api adapter", () => {
         correction: { correctionText: "不是青菜" },
       }),
     }));
+  });
+
+  it("loads and saves elder profile through the profile routes", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ elderId: "elder-1", displayName: "王奶奶", timezone: "Asia/Shanghai", medications: [], places: [] }))
+      .mockResolvedValueOnce(jsonResponse({ elderId: "elder-1", displayName: "王奶奶", timezone: "Asia/Shanghai", medications: [{ name: "降压药" }], places: [] }));
+
+    await expect(getElderProfile("elder-1")).resolves.toMatchObject({ displayName: "王奶奶" });
+    await expect(upsertElderProfile({
+      elderId: "elder-1",
+      displayName: "王奶奶",
+      medications: [{ name: "降压药" }],
+    })).resolves.toMatchObject({ medications: [{ name: "降压药" }] });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/elder/profile?elderId=elder-1", expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/elder/profile", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({
+        elderId: "elder-1",
+        displayName: "王奶奶",
+        medications: [{ name: "降压药" }],
+      }),
+    }));
+  });
+
+  it("loads today snapshot with elder id and timezone", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ date: "2026-05-14", todayReminders: [], yesterdayConfirmed: [], weekTopics: [] }));
+
+    await expect(getTodaySnapshot("elder 1", "Asia/Shanghai")).resolves.toMatchObject({ date: "2026-05-14" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/elder/today-snapshot?elderId=elder+1&timezone=Asia%2FShanghai", expect.any(Object));
   });
 
   it("maps backend failures to Chinese user-facing messages", async () => {

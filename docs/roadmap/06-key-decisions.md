@@ -1,6 +1,6 @@
 # 06. Key Decisions
 
-This document records why GoldMem should evolve toward PostgreSQL + semantic recall index + Graphiti instead of a single memory system or a fully custom memory graph.
+This document records why mem should evolve toward PostgreSQL + semantic recall index + Graphiti instead of a single memory system or a fully custom memory graph.
 
 ## Decision 1: PostgreSQL remains business/source truth
 
@@ -10,7 +10,7 @@ PostgreSQL owns business state and raw evidence, not long-term relational memory
 
 ### Why
 
-GoldMem has deterministic product obligations:
+mem has deterministic product obligations:
 
 ```text
 permission
@@ -121,7 +121,7 @@ Graphiti should be the production target and source of truth for long-term relat
 
 ### Why
 
-Graphiti's native model aligns with GoldMem's long-term needs:
+Graphiti's native model aligns with mem's long-term needs:
 
 ```text
 episodes
@@ -151,7 +151,7 @@ Graphiti should not be treated as an optional visualization layer or long-runnin
 
 ### Decision
 
-The GoldMem Kernel should coordinate memory systems instead of implementing all memory mechanics.
+The mem Kernel should coordinate memory systems instead of implementing all memory mechanics.
 
 ### Kernel owns
 
@@ -199,7 +199,7 @@ retry handling
 tenant group management
 ```
 
-GoldMem's elder-facing product must remain fast and stable, so Graphiti failure must be surfaced, audited, and retried rather than allowed to corrupt PostgreSQL truth.
+mem's user-facing product must remain fast and stable, so Graphiti failure must be surfaced, audited, and retried rather than allowed to corrupt PostgreSQL truth.
 
 ### Consequence
 
@@ -256,7 +256,7 @@ audit records
 
 ### Consequence
 
-GoldMem should be designed around two speeds:
+mem should be designed around two speeds:
 
 ```text
 fast real-time capture

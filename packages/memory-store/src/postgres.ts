@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import type {
   AuditLog,
   ContextLinkStore,
+  ElderProfileStore,
   EventStore,
   FamilyReminderCommandStore,
   FamilyTaskStore,
@@ -19,6 +20,7 @@ import type {
 } from "./index.js";
 import { PostgresAuditLog } from "./postgres-audit.js";
 import { PostgresContextLinkStore } from "./postgres-context-links.js";
+import { PostgresElderProfileStore } from "./postgres-elder-profiles.js";
 import { PostgresEventStore } from "./postgres-events.js";
 import { PostgresFamilyReminderCommandStore } from "./postgres-family-reminder-command.js";
 import { PostgresFamilyTaskStore } from "./postgres-family-tasks.js";
@@ -51,6 +53,7 @@ export type PostgresStores = {
   notificationIntentStore: NotificationIntentStore;
   familyReminderCommandStore: FamilyReminderCommandStore;
   personalContextStore: PersonalContextStore;
+  elderProfileStore: ElderProfileStore;
   auditLog: AuditLog;
   temporalMemoryJobStore: TemporalMemoryJobStore;
   memoryProcessingJobStore: MemoryProcessingJobStore;
@@ -61,6 +64,7 @@ export type PostgresStores = {
 export function createPostgresStores(options: PostgresStoreOptions): PostgresStores {
   const pool = new Pool({ connectionString: options.databaseUrl });
   const db = drizzle(pool, { schema });
+  const elderProfileStore = new PostgresElderProfileStore(db);
 
   return {
     pool,
@@ -75,7 +79,8 @@ export function createPostgresStores(options: PostgresStoreOptions): PostgresSto
     debugTraceStore: new PostgresDebugTraceStore(db),
     notificationIntentStore: new PostgresNotificationIntentStore(db),
     familyReminderCommandStore: new PostgresFamilyReminderCommandStore(db),
-    personalContextStore: new PostgresPersonalContextStore(db),
+    personalContextStore: new PostgresPersonalContextStore(db, elderProfileStore),
+    elderProfileStore,
     auditLog: new PostgresAuditLog(db),
     temporalMemoryJobStore: new PostgresTemporalMemoryJobStore(db),
     memoryProcessingJobStore: new PostgresMemoryProcessingJobStore(db),

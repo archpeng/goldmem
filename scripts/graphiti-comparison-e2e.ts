@@ -80,8 +80,8 @@ const modelRetries = Number(process.env.GRAPHITI_E2E_MODEL_RETRIES ?? process.en
 const ingestReadyTimeoutMs = Number(process.env.GRAPHITI_E2E_INGEST_READY_TIMEOUT_MS ?? 300_000);
 const memoryProcessingIdleTimeoutMs = Number(process.env.GRAPHITI_E2E_MEMORY_IDLE_TIMEOUT_MS ?? 300_000);
 const profileConcurrency = Math.max(1, Number(process.env.GRAPHITI_E2E_PROFILE_CONCURRENCY ?? 1));
-const graphitiDrainBatches = Number(process.env.GRAPHITI_E2E_DRAIN_BATCHES ?? 20);
 const graphitiDrainBatchSize = Number(process.env.GRAPHITI_E2E_DRAIN_BATCH_SIZE ?? 20);
+const graphitiDrainTimeoutMs = Number(process.env.GRAPHITI_E2E_DRAIN_TIMEOUT_MS ?? 1_200_000);
 const graphitiSearchSettleMs = Number(process.env.GRAPHITI_E2E_SEARCH_SETTLE_MS ?? 1000);
 const graphitiTimeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 60_000);
 const tenantId = process.env.GRAPHITI_E2E_TENANT_ID ?? "tenant-mvp";
@@ -123,7 +123,9 @@ console.log(JSON.stringify({
       enabledSources: enabled.sources,
       disabledSources: disabled?.sources ?? [],
       graphitiRawAlignedCount: enabled.retrieval?.graphitiRawAlignedCount ?? 0,
+      graphitiRawEvidenceCount: enabled.retrieval?.graphitiRawEvidenceCount ?? 0,
       graphitiProvenanceAlignedCount: enabled.retrieval?.graphitiProvenanceAlignedCount ?? 0,
+      graphitiProvenanceEvidenceCount: enabled.retrieval?.graphitiProvenanceEvidenceCount ?? 0,
       enabledDurationMs: enabled.durationMs,
       disabledDurationMs: disabled?.durationMs,
       enabledAnswer: enabled.answerText,
@@ -154,8 +156,8 @@ async function runApiScenario(input: {
   const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();
   await seedNotesByProfile(input, ingests);
 
-  await waitForMemoryProcessingIdle(input.baseUrl);
-  if (input.requireGraphitiWrites) await drainGraphitiJobs(input.label);
+  await waitForMemoryProcessingIdle(input.elderId);
+  if (input.requireGraphitiWrites) await drainGraphitiJobs(input.label, input.elderId);
 
   const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}&elderId=${encodeURIComponent(input.elderId)}`;
   const events = await request<MemoryEvent[]>(input.baseUrl, "GET", `/elder/events?${tenantQuery}`);
@@ -174,12 +176,13 @@ async function runApiScenario(input: {
       console.log(`[${input.label}] query start: ${queryCase.id}`);
       const startedAt = Date.now();
       const turn = await withModelRetry(`[${input.label}] query ${queryCase.id}`, () =>
-        request<{ traceId: string; answer?: unknown }>(input.baseUrl, "POST", "/elder/turn", {
+        request<{ traceId: string; answer?: unknown; turnType?: string; message?: string }>(input.baseUrl, "POST", "/elder/turn", {
           tenantId,
           elderId: input.elderId,
           text: queryCase.query,
         }),
       );
+      assert(turn.answer, `[${input.label}] ${queryCase.id} returned no answer; turnType=${turn.turnType ?? "unknown"} message=${turn.message ?? ""} traceId=${turn.traceId}`);
       const answer = MemoryAnswerSchema.parse(turn.answer);
       const debugTrace = await request<{ auditTrail?: unknown[] }>(
         input.baseUrl,
@@ -201,7 +204,7 @@ async function runApiScenario(input: {
         assert(hasTemporalEvidence, `[${input.label}] ${queryCase.id} returned no Graphiti temporal evidence`);
         assert((retrieval?.graphitiAlignedCount ?? 0) > 0, `[${input.label}] ${queryCase.id} debug retrieval has no aligned Graphiti evidence`);
         for (const source of queryCase.enabledExpectedEvidenceSources) {
-          assert(sources.includes(source), `[${input.label}] ${queryCase.id} expected evidence source ${source}`);
+          assert(sources.includes(source), expectedEvidenceSourceError(input.label, queryCase.id, source, sources, retrieval));
         }
         assertHints(queryCase.id, input.label, answerText, evidenceText, queryCase);
         if (queryCase.semanticAnswerExpectations.length || queryCase.semanticAnswerForbiddenClaims.length) {
@@ -350,21 +353,24 @@ async function waitForIngestReady(baseUrl: string, sourceId: string) {
   throw new Error(`Seed ingest did not become ready within ${ingestReadyTimeoutMs}ms: ${sourceId}`);
 }
 
-async function waitForMemoryProcessingIdle(baseUrl: string): Promise<void> {
-  const deadline = Date.now() + memoryProcessingIdleTimeoutMs;
-  while (Date.now() < deadline) {
-    const health = await request<{ memoryProcessingJobs?: Record<string, number> }>(baseUrl, "GET", "/health");
-    const stats = health.memoryProcessingJobs;
-    if (!stats) return;
-    const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
-    if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead: ${JSON.stringify(stats)}`);
-    if (active === 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+async function waitForMemoryProcessingIdle(elderId: string): Promise<void> {
+  const postgres = createPostgresStores({ databaseUrl });
+  try {
+    const deadline = Date.now() + graphitiDrainTimeoutMs;
+    while (Date.now() < deadline) {
+      const stats = await postgres.memoryProcessingJobStore.stats({ tenantId, elderId });
+      const active = (stats.pending ?? 0) + (stats.running ?? 0) + (stats.failed ?? 0);
+      if ((stats.dead ?? 0) > 0) throw new Error(`Memory processing jobs dead for ${elderId}: ${JSON.stringify(stats)}`);
+      if (active === 0) return;
+      await delay(1000);
+    }
+    throw new Error(`Memory processing jobs did not become idle within ${memoryProcessingIdleTimeoutMs}ms for ${elderId}`);
+  } finally {
+    await postgres.close();
   }
-  throw new Error(`Memory processing jobs did not become idle within ${memoryProcessingIdleTimeoutMs}ms`);
 }
 
-async function drainGraphitiJobs(label: string): Promise<void> {
+async function drainGraphitiJobs(label: string, elderId: string): Promise<void> {
   const postgres = createPostgresStores({ databaseUrl });
   const temporalMemory = new GraphitiTemporalMemoryStore({
     baseUrl: graphitiBaseUrl,
@@ -372,22 +378,29 @@ async function drainGraphitiJobs(label: string): Promise<void> {
     timeoutMs: graphitiTimeoutMs,
   });
   try {
-    for (let attempt = 0; attempt < graphitiDrainBatches; attempt += 1) {
+    const deadline = Date.now() + graphitiDrainTimeoutMs;
+    while (Date.now() < deadline) {
       const stats = await runGraphitiRetryBatch({
         postgres,
         temporalMemory,
         batchSize: graphitiDrainBatchSize,
       });
-      if (stats.failed > 0 || stats.dead > 0) {
-        throw new Error(`[${label}] Graphiti temporal job drain failed: ${JSON.stringify(stats)}`);
+      if (stats.claimed > 0) {
+        console.log(`[${label}] graphiti drain batch: ${JSON.stringify(stats)}`);
       }
-      if (stats.claimed === 0) {
+
+      const queueStats = await postgres.temporalMemoryJobStore.stats({ tenantId, elderId });
+      const active = (queueStats.pending ?? 0) + (queueStats.running ?? 0) + (queueStats.failed ?? 0);
+      if ((queueStats.dead ?? 0) > 0) {
+        throw new Error(`[${label}] Graphiti temporal jobs dead for ${elderId}: ${JSON.stringify(queueStats)}`);
+      }
+      if (active === 0) {
         if (graphitiSearchSettleMs > 0) await delay(graphitiSearchSettleMs);
         return;
       }
-      console.log(`[${label}] graphiti drain batch: ${JSON.stringify(stats)}`);
+      await delay(1000);
     }
-    throw new Error(`[${label}] Graphiti temporal job drain exceeded ${graphitiDrainBatches} batches`);
+    throw new Error(`[${label}] Graphiti temporal job drain did not finish within ${graphitiDrainTimeoutMs}ms for ${elderId}`);
   } finally {
     await postgres.close();
   }
@@ -627,7 +640,7 @@ function createSemanticJudge() {
         {
           role: "system",
           content: [
-            "You are a strict semantic judge for GoldMem Graphiti A/B E2E tests.",
+            "You are a strict semantic judge for mem Graphiti A/B E2E tests.",
             "Judge meaning, not exact wording. Do not require fixed substrings.",
             "Use only the question, answer, and provided evidence summaries.",
             "Pass only if every expected meaning is clearly expressed and none of the forbidden claims are present.",
@@ -646,6 +659,20 @@ function createSemanticJudge() {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function expectedEvidenceSourceError(
+  label: string,
+  queryId: string,
+  source: EvidenceSource,
+  sources: EvidenceSource[],
+  retrieval: Record<string, number> | undefined,
+): string {
+  const rawAligned = retrieval?.graphitiRawAlignedCount ?? 0;
+  if (source === "graphiti" && rawAligned > 0) {
+    return `[${label}] ${queryId} expected evidence source graphiti; raw Graphiti aligned=${rawAligned} but final sources=${sources.join(",") || "none"}`;
+  }
+  return `[${label}] ${queryId} expected evidence source ${source}`;
 }
 
 function textIncludes(value: string | undefined, hint: string): boolean {

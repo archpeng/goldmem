@@ -1,5 +1,5 @@
 {
-  "name": "@goldmem/temporal-memory",
+  "name": "@mem/temporal-memory",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -1,4 +1,4 @@
-import type { MemoryPlan } from "@goldmem/memory-schema";
+import type { MemoryPlan } from "@mem/memory-schema";
 import type { AppliedMemoryPlan } from "./ingest-types.js";
 
 export type TemporalEnqueueReason =

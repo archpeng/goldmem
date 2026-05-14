@@ -11,21 +11,44 @@ vi.mock("./lib/api.js", async (importOriginal) => {
     sendElderTurn: vi.fn(),
     listMvpData: vi.fn(),
     confirmReminder: vi.fn(),
-    sendFeedback: vi.fn(),
-    getDebugTrace: vi.fn(),
-    getIngestStatus: vi.fn(),
-  };
-});
+	    sendFeedback: vi.fn(),
+	    getDebugTrace: vi.fn(),
+	    getIngestStatus: vi.fn(),
+	    getTodaySnapshot: vi.fn(),
+	    getElderProfile: vi.fn(),
+	    upsertElderProfile: vi.fn(),
+	  };
+	});
 
 const listMvpDataMock = vi.mocked(api.listMvpData);
 const sendElderTurnMock = vi.mocked(api.sendElderTurn);
 const sendFeedbackMock = vi.mocked(api.sendFeedback);
 const confirmReminderMock = vi.mocked(api.confirmReminder);
 const getIngestStatusMock = vi.mocked(api.getIngestStatus);
+const getTodaySnapshotMock = vi.mocked(api.getTodaySnapshot);
+const getElderProfileMock = vi.mocked(api.getElderProfile);
+const upsertElderProfileMock = vi.mocked(api.upsertElderProfile);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listMvpDataMock.mockResolvedValue({ reminders: [] });
+	  listMvpDataMock.mockResolvedValue({ reminders: [] });
+	  getTodaySnapshotMock.mockResolvedValue({ date: "2026-05-14", todayReminders: [], yesterdayConfirmed: [], weekTopics: [] });
+	  getElderProfileMock.mockResolvedValue({
+	    elderId: "elder-mvp",
+	    tenantId: "tenant-mvp",
+	    displayName: "王奶奶",
+	    timezone: "Asia/Shanghai",
+	    medications: [],
+	    places: [],
+	  });
+	  upsertElderProfileMock.mockResolvedValue({
+	    elderId: "elder-mvp",
+	    tenantId: "tenant-mvp",
+	    displayName: "王奶奶",
+	    timezone: "Asia/Shanghai",
+	    medications: [],
+	    places: [],
+	  });
   sendFeedbackMock.mockResolvedValue({
     id: "feedback-1",
     tenantId: "tenant-mvp",
@@ -42,6 +65,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  delete document.documentElement.dataset.elderMode;
 });
 
 describe("App", () => {
@@ -53,13 +78,42 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "发送给记忆助手" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "语音输入" })).toBeInTheDocument();
     expect(screen.queryByText("全部")).not.toBeInTheDocument();
-    expect(screen.getByText("说一句话后，我会把需要处理的事放到这里。")).toBeInTheDocument();
-    expect(screen.queryByText("说一句话，我帮你记住；想不起来时，我根据你说过的话帮你找。")).not.toBeInTheDocument();
+	    expect(screen.getByText("试试这样跟我说：")).toBeInTheDocument();
+	    expect(screen.getByRole("button", { name: "示例 明天下午 3 点要去复查" })).toBeInTheDocument();
+	    expect(screen.queryByText("说一句话，我帮你记住；想不起来时，我根据你说过的话帮你找。")).not.toBeInTheDocument();
     expect(screen.queryByText("直接说一句话就行")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "记一下" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "问一问" })).not.toBeInTheDocument();
     await waitFor(() => expect(listMvpDataMock).toHaveBeenCalledWith("elder-mvp"));
-  });
+	  });
+
+	  it("fills input from empty state examples", async () => {
+	    const user = userEvent.setup();
+	    render(<App />);
+
+	    await user.click(await screen.findByRole("button", { name: "示例 医保卡放在抽屉左边" }));
+
+	    expect(screen.getByLabelText("想说的话")).toHaveValue("医保卡放在抽屉左边");
+	  });
+
+	  it("retries failed drafts with a new client turn id in place", async () => {
+	    const user = userEvent.setup();
+	    sendElderTurnMock
+	      .mockRejectedValueOnce(new Error("model failed"))
+	      .mockResolvedValueOnce(recordTurn());
+	    render(<App />);
+
+	    await user.type(screen.getByLabelText("想说的话"), "明天上午提醒我给女儿打电话。");
+	    await user.click(screen.getByRole("button", { name: "发送给记忆助手" }));
+	    await user.click(await screen.findByRole("button", { name: /再试一次/ }));
+
+	    await waitFor(() => expect(sendElderTurnMock).toHaveBeenCalledTimes(2));
+	    const first = sendElderTurnMock.mock.calls[0]?.[0].clientTurnId;
+	    const second = sendElderTurnMock.mock.calls[1]?.[0].clientTurnId;
+	    expect(first).toEqual(expect.any(String));
+	    expect(second).toEqual(expect.any(String));
+	    expect(second).not.toBe(first);
+	  });
 
   it("submits one elder turn and refreshes the task list", async () => {
     const user = userEvent.setup();
@@ -237,10 +291,10 @@ describe("App", () => {
     expect(await screen.findByText(/你之前记录过/)).toBeInTheDocument();
   });
 
-  it("sends answer feedback through the elder feedback route", async () => {
-    const user = userEvent.setup();
-    sendElderTurnMock.mockResolvedValueOnce(recallTurn());
-    render(<App />);
+	  it("sends answer feedback through the elder feedback route", async () => {
+	    const user = userEvent.setup();
+	    sendElderTurnMock.mockResolvedValueOnce(recallTurn());
+	    render(<App />);
 
     await user.clear(screen.getByLabelText("想说的话"));
     await user.type(screen.getByLabelText("想说的话"), "我买了什么？");
@@ -249,14 +303,60 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText("例如：不是青菜，是菠菜。"), "不是青菜，是菠菜。");
     await user.click(screen.getByRole("button", { name: "提交修改" }));
 
-    await waitFor(() => expect(sendFeedbackMock).toHaveBeenCalledWith(expect.objectContaining({
-      elderId: "elder-mvp",
-      actorUserId: "elder-mvp",
-      sourceId: "source-1",
-      feedbackType: "answer_wrong",
-    })));
-  });
-});
+	    await waitFor(() => expect(sendFeedbackMock).toHaveBeenCalledWith(expect.objectContaining({
+	      elderId: "elder-mvp",
+	      actorUserId: "elder-mvp",
+	      sourceId: "source-1",
+	      feedbackType: "answer_wrong",
+	    })));
+	    expect(await screen.findByText("不是青菜，是菠菜。")).toBeInTheDocument();
+	    expect(screen.getByText("已更新")).toBeInTheDocument();
+	    expect(screen.getByText(/你之前记录过/)).toBeInTheDocument();
+	  });
+
+	  it("toggles elder text scale", async () => {
+	    const user = userEvent.setup();
+	    render(<App />);
+
+	    await user.click(screen.getByRole("button", { name: "字号 大" }));
+
+	    expect(document.documentElement.dataset.elderMode).toBe("xl");
+	    expect(window.localStorage.getItem("elderTextScale")).toBe("xl");
+	  });
+
+	  it("dismisses today snapshot for the current date", async () => {
+	    const user = userEvent.setup();
+	    getTodaySnapshotMock.mockResolvedValueOnce({
+	      date: "2026-05-14",
+	      todayReminders: [confirmedReminderRecord()],
+	      yesterdayConfirmed: [],
+	      weekTopics: [{ type: "appointment", count: 2, sampleTitles: ["复查"] }],
+	    });
+	    render(<App />);
+
+	    await user.click(await screen.findByRole("button", { name: "今天就先这样" }));
+
+	    expect(window.localStorage.getItem("lastSnapshotDismissed")).toBe("2026-05-14");
+	    expect(screen.queryByText("今天先帮你看一眼")).not.toBeInTheDocument();
+	  });
+
+	  it("saves elder profile from settings", async () => {
+	    const user = userEvent.setup();
+	    render(<App />);
+
+	    await user.click(screen.getByRole("button", { name: "设置" }));
+	    await user.clear(await screen.findByLabelText("称呼"));
+	    await user.type(screen.getByLabelText("称呼"), "李奶奶");
+	    await user.type(screen.getByLabelText("正在吃的药（每行一种，名称在前）"), "降压药 早餐后一片");
+	    await user.click(screen.getByRole("button", { name: "保存" }));
+
+	    await waitFor(() => expect(upsertElderProfileMock).toHaveBeenCalledWith(expect.objectContaining({
+	      elderId: "elder-mvp",
+	      displayName: "李奶奶",
+	      medications: [{ name: "降压药", dosage: "早餐后一片" }],
+	    })));
+	  });
+	});
 
 function recordTurn() {
   return {

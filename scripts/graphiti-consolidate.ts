@@ -14,15 +14,15 @@ import {
 import * as schema from "../packages/memory-store/src/postgres-schema.js";
 import { GraphitiTemporalMemoryStore } from "../packages/temporal-memory/src/index.js";
 
-const tenantId = requiredEnv("GOLDMEM_TENANT_ID");
-const elderId = requiredEnv("GOLDMEM_ELDER_ID");
-const date = process.env.GOLDMEM_CONSOLIDATION_DATE ?? new Date().toISOString().slice(0, 10);
-const traceId = process.env.GOLDMEM_TRACE_ID ?? `daily-${date}-${randomUUID()}`;
+const tenantId = requiredEnv("MEM_TENANT_ID");
+const elderId = requiredEnv("MEM_ELDER_ID");
+const date = process.env.MEM_CONSOLIDATION_DATE ?? new Date().toISOString().slice(0, 10);
+const traceId = process.env.MEM_TRACE_ID ?? `daily-${date}-${randomUUID()}`;
 
 const postgres = createPostgresStores({
   databaseUrl: requiredEnv("DATABASE_URL"),
-  audioDir: process.env.GOLDMEM_AUDIO_DIR,
-  publicAudioBaseUrl: process.env.GOLDMEM_AUDIO_BASE_URL,
+  audioDir: process.env.MEM_AUDIO_DIR,
+  publicAudioBaseUrl: process.env.MEM_AUDIO_BASE_URL,
 });
 
 try {

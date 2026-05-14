@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { RiskFlagRecord } from "@goldmem/memory-schema";
+import type { RiskFlagRecord } from "@mem/memory-schema";
 import type { CreateRiskFlagInput, RiskFlagStore } from "./index.js";
 import * as schema from "./postgres-schema.js";
 import type { Db } from "./postgres-types.js";

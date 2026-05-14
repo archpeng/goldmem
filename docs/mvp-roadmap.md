@@ -1,15 +1,15 @@
 # MVP Roadmap
 
-GoldMem MVP 当前目标是用最少产品面打通老人端 AI-native 闭环：
+mem MVP 当前目标是用最少产品面打通用户端 AI-native 闭环：
 
 ```text
-one elder utterance
+one user utterance
   -> /elder/turn
   -> model turn plan
   -> Kernel schema gate
   -> record / recall / record_and_recall / clarify
   -> PostgreSQL truth + semantic recall index recall + Graphiti temporal evidence
-  -> auditable elder-facing result
+  -> auditable user-facing result
 ```
 
 ## Must Have
@@ -35,7 +35,7 @@ one elder utterance
 
 ## Milestones
 
-### M1: Unified Elder Turn
+### M1: Unified User Turn
 
 Acceptance:
 
@@ -43,7 +43,7 @@ Acceptance:
 - frontend does not branch on task type
 - unclear input does not write truth
 
-### M2: Mobile Elder Prototype
+### M2: Mobile User Prototype
 
 Acceptance:
 

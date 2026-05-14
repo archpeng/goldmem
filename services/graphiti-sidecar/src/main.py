@@ -26,7 +26,7 @@ class AddEpisodeRequest(BaseModel):
     name: str
     episode_body: dict[str, Any] | str
     source: str = "json"
-    source_description: str = "GoldMem curated temporal episode"
+    source_description: str = "mem curated temporal episode"
     reference_time: str
     group_id: str
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -78,7 +78,7 @@ async def lifespan(_app: FastAPI):
         await provenance_pool.close()
 
 
-app = FastAPI(title="GoldMem Graphiti Sidecar", lifespan=lifespan)
+app = FastAPI(title="mem Graphiti Sidecar", lifespan=lifespan)
 
 
 async def require_api_key(
@@ -227,7 +227,7 @@ async def search_graphiti(input: SearchFactsRequest) -> list[Any]:
 def normalize_episode_body(body: dict[str, Any] | str, metadata: dict[str, Any]) -> str:
     if isinstance(body, str):
         return body
-    enriched = {"goldmemMetadata": metadata, **body}
+    enriched = {"memMetadata": metadata, **body}
     return json.dumps(enriched, ensure_ascii=False)
 
 
@@ -238,7 +238,7 @@ def normalize_graphiti_group_id(group_id: str) -> str:
             output.append(char)
         else:
             output.append(f"_{ord(char):x}_")
-    return "".join(output) or "goldmem_unknown"
+    return "".join(output) or "mem_unknown"
 
 
 def normalize_search_results(results: list[Any], provenance: list[dict[str, Any]]) -> list[dict[str, Any]]:

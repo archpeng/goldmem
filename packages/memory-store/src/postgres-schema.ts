@@ -12,9 +12,16 @@ export const elderProfiles = pgTable("elder_profiles", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull().default("tenant-mvp"),
   userId: text("user_id").notNull(),
+  elderId: text("elder_id").notNull(),
   displayName: text("display_name").notNull(),
   timezone: text("timezone").notNull(),
+  wakeTime: text("wake_time"),
+  sleepTime: text("sleep_time"),
+  medications: jsonb("medications").notNull().default([]),
+  places: jsonb("places").notNull().default([]),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const familyLinks = pgTable("family_links", {

@@ -1,5 +1,5 @@
 {
-  "name": "@goldmem/memory-kernel",
+  "name": "@mem/memory-kernel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,13 +11,13 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@goldmem/memory-schema": "workspace:*",
-    "@goldmem/model-gateway": "workspace:*",
-    "@goldmem/memory-store": "workspace:*",
-    "@goldmem/temporal-memory": "workspace:*",
-    "@goldmem/reminder-engine": "workspace:*",
-    "@goldmem/risk-engine": "workspace:*",
-    "@goldmem/permission-engine": "workspace:*"
+    "@mem/memory-schema": "workspace:*",
+    "@mem/model-gateway": "workspace:*",
+    "@mem/memory-store": "workspace:*",
+    "@mem/temporal-memory": "workspace:*",
+    "@mem/reminder-engine": "workspace:*",
+    "@mem/risk-engine": "workspace:*",
+    "@mem/permission-engine": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

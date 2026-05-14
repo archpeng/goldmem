@@ -429,7 +429,7 @@ function createSemanticJudge() {
         {
           role: "system",
           content: [
-            "You are a strict semantic judge for GoldMem golden E2E tests.",
+            "You are a strict semantic judge for mem golden E2E tests.",
             "Judge meaning, not exact wording. Do not require fixed substrings.",
             "Use only the question, answer, and provided evidence summaries.",
             "Pass only if every expected meaning is clearly expressed and none of the forbidden claims are present.",

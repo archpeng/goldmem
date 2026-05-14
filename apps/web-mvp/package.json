@@ -1,5 +1,5 @@
 {
-  "name": "@goldmem/web-mvp",
+  "name": "@mem/web-mvp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
-    "@goldmem/memory-schema": "workspace:*",
+    "@mem/memory-schema": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.561.0",

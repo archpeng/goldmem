@@ -1,5 +1,5 @@
-import { DEFAULT_TENANT_ID, type MemorySource, type Reminder } from "@goldmem/memory-schema";
-import { buildReminderCreateInput } from "@goldmem/reminder-engine";
+import { DEFAULT_TENANT_ID, type MemorySource, type Reminder } from "@mem/memory-schema";
+import { buildReminderCreateInput } from "@mem/reminder-engine";
 import type { CreateFamilyReminderInput, ElderMemoryKernelDeps } from "./index.js";
 
 export async function createFamilyReminderCommand(

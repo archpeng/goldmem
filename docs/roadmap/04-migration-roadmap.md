@@ -1,6 +1,6 @@
 # 04. Production Roadmap
 
-This roadmap evolves the current MVP architecture into the target PostgreSQL + semantic recall index + Graphiti architecture. Because GoldMem is new and has no historical production burden, Graphiti should enter the production long-term memory path directly rather than as a long-running shadow-only experiment.
+This roadmap evolves the current MVP architecture into the target PostgreSQL + semantic recall index + Graphiti architecture. Because mem is new and has no historical production burden, Graphiti should enter the production long-term memory path directly rather than as a long-running shadow-only experiment.
 
 The invariant is:
 
@@ -27,7 +27,7 @@ pnpm mvp:verify
 Acceptance:
 
 ```text
-@goldmem/temporal-memory resolves from workspace links.
+@mem/temporal-memory resolves from workspace links.
 temporal-memory typecheck passes.
 memory-kernel tests pass.
 MVP verification is green.

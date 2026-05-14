@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Check, CheckCheck, Clock, Send } from "lucide-react";
-import type { MemoryAnswer, Reminder } from "@goldmem/memory-schema";
+import type { MemoryAnswer, Reminder } from "@mem/memory-schema";
 import { copy } from "../lib/copy.js";
+import type { AnswerCorrection } from "../lib/local-prefs.js";
 import {
   formatDate,
   needsReminderConfirmation,
@@ -27,12 +28,14 @@ export function TaskList({
   loading,
   onConfirmReminder,
   onTimeChange,
+  onPickExample,
 }: {
   confirmTimes: Record<string, string>;
   items: ElderTaskItem[];
   loading: boolean;
   onConfirmReminder: (reminder: Reminder) => void | Promise<void>;
   onTimeChange: (id: string, value: string) => void;
+  onPickExample?: (text: string) => void;
 }) {
   const [urgentIds, setUrgentIds] = useState<Set<string>>(() => new Set());
   const toggleUrgent = (id: string) => {
@@ -40,7 +43,7 @@ export function TaskList({
   };
 
   if (!items.length) {
-    return <p className="mt-6 px-2 text-sm text-slate-400">{copy.tasks.emptyBody}</p>;
+    return <EmptyExamples onPick={onPickExample} />;
   }
 
   const sortedItems = [...items].sort((a, b) => Number(urgentIds.has(b.id)) - Number(urgentIds.has(a.id)));
@@ -59,6 +62,28 @@ export function TaskList({
           urgent={urgentIds.has(item.id)}
         />
       ))}
+    </div>
+  );
+}
+
+function EmptyExamples({ onPick }: { onPick?: (text: string) => void }) {
+  return (
+    <div className="mt-6 px-1">
+      <p className="mb-3 px-2 text-sm text-slate-500">{copy.examples.hint}</p>
+      <div className="space-y-2">
+        {copy.examples.items.map((text) => (
+          <button
+            aria-label={`示例 ${text}`}
+            className="block w-full rounded-2xl bg-slate-50 px-4 py-3 text-left text-base leading-relaxed text-slate-700 hover:bg-slate-100"
+            key={text}
+            type="button"
+            onClick={() => onPick?.(text)}
+          >
+            <span className="mr-2 text-xs text-slate-400">试试说</span>
+            {text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -158,23 +183,42 @@ function TaskRow({
 
 export function LatestAnswer({
   answer,
+  correction,
   loading,
   onSendFeedback,
 }: {
   answer: MemoryAnswer;
+  correction?: AnswerCorrection | null;
   loading: boolean;
   onSendFeedback: (answer: MemoryAnswer, correctionText: string) => void | Promise<void>;
 }) {
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [correctionText, setCorrectionText] = useState("");
   const evidence = selectTrustEvidence(answer).slice(0, 2);
+  const isCorrected = !!correction;
 
   return (
     <div className="mt-3 rounded-2xl border-l-4 border-blue-300 bg-slate-50 px-5 py-4">
-      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{copy.tasks.latestAnswer}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{copy.tasks.latestAnswer}</p>
+        {isCorrected ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            {copy.recall.appliedTag}
+          </span>
+        ) : null}
+      </div>
       <p className="mt-2 text-base font-bold leading-snug text-slate-900">
-        {answer.confidence === 0 ? copy.recall.noEvidenceBody : answer.answerText}
+        {isCorrected ? correction!.correctionText : (answer.confidence === 0 ? copy.recall.noEvidenceBody : answer.answerText)}
       </p>
+      {isCorrected ? (
+        <p className="mt-2 text-xs text-slate-500">{copy.recall.appliedNote}</p>
+      ) : null}
+      {isCorrected ? (
+        <div className="mt-2 rounded-xl bg-white px-4 py-3">
+          <p className="text-xs text-slate-400">{copy.recall.originalAnswerLabel}</p>
+          <p className="mt-0.5 text-xs leading-5 text-slate-500">{answer.answerText}</p>
+        </div>
+      ) : null}
       {evidence.length ? (
         <div className="mt-3 space-y-2">
           {evidence.map((item) => (
@@ -185,7 +229,7 @@ export function LatestAnswer({
           ))}
         </div>
       ) : null}
-      {answer.confidence > 0 && (isCorrecting ? (
+      {!isCorrected && answer.confidence > 0 && (isCorrecting ? (
         <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); void onSendFeedback(answer, correctionText); }}>
           <Textarea
             aria-label={copy.recall.correctionLabel}

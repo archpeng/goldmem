@@ -10,8 +10,8 @@ import type {
   ParsedMemoryQuery,
   PersonalContext,
   Reminder,
-} from "@goldmem/memory-schema";
-import type { GenerateMemoryPlanInput, ModelGateway, PlanElderTurnInput, TranscriptionResult } from "@goldmem/model-gateway";
+} from "@mem/memory-schema";
+import type { GenerateMemoryPlanInput, ModelGateway, PlanElderTurnInput, TranscriptionResult } from "@mem/model-gateway";
 import type {
   AuditLog,
   ContextLinkStore,
@@ -36,11 +36,11 @@ import type {
   SourceStore,
   TemporalMemoryJob,
   TemporalMemoryJobStore,
-} from "@goldmem/memory-store";
-import { DefaultPermissionEngine } from "@goldmem/permission-engine";
-import { DefaultReminderEngine } from "@goldmem/reminder-engine";
-import { DefaultRiskEngine } from "@goldmem/risk-engine";
-import { NullTemporalMemoryStore, type AddTemporalEpisodeInput, type TemporalEvidence, type TemporalMemoryStore } from "@goldmem/temporal-memory";
+} from "@mem/memory-store";
+import { DefaultPermissionEngine } from "@mem/permission-engine";
+import { DefaultReminderEngine } from "@mem/reminder-engine";
+import { DefaultRiskEngine } from "@mem/risk-engine";
+import { NullTemporalMemoryStore, type AddTemporalEpisodeInput, type TemporalEvidence, type TemporalMemoryStore } from "@mem/temporal-memory";
 import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "../src/index.js";
 
 export const now = "2026-05-09T12:00:00.000Z";
@@ -65,6 +65,7 @@ export function createHarness(plan: MemoryPlan, temporalMemory: TemporalMemorySt
     sourceStore,
     eventStore,
     contextLinkStore,
+    reminderStore,
     reminderEngine: new DefaultReminderEngine(reminderStore),
     familyReminderCommandStore: familyReminderCommands,
     familyTaskStore: familyTasks,
@@ -292,9 +293,14 @@ class FakeModelGateway implements ModelGateway {
 
 class FakePersonalContextStore implements PersonalContextStore {
   context: PersonalContext = emptyContext();
+  planContext: PersonalContext | null = null;
 
   async buildContext(): Promise<PersonalContext> {
     return this.context;
+  }
+
+  async buildPlanContext(): Promise<PersonalContext> {
+    return this.planContext ?? this.context;
   }
 }
 
@@ -363,6 +369,24 @@ class InMemoryEventStore implements EventStore {
   async getByIds(input: { tenantId: string; eventIds: string[] }): Promise<MemoryEvent[]> {
     return this.events.filter((event) => event.tenantId === input.tenantId && input.eventIds.includes(event.id));
   }
+
+  async aggregateByTypeWithin(input: Parameters<EventStore["aggregateByTypeWithin"]>[0]) {
+    const grouped = new Map<MemoryEvent["type"], MemoryEvent[]>();
+    for (const event of this.events) {
+      if (event.tenantId !== input.tenantId || event.elderId !== input.elderId || event.createdAt < input.fromIso) continue;
+      const events = grouped.get(event.type) ?? [];
+      events.push(event);
+      grouped.set(event.type, events);
+    }
+    return [...grouped.entries()]
+      .map(([type, events]) => ({
+        type,
+        count: events.length,
+        sampleTitles: events.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3).map((event) => event.title),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, input.limit ?? 5);
+  }
 }
 
 class InMemoryContextLinkStore implements ContextLinkStore {
@@ -413,6 +437,27 @@ class InMemoryReminderStore implements ReminderStore {
 
   async listByElder(input: { tenantId: string; elderId: string }): Promise<Reminder[]> {
     return this.reminders.filter((reminder) => reminder.tenantId === input.tenantId && reminder.elderId === input.elderId);
+  }
+
+  async findByRemindAtRange(input: Parameters<ReminderStore["findByRemindAtRange"]>[0]): Promise<Reminder[]> {
+    return this.reminders.filter((reminder) =>
+      reminder.tenantId === input.tenantId &&
+      reminder.elderId === input.elderId &&
+      !!reminder.remindAt &&
+      reminder.remindAt >= input.fromIso &&
+      reminder.remindAt < input.toIso &&
+      (!input.statuses?.length || input.statuses.includes(reminder.status))
+    );
+  }
+
+  async findByConfirmedAtRange(input: Parameters<ReminderStore["findByConfirmedAtRange"]>[0]): Promise<Reminder[]> {
+    return this.reminders.filter((reminder) =>
+      reminder.tenantId === input.tenantId &&
+      reminder.elderId === input.elderId &&
+      !!reminder.confirmedAt &&
+      reminder.confirmedAt >= input.fromIso &&
+      reminder.confirmedAt < input.toIso
+    );
   }
 
   async update(input: { tenantId: string; reminderId: string; patch: Partial<Reminder> }): Promise<Reminder> {

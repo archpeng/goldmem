@@ -5,16 +5,16 @@ import { buildEvalCandidates } from "../packages/memory-kernel/src/eval-candidat
 import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import * as schema from "../packages/memory-store/src/postgres-schema.js";
 
-const tenantId = process.env.GOLDMEM_TENANT_ID;
-const elderId = process.env.GOLDMEM_ELDER_ID;
-const since = process.env.GOLDMEM_EVAL_SINCE;
-const outputDir = process.env.GOLDMEM_EVAL_CANDIDATE_DIR ?? "evals/candidates";
-const outputFile = process.env.GOLDMEM_EVAL_CANDIDATE_FILE ?? join(outputDir, `candidates-${new Date().toISOString().slice(0, 10)}.jsonl`);
+const tenantId = process.env.MEM_TENANT_ID;
+const elderId = process.env.MEM_ELDER_ID;
+const since = process.env.MEM_EVAL_SINCE;
+const outputDir = process.env.MEM_EVAL_CANDIDATE_DIR ?? "evals/candidates";
+const outputFile = process.env.MEM_EVAL_CANDIDATE_FILE ?? join(outputDir, `candidates-${new Date().toISOString().slice(0, 10)}.jsonl`);
 
 const postgres = createPostgresStores({
   databaseUrl: requiredEnv("DATABASE_URL"),
-  audioDir: process.env.GOLDMEM_AUDIO_DIR,
-  publicAudioBaseUrl: process.env.GOLDMEM_AUDIO_BASE_URL,
+  audioDir: process.env.MEM_AUDIO_DIR,
+  publicAudioBaseUrl: process.env.MEM_AUDIO_BASE_URL,
 });
 
 try {

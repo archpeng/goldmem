@@ -1,6 +1,6 @@
-import { DEFAULT_TENANT_ID, type IngestDraft, type IngestStatus, type MemorySource } from "@goldmem/memory-schema";
+import { DEFAULT_TENANT_ID, type IngestDraft, type IngestStatus, type MemorySource } from "@mem/memory-schema";
 import { randomUUID } from "node:crypto";
-import type { CreateSourceInput, MemoryProcessingJob } from "@goldmem/memory-store";
+import type { CreateSourceInput, MemoryProcessingJob } from "@mem/memory-store";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { SemanticIndexer } from "./semantic-indexer.js";
 import type { ElderMemoryKernelDeps, IngestTextInput } from "./index.js";

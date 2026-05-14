@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError } from "@goldmem/model-gateway";
+import type { MemoryPlan, ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
   buildEvent,

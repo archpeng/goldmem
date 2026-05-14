@@ -1,5 +1,5 @@
-import { ModelGatewayError } from "@goldmem/model-gateway";
-import type { ElderTurnPlan, PersonalContext } from "@goldmem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
+import type { ElderTurnPlan, PersonalContext } from "@mem/memory-schema";
 import type { ElderMemoryKernelDeps } from "./index.js";
 import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 
@@ -55,4 +55,15 @@ export function emptyTurnContext(): PersonalContext {
     familyRelations: [],
     safetyPolicy: [],
   };
+}
+
+export async function buildTurnPlanContext(deps: ElderMemoryKernelDeps, input: { tenantId: string; elderId: string }): Promise<PersonalContext> {
+  if (process.env.MEM_PLAN_CONTEXT_PROFILE === "off") return emptyTurnContext();
+  const builder = deps.personalContextStore.buildPlanContext;
+  if (!builder) return emptyTurnContext();
+  try {
+    return await builder.call(deps.personalContextStore, { tenantId: input.tenantId, elderId: input.elderId });
+  } catch {
+    return emptyTurnContext();
+  }
 }

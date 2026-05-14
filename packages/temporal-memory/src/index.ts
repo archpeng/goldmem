@@ -116,7 +116,7 @@ export type CurrentFact = {
 };
 
 export interface TemporalMemoryStore {
-  /** Add a curated GoldMem episode to the long-term temporal memory backend. */
+  /** Add a curated mem episode to the long-term temporal memory backend. */
   addEpisode(input: AddTemporalEpisodeInput): Promise<void>;
 
   /** Search long-term temporal facts and relationship evidence. */
@@ -197,7 +197,7 @@ export class GraphitiTemporalMemoryStore implements TemporalMemoryStore {
         name: `${input.tenantId}:${input.elderId}:${input.episodeType}:${input.sourceIds[0] ?? input.occurredAt}`,
         episode_body: input.content,
         source: "json",
-        source_description: "GoldMem curated temporal episode",
+        source_description: "mem curated temporal episode",
         reference_time: input.occurredAt,
         group_id: input.groupId,
         metadata: {

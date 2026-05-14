@@ -1,4 +1,4 @@
-import type { FamilyTask, MemoryContextLink, MemoryEvent, MemorySource, NotificationIntent, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
+import type { FamilyTask, MemoryContextLink, MemoryEvent, MemorySource, NotificationIntent, Reminder, RiskFlagRecord } from "@mem/memory-schema";
 import type { MemoryProcessingJob, TemporalMemoryJob } from "./index.js";
 import * as schema from "./postgres-schema.js";
 

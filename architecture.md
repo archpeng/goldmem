@@ -1,11 +1,11 @@
-# GoldMem Architecture
+# mem Architecture
 
-GoldMem is an elder-first memory and reminder system. The current MVP proves one core loop:
+mem is a user-first memory and reminder system. The current MVP proves one core loop:
 
 ```text
 elder text note
   -> OpenAI-compatible MemoryPlan
-  -> Elder Memory Kernel
+  -> Memory Kernel
   -> deterministic guardrails
   -> PostgreSQL truth store
   -> reminders / family tasks / audit
@@ -74,12 +74,12 @@ Recall is evidence-bound. If merged evidence is empty, the Kernel returns a safe
 Recall uses broad candidate retrieval plus ranking.
 
 - `ParsedMemoryQuery.eventTypes` are hints, not hard filters.
-- PostgreSQL first recalls candidates from truth data using elder scope plus broad title/summary/entity matching.
+- PostgreSQL first recalls candidates from truth data using user scope plus broad title/summary/entity matching.
 - Kernel ranking gives bonuses for event type match, entity match, query text match, event confidence, importance, and active status.
 - Pgvector semantic recall returns low-latency candidate memories from PostgreSQL-derived summaries. Its results are merged with structured evidence and each returned evidence item carries `retrievalSource`.
 - Graphiti search is triggered by structured query fields (`requiresTemporalEvidence`, `relationQueryIntent`, or safety tags), not by query keyword lists.
 - PostgreSQL context links are persisted relationship candidates for ingest/debug/reminder support; query answers do not automatically expand them into evidence.
-- During background ingest, semantic recall results may supply candidate PostgreSQL event IDs for context-link proposal only when the turn plan requests old-memory context. Provider-owned relation output is ignored as GoldMem truth.
+- During background ingest, semantic recall results may supply candidate PostgreSQL event IDs for context-link proposal only when the turn plan requests old-memory context. Provider-owned relation output is ignored as mem truth.
 - No special keyword rules should be added for individual examples.
 
 This keeps recall robust when the model misclassifies a query, while preserving PostgreSQL as truth.

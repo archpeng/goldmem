@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
-import type { FamilyTask } from "@goldmem/memory-schema";
+import type { FamilyTask } from "@mem/memory-schema";
 import type { FamilyTaskStore } from "./index.js";
 import { mapFamilyTask } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";

@@ -2,7 +2,7 @@
 
 Date: 2026-05-11
 
-This note extends the latency baseline with `deepseek-v4-flash` and defines a product-level async interaction plan for the elder mobile experience.
+This note extends the latency baseline with `deepseek-v4-flash` and defines a product-level async interaction plan for the user mobile experience.
 
 ## Model Availability
 
@@ -92,7 +92,7 @@ User submits text
   -> UI receives final response
 ```
 
-This is technically correct, but it is not the right product interaction for an elder mobile app. The user is forced to wait for nonessential enrichment steps.
+This is technically correct, but it is not the right product interaction for a user mobile app. The user is forced to wait for nonessential enrichment steps.
 
 ## Product Principle
 
@@ -166,7 +166,7 @@ Target interaction:
   If strong evidence exists, show "找到相关记录，正在整理回答。"
 
 2-8s:
-  Model answer generation returns final elder-friendly answer.
+  Model answer generation returns final user-friendly answer.
 
 If semantic recall index or Graphiti is slow:
   Do not block the first answer.

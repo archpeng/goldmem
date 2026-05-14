@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError } from "@goldmem/model-gateway";
+import type { MemoryPlan, ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
   buildEvent,
@@ -23,7 +23,7 @@ describe("ElderMemoryKernel context-links", () => {
         events: [
           buildEvent({
             title: "下午三点提醒",
-            summary: "老人补充说大约下午三点提醒一下。",
+            summary: "用户补充说大约下午三点提醒一下。",
             type: "general",
             timeText: "下午三点",
           }),
@@ -105,7 +105,7 @@ describe("ElderMemoryKernel context-links", () => {
         events: [
           buildEvent({
             title: "下午三点提醒",
-            summary: "老人补充说大约下午三点提醒一下。",
+            summary: "用户补充说大约下午三点提醒一下。",
             type: "general",
           }),
         ],
@@ -218,14 +218,14 @@ describe("ElderMemoryKernel context-links", () => {
         id: "event-semantic",
         sourceId: "source-semantic",
         title: "老街面馆",
-        summary: "老人想去老街那家面馆吃本地特色面，时间还没定。",
+        summary: "用户想去老街那家面馆吃本地特色面，时间还没定。",
       }),
       memoryEvent({
         id: "event-other-elder",
         elderId: "elder-2",
         sourceId: "source-other",
-        title: "其他老人事件",
-        summary: "这条候选不属于当前老人。",
+        title: "其他用户事件",
+        summary: "这条候选不属于当前用户。",
       }),
     );
     harness.semanticMemory.searchResults = [
@@ -277,7 +277,7 @@ describe("ElderMemoryKernel context-links", () => {
         id: "event-semantic",
         sourceId: "source-semantic",
         title: "老街面馆",
-        summary: "老人想去老街那家面馆吃本地特色面，时间还没定。",
+        summary: "用户想去老街那家面馆吃本地特色面，时间还没定。",
       }),
     );
     harness.semanticMemory.searchResults = [
@@ -318,7 +318,7 @@ describe("ElderMemoryKernel context-links", () => {
       id: "event-time",
       sourceId: "source-time",
       title: "下午三点提醒",
-      summary: "老人补充说大约下午三点需要提醒。",
+      summary: "用户补充说大约下午三点需要提醒。",
     });
     harness.eventStore.events.push(noodleEvent, timeEvent);
     harness.eventStore.searchResults = [noodleEvent];
@@ -380,7 +380,7 @@ describe("ElderMemoryKernel context-links", () => {
       id: "event-time",
       sourceId: "source-time",
       title: "下午三点提醒",
-      summary: "老人补充说大约下午三点需要提醒。",
+      summary: "用户补充说大约下午三点需要提醒。",
     });
     harness.eventStore.events.push(noodleEvent, timeEvent);
     harness.eventStore.searchResults = [noodleEvent];

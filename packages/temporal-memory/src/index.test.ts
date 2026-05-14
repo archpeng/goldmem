@@ -60,7 +60,7 @@ describe("NullTemporalMemoryStore", () => {
 describe("buildTemporalGroupId", () => {
   it("requires tenant-scoped Graphiti-safe group ids", () => {
     expect(buildTemporalGroupId({ tenantId: "tenant-a", elderId: "elder-a" })).toBe("tenant_tenant-a__elder_elder-a");
-    expect(buildTemporalGroupId({ tenantId: "tenant:a", elderId: "老人-1" })).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(buildTemporalGroupId({ tenantId: "tenant:a", elderId: "用户-1" })).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
@@ -150,7 +150,7 @@ describe("GraphitiTemporalMemoryStore", () => {
             },
             {
               id: "fact-unlinked",
-              fact: "没有来源的事实不能进入 GoldMem evidence。",
+              fact: "没有来源的事实不能进入 mem evidence。",
               score: 0.99,
             },
           ],

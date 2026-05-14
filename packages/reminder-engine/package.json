@@ -1,5 +1,5 @@
 {
-  "name": "@goldmem/reminder-engine",
+  "name": "@mem/reminder-engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@goldmem/memory-schema": "workspace:*",
-    "@goldmem/memory-store": "workspace:*"
+    "@mem/memory-schema": "workspace:*",
+    "@mem/memory-store": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

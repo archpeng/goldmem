@@ -1,8 +1,8 @@
 {
-  "name": "goldmem",
+  "name": "mem",
   "version": "0.1.0",
   "private": true,
-  "description": "Elder-first AI memory and reminder system.",
+  "description": "User-first AI memory and reminder system.",
   "packageManager": "pnpm@9.15.4",
   "type": "module",
   "scripts": {
@@ -15,8 +15,8 @@
     "architecture:check": "tsx scripts/architecture-check.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "dev:api:env": "bash -lc 'set -a; source .env; set +a; pnpm --filter @goldmem/api-server dev'",
-    "dev:web": "pnpm --filter @goldmem/web-mvp dev",
+    "dev:api:env": "bash -lc 'set -a; source .env; set +a; pnpm --filter @mem/api-server dev'",
+    "dev:web": "pnpm --filter @mem/web-mvp dev",
     "mvp:verify": "pnpm typecheck && pnpm test && pnpm test:postgres && pnpm test:graphiti && pnpm build && pnpm lint && pnpm eval && pnpm architecture:check",
     "mvp:smoke": "tsx scripts/mvp-smoke.ts",
     "e2e:golden": "tsx scripts/golden-e2e.ts",

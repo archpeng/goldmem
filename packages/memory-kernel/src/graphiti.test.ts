@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError } from "@goldmem/model-gateway";
+import type { MemoryPlan, ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
   buildEvent,
@@ -159,7 +159,7 @@ describe("ElderMemoryKernel graphiti", () => {
     const harness = createHarness(
       buildPlan({
         summary: "One-off call reminder.",
-        events: [buildEvent({ title: "晚上打电话", summary: "老人晚上要给儿子打电话。", type: "general" })],
+        events: [buildEvent({ title: "晚上打电话", summary: "用户晚上要给儿子打电话。", type: "general" })],
         relationEnrichmentSignals: [
           buildRelationEnrichmentSignal({
             intent: "same_matter_link",
@@ -262,6 +262,73 @@ describe("ElderMemoryKernel graphiti", () => {
       graphitiRawCount: 1,
       graphitiRawAlignedCount: 1,
       evidenceCount: 1,
+    });
+  });
+
+  it("keeps raw Graphiti evidence when high-score local evidence would otherwise crowd it out", async () => {
+    const temporalMemory = new RecordingTemporalMemoryStore();
+    temporalMemory.facts = [
+      {
+        retrievalSource: "graphiti",
+        origin: "graphiti_raw",
+        sourceId: "source-graphiti",
+        eventId: "event-graphiti",
+        episodeId: "episode-graphiti",
+        entityNames: ["社区医院"],
+        fact: "社区医院复查后来从周五下午改到下周一上午。",
+        validFrom: now,
+        score: 0.2,
+        reason: "Graphiti matched the reschedule chain.",
+      },
+    ];
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }), temporalMemory);
+    harness.sourceStore.sources.push({
+      id: "source-graphiti",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "社区医院复查改到下周一上午。",
+      createdAt: now,
+    });
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-graphiti",
+      sourceId: "source-graphiti",
+      type: "appointment",
+      title: "社区医院复查改期",
+      summary: "社区医院复查后来从周五下午改到下周一上午。",
+    }));
+    harness.eventStore.searchResults = Array.from({ length: 12 }, (_, index) => memoryEvent({
+      id: `event-local-${index}`,
+      sourceId: `source-local-${index}`,
+      type: "appointment",
+      title: `社区医院复查本地证据 ${index}`,
+      summary: `社区医院复查本地证据 ${index}。`,
+      importance: 1,
+      confidence: 1,
+    }));
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      requiresTemporalEvidence: true,
+      relationQueryIntent: "temporal_change",
+      eventTypes: ["appointment"],
+      safetyTags: [],
+      entities: [{ type: "place", name: "社区医院", confidence: 0.8 }],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "社区医院复查后来改成哪天了？",
+      now,
+    });
+
+    expect(answer.retrievedEvidence).toHaveLength(12);
+    expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "graphiti")).toBe(true);
+    expect(harness.audit.records.at(-1)?.payload.retrieval).toMatchObject({
+      graphitiRawAlignedCount: 1,
+      graphitiRawEvidenceCount: 1,
+      evidenceCount: 12,
     });
   });
 

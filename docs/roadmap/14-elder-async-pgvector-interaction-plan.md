@@ -4,7 +4,7 @@ Date: 2026-05-11
 
 ## Goal
 
-Keep the elder-facing mobile interaction responsive while MemoryPlan, Graphiti, and secondary answer enrichment run behind the visible turn.
+Keep the user-facing mobile interaction responsive while MemoryPlan, Graphiti, and secondary answer enrichment run behind the visible turn.
 
 ## Record Path
 

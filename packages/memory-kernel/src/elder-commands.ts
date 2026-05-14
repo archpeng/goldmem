@@ -5,9 +5,9 @@ import {
   type FamilyTask,
   type Feedback,
   type Reminder,
-} from "@goldmem/memory-schema";
-import type { AuditLog, FamilyTaskStore, FeedbackStore } from "@goldmem/memory-store";
-import type { ReminderEngine } from "@goldmem/reminder-engine";
+} from "@mem/memory-schema";
+import type { AuditLog, FamilyTaskStore, FeedbackStore } from "@mem/memory-store";
+import type { ReminderEngine } from "@mem/reminder-engine";
 
 export type ConfirmReminderInput = {
   tenantId?: string;

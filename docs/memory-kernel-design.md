@@ -1,8 +1,8 @@
-# Elder Memory Kernel Design
+# Memory Kernel Design
 
 ## Goal
 
-The Elder Memory Kernel converts messy elder voice/text into safe, auditable, long-term life memory.
+The Memory Kernel converts messy elder voice/text into safe, auditable, long-term life memory.
 
 It is not a free-form agent. It is a deterministic orchestration layer around model understanding.
 
@@ -56,11 +56,11 @@ source
 - recall context
 - vector similarity over PostgreSQL-derived canonical summaries
 
-GoldMem writes canonical event memory to the PostgreSQL `semantic_memories` index with embeddings. The index provides recall candidates; Kernel and PostgreSQL remain responsible for fact adjudication and evidence text.
+mem writes canonical event memory to the PostgreSQL `semantic_memories` index with embeddings. The index provides recall candidates; Kernel and PostgreSQL remain responsible for fact adjudication and evidence text.
 
 ## Rule philosophy
 
-GoldMem avoids case-by-case elder rules.
+mem avoids case-by-case elder rules.
 
 Hard rules are limited to:
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
-import type { Reminder } from "@goldmem/memory-schema";
+import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import type { Reminder } from "@mem/memory-schema";
 import type { CreateReminderInput, ReminderStore } from "./index.js";
 import { mapReminder } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";
@@ -52,6 +52,48 @@ export class PostgresReminderStore implements ReminderStore {
       .from(schema.reminders)
       .where(and(eq(schema.reminders.tenantId, input.tenantId), eq(schema.reminders.elderId, input.elderId)))
       .orderBy(desc(schema.reminders.createdAt));
+    return rows.map(mapReminder);
+  }
+
+  async findByRemindAtRange(input: {
+    tenantId: string;
+    elderId: string;
+    fromIso: string;
+    toIso: string;
+    statuses?: Reminder["status"][];
+  }): Promise<Reminder[]> {
+    const filters = [
+      eq(schema.reminders.tenantId, input.tenantId),
+      eq(schema.reminders.elderId, input.elderId),
+      gte(schema.reminders.remindAt, new Date(input.fromIso)),
+      lt(schema.reminders.remindAt, new Date(input.toIso)),
+    ];
+    if (input.statuses?.length) filters.push(inArray(schema.reminders.status, input.statuses));
+
+    const rows = await this.db
+      .select()
+      .from(schema.reminders)
+      .where(and(...filters))
+      .orderBy(asc(schema.reminders.remindAt), desc(schema.reminders.createdAt));
+    return rows.map(mapReminder);
+  }
+
+  async findByConfirmedAtRange(input: {
+    tenantId: string;
+    elderId: string;
+    fromIso: string;
+    toIso: string;
+  }): Promise<Reminder[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.reminders)
+      .where(and(
+        eq(schema.reminders.tenantId, input.tenantId),
+        eq(schema.reminders.elderId, input.elderId),
+        gte(schema.reminders.confirmedAt, new Date(input.fromIso)),
+        lt(schema.reminders.confirmedAt, new Date(input.toIso)),
+      ))
+      .orderBy(desc(schema.reminders.confirmedAt), desc(schema.reminders.createdAt));
     return rows.map(mapReminder);
   }
 

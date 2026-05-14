@@ -1,5 +1,5 @@
-import type { FamilyTask, MemoryContextLink, MemoryEvent, MemoryPlan, PersonalContext, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
-import type { PersonalContextStore } from "@goldmem/memory-store";
+import type { FamilyTask, MemoryContextLink, MemoryEvent, MemoryPlan, PersonalContext, Reminder, RiskFlagRecord } from "@mem/memory-schema";
+import type { PersonalContextStore } from "@mem/memory-store";
 import { isString } from "./guards.js";
 import type { ElderMemoryKernelDeps } from "./index.js";
 import type { AppliedMemoryPlan } from "./ingest-types.js";

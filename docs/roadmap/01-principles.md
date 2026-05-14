@@ -2,7 +2,7 @@
 
 ## 1. Long-term memory is the highest-value layer
 
-GoldMem's core product value is not simple note capture. The long-term value is care memory:
+mem's core product value is not simple note capture. The long-term value is care memory:
 
 ```text
 facts that change
@@ -25,7 +25,7 @@ These are temporal relationship problems, not plain text retrieval problems.
 
 ## 2. Avoid building a hand-written long-term memory engine
 
-A custom PostgreSQL graph/fact layer is attractive because it is controllable. But if it keeps growing, GoldMem will gradually reimplement:
+A custom PostgreSQL graph/fact layer is attractive because it is controllable. But if it keeps growing, mem will gradually reimplement:
 
 ```text
 entity extraction
@@ -45,7 +45,7 @@ The updated direction is to let a specialized temporal context graph engine hand
 
 ## 3. Use Graphiti for long-term relational memory truth
 
-Graphiti's model maps well to GoldMem's long-term needs:
+Graphiti's model maps well to mem's long-term needs:
 
 ```text
 Episodes        -> source transcripts, family confirmations, reminder state changes, risk reviews
@@ -55,7 +55,7 @@ Validity        -> what was true then vs what is true now
 Provenance      -> which source or event produced the fact
 ```
 
-Graphiti should not replace GoldMem's business database. It should replace the need to build a custom long-term memory graph inside PostgreSQL.
+Graphiti should not replace mem's business database. It should replace the need to build a custom long-term memory graph inside PostgreSQL.
 
 ## 4. PostgreSQL remains business and evidence truth
 
@@ -105,7 +105,7 @@ reminder status
 
 ## 6. Kernel becomes an orchestrator, not a memory engine
 
-The GoldMem Kernel should not implement deep graph memory internals.
+The mem Kernel should not implement deep graph memory internals.
 
 It should own:
 
@@ -137,7 +137,7 @@ PostgreSQL write success remains the business hard dependency. Graphiti write fa
 
 ## 8. Nightly consolidation is a core mechanism
 
-GoldMem should use two speeds:
+mem should use two speeds:
 
 ```text
 Daytime: fast capture, quick recall, safe actions

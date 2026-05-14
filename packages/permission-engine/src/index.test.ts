@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan } from "@goldmem/memory-schema";
+import type { MemoryPlan } from "@mem/memory-schema";
 import { DefaultPermissionEngine } from "./index.js";
 
 describe("DefaultPermissionEngine", () => {

@@ -1,13 +1,13 @@
-# GoldMem
+# mem
 
-GoldMem is an elder-first memory and reminder system. The product surface is simple: voice memo, reminder, recall, and family confirmation. The core asset is the **Elder Memory Kernel**: a model-driven, guardrail-constrained memory layer that turns raw voice/text into structured life events, reminder candidates, risk flags, family tasks, and long-term memory writes.
+mem is a user-first memory and reminder system. The product surface is simple: voice memo, reminder, recall, and family confirmation. The core asset is the **Memory Kernel**: a model-driven, guardrail-constrained memory layer that turns raw voice/text into structured life events, reminder candidates, risk flags, family tasks, and long-term memory writes.
 
 ## Product thesis
 
-GoldMem is not only an AI notes app. It is a family-level memory service for older adults.
+mem is not only an AI notes app. It is a family-level memory service for users and families.
 
 ```text
-Elder voice/text
+User voice/text
   -> source evidence
   -> structured memory event
   -> reminder candidate
@@ -23,14 +23,14 @@ Elder voice/text
 1. **LLM understands; Kernel constrains.** Models produce a `MemoryPlan`; deterministic code validates, guards, and applies it.
 2. **PostgreSQL is the truth source.** Original source, event state, reminders, permissions, risk records, and audit logs are not delegated to memory frameworks.
 3. **Semantic recall index is fast candidate retrieval, not truth.** Pgvector stores PostgreSQL-derived canonical summaries and returns recall candidates.
-4. **Graphiti is the long-term relational memory path.** Its local Neo4j backing service is Graphiti infrastructure; GoldMem still gates every answer and business action through the Kernel.
+4. **Graphiti is the long-term relational memory path.** Its local Neo4j backing service is Graphiti infrastructure; mem still gates every answer and business action through the Kernel.
 5. **Failures become eval data, not ad-hoc rules.** Case-by-case mistakes are collected into evaluation cases and prompt/model improvements.
 
 ## Repository layout
 
 ```text
 apps/
-  elder-android/        # placeholder for elder mobile client
+  elder-android/        # placeholder for user mobile client
   family-web/           # placeholder for family web/miniprogram client
   admin-web/            # placeholder for internal console
 services/
@@ -40,7 +40,7 @@ services/
   eval-runner/          # eval runner shell
 packages/
   memory-schema/        # Zod schemas and shared domain types
-  memory-kernel/        # Elder Memory Kernel orchestration
+  memory-kernel/        # Memory Kernel orchestration
   model-gateway/        # LLM/ASR abstraction
   memory-store/         # PostgreSQL truth store and pgvector semantic recall index
   reminder-engine/      # deterministic reminder state machine
@@ -64,7 +64,7 @@ input transcript
   -> enforce risk/permission guardrails
   -> create events and reminder candidates
   -> write recall memory
-  -> return elder-facing cards
+  -> return user-facing cards
 ```
 
 Then add ASR/audio, reminder scheduling, fuzzy recall hardening, family confirmation, Graphiti-backed long-term relationship evidence, and eval-driven consolidation.
@@ -156,7 +156,7 @@ Restart the API server after changing model or embedding settings.
 
 ## Local Graphiti
 
-Graphiti is exposed to GoldMem through a small local sidecar that wraps `graphiti-core` with the REST contract used by `@goldmem/temporal-memory`. The default local backend is Neo4j 5.26+.
+Graphiti is exposed to mem through a small local sidecar that wraps `graphiti-core` with the REST contract used by `@mem/temporal-memory`. The default local backend is Neo4j 5.26+.
 
 1. Set `OPENAI_API_KEY` and keep `GRAPHITI_BASE_URL=http://localhost:8890` in `.env`.
 
@@ -195,7 +195,7 @@ For the context-link golden fixture, keep Graphiti enabled so temporal evidence 
 set -a
 source .env
 set +a
-pnpm --filter @goldmem/api-server dev
+pnpm --filter @mem/api-server dev
 pnpm e2e:context
 ```
 

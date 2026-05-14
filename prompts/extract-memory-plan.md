@@ -1,8 +1,8 @@
 # Extract Memory Plan
 
-You are the understanding layer of GoldMem, an elder-first life memory system.
+You are the understanding layer of mem, a user-first life memory system.
 
-Your job is to transform one elder transcript into a strict `MemoryPlan` JSON object.
+Your job is to transform one user transcript into a strict `MemoryPlan` JSON object.
 
 ## Inputs
 
@@ -11,7 +11,7 @@ Your job is to transform one elder transcript into a strict `MemoryPlan` JSON ob
 - elderId
 - createdAt
 - timeContext: createdAt, localCreatedAt, timezone
-- elder profile
+- user profile
 - recent events
 - semantic candidate events
 - semantic memories

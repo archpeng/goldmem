@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ELDER_THIRD_PERSON_PATTERN, ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@goldmem/memory-schema";
+import { ELDER_THIRD_PERSON_PATTERN, ElderTurnPlanSchema, MemoryAnswerSchema, MemoryPlanSchema, type ParsedMemoryQuery } from "@mem/memory-schema";
 import { ModelGatewayError, OpenAIModelGateway, type GenerateMemoryAnswerInput, type GenerateMemoryPlanInput, type PlanElderTurnInput } from "./index.js";
 import { normalizeMemoryAnswerResult } from "./normalizers/answer.js";
 import { normalizeMemoryPlanResult } from "./normalizers/memory-plan.js";
@@ -83,14 +83,14 @@ describe("model-gateway normalization", () => {
   it("normalizes answer user-facing fields into secretary voice", () => {
     const normalized = normalizeMemoryAnswerResult(
       {
-        answerText: "老人说今天买了青菜。",
+        answerText: "用户说今天买了青菜。",
         confidence: 0.8,
         matchedSources: [{ sourceId: "source-1", summary: "用户表示今天买了青菜。", canPlayAudio: false }],
-        safetyNote: "该老人如果不确定，可以再补充一句说明。",
+        safetyNote: "该用户如果不确定，可以再补充一句说明。",
       },
       {
         ...answerInput(),
-        evidence: [{ ...answerInput().evidence[0]!, summary: "老人提到今天买了青菜。" }],
+        evidence: [{ ...answerInput().evidence[0]!, summary: "用户提到今天买了青菜。" }],
       },
     );
 
@@ -179,7 +179,7 @@ describe("model-gateway normalization", () => {
         summary: "你要去社区医院复查。",
         events: [{
           title: "社区医院复查",
-          summary: "老人下周三下午三点要去社区医院复查血压。",
+          summary: "用户下周三下午三点要去社区医院复查血压。",
           timeText: "下周三下午三点",
           confidence: 0.8,
           evidence: ["下周三下午三点要去社区医院复查血压"],
@@ -217,24 +217,24 @@ describe("model-gateway normalization", () => {
   it("normalizes MemoryPlan user-facing fields into secretary voice", () => {
     const normalized = normalizeMemoryPlanResult(
       {
-        summary: "老人说今天要去买青菜。",
+        summary: "用户说今天要去买青菜。",
         events: [{
-          title: "老人买青菜",
-          summary: "老人提到今天要去买青菜。",
+          title: "用户买青菜",
+          summary: "用户提到今天要去买青菜。",
           timeText: "今天",
           confidence: 0.8,
           evidence: ["今天要去买青菜"],
         }],
         reminderCandidates: [{
-          title: "老人买青菜",
+          title: "用户买青菜",
           timeText: "今天",
           confirmationRequired: true,
           reason: "用户表示这件事需要提醒。",
         }],
         familyTasks: [{
           type: "general_review",
-          title: "该老人事项确认",
-          summary: "老人提到这件事可能需要家人确认。",
+          title: "该用户事项确认",
+          summary: "用户提到这件事可能需要家人确认。",
           urgency: "medium",
           visibility: "family_required",
         }],
@@ -363,9 +363,9 @@ describe("model-gateway prompt capabilities", () => {
       capabilities: ["elder-secretary-voice.md", "relation-enrichment.md"],
     });
 
-    expect(prompt).toContain("Elder Secretary Voice");
+    expect(prompt).toContain("Secretary Voice");
     expect(prompt).toContain("Capability: Relation Enrichment");
-    expect(prompt).toContain("Never use elder-facing phrases like");
+    expect(prompt).toContain("Never use third-person user-facing phrases like");
   });
 
   it("composes answer prompt with secretary voice capability", async () => {
@@ -375,7 +375,7 @@ describe("model-gateway prompt capabilities", () => {
       capabilities: ["elder-secretary-voice.md"],
     });
 
-    expect(prompt).toContain("Elder Secretary Voice");
+    expect(prompt).toContain("Secretary Voice");
     expect(prompt).toContain("matchedSources[].summary");
   });
 });
@@ -413,9 +413,9 @@ describe("OpenAIModelGateway operation timeouts", () => {
     await expect(gateway.generateMemoryPlan(planInput())).resolves.toMatchObject({ summary: "你买了青菜。" });
     await expect(gateway.generateMemoryAnswer(answerInput())).resolves.toMatchObject({ answerText: expect.stringContaining("你买了青菜") });
 
-    expect(prompts[0]).toContain("Elder Secretary Voice");
+    expect(prompts[0]).toContain("Secretary Voice");
     expect(prompts[0]).toContain("Capability: Relation Enrichment");
-    expect(prompts[1]).toContain("Elder Secretary Voice");
+    expect(prompts[1]).toContain("Secretary Voice");
   });
 
   it("uses the MemoryPlan-specific timeout for JSON completion failures", async () => {

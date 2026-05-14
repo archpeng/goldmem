@@ -1,6 +1,6 @@
-# GoldMem Agent Constraints
+# mem Agent Constraints
 
-This file defines the rules for humans and coding agents changing GoldMem. Keep it short, enforceable, and aligned with `architecture.md`.
+This file defines the rules for humans and coding agents changing mem. Keep it short, enforceable, and aligned with `architecture.md`.
 
 ## Must Preserve
 
@@ -29,7 +29,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
    Context links may connect related events or missing reminder details, but they must not merge records, auto-confirm reminders, or overwrite event truth.
 
 9. **Provider output is not relationship truth.**
-   Semantic recall results may propose candidate event IDs and ranking signals. Graph relationships belong to GoldMem-owned PostgreSQL context links or the Graphiti temporal path, never to provider-owned recall output.
+   Semantic recall results may propose candidate event IDs and ranking signals. Graph relationships belong to mem-owned PostgreSQL context links or the Graphiti temporal path, never to provider-owned recall output.
 
 10. **Chinese is the default product language.**
    User-facing Web MVP copy and default model-facing output should be Simplified Chinese unless the user input clearly uses another language.
@@ -45,6 +45,7 @@ This file defines the rules for humans and coding agents changing GoldMem. Keep 
 - Do not use context links to silently fill reminder times.
 - Do not solve recall bugs with one-off keyword/type mappings.
 - Do not swallow validation or persistence failures without caller visibility or audit.
+- Do not introduce age-labeled Chinese wording; use 用户、使用者、本人, or role-specific neutral copy.
 
 ## Change Rules
 

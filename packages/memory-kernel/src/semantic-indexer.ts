@@ -1,4 +1,4 @@
-import type { MemoryEvent } from "@goldmem/memory-schema";
+import type { MemoryEvent } from "@mem/memory-schema";
 import type { ElderMemoryKernelDeps } from "./index.js";
 import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 

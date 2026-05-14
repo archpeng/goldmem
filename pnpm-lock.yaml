@@ -45,7 +45,7 @@ importers:
 
   apps/web-mvp:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../../packages/memory-schema
       class-variance-authority:
@@ -106,25 +106,25 @@ importers:
 
   packages/memory-kernel:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
-      '@goldmem/memory-store':
+      '@mem/memory-store':
         specifier: workspace:*
         version: link:../memory-store
-      '@goldmem/model-gateway':
+      '@mem/model-gateway':
         specifier: workspace:*
         version: link:../model-gateway
-      '@goldmem/permission-engine':
+      '@mem/permission-engine':
         specifier: workspace:*
         version: link:../permission-engine
-      '@goldmem/reminder-engine':
+      '@mem/reminder-engine':
         specifier: workspace:*
         version: link:../reminder-engine
-      '@goldmem/risk-engine':
+      '@mem/risk-engine':
         specifier: workspace:*
         version: link:../risk-engine
-      '@goldmem/temporal-memory':
+      '@mem/temporal-memory':
         specifier: workspace:*
         version: link:../temporal-memory
     devDependencies:
@@ -144,7 +144,7 @@ importers:
 
   packages/memory-store:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
       drizzle-orm:
@@ -163,7 +163,7 @@ importers:
 
   packages/model-gateway:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
       openai:
@@ -176,7 +176,7 @@ importers:
 
   packages/permission-engine:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
     devDependencies:
@@ -186,10 +186,10 @@ importers:
 
   packages/reminder-engine:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
-      '@goldmem/memory-store':
+      '@mem/memory-store':
         specifier: workspace:*
         version: link:../memory-store
     devDependencies:
@@ -199,7 +199,7 @@ importers:
 
   packages/risk-engine:
     dependencies:
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../memory-schema
     devDependencies:
@@ -221,28 +221,28 @@ importers:
       '@fastify/multipart':
         specifier: ^10.0.0
         version: 10.0.0
-      '@goldmem/memory-kernel':
+      '@mem/memory-kernel':
         specifier: workspace:*
         version: link:../../packages/memory-kernel
-      '@goldmem/memory-schema':
+      '@mem/memory-schema':
         specifier: workspace:*
         version: link:../../packages/memory-schema
-      '@goldmem/memory-store':
+      '@mem/memory-store':
         specifier: workspace:*
         version: link:../../packages/memory-store
-      '@goldmem/model-gateway':
+      '@mem/model-gateway':
         specifier: workspace:*
         version: link:../../packages/model-gateway
-      '@goldmem/permission-engine':
+      '@mem/permission-engine':
         specifier: workspace:*
         version: link:../../packages/permission-engine
-      '@goldmem/reminder-engine':
+      '@mem/reminder-engine':
         specifier: workspace:*
         version: link:../../packages/reminder-engine
-      '@goldmem/risk-engine':
+      '@mem/risk-engine':
         specifier: workspace:*
         version: link:../../packages/risk-engine
-      '@goldmem/temporal-memory':
+      '@mem/temporal-memory':
         specifier: workspace:*
         version: link:../../packages/temporal-memory
       fastify:

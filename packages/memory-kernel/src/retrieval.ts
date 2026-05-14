@@ -1,7 +1,7 @@
-import { EventTypeSchema, RiskLevelSchema, type MemoryAnswer, type MemoryEvent, type ParsedMemoryQuery } from "@goldmem/memory-schema";
-import type { MemoryRecallResult } from "@goldmem/memory-store";
-import type { RetrievedEvidence } from "@goldmem/model-gateway";
-import type { TemporalEvidence } from "@goldmem/temporal-memory";
+import { EventTypeSchema, RiskLevelSchema, type MemoryAnswer, type MemoryEvent, type ParsedMemoryQuery } from "@mem/memory-schema";
+import type { MemoryRecallResult } from "@mem/memory-store";
+import type { RetrievedEvidence } from "@mem/model-gateway";
+import type { TemporalEvidence } from "@mem/temporal-memory";
 
 export function evidenceBoundMatchedSources(
   matchedSources: MemoryAnswer["matchedSources"],
@@ -89,7 +89,9 @@ export function mergeEvidence(
     ];
   });
 
-  return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence, ...temporalEvidence]);
+  return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence, ...temporalEvidence], {
+    preserveRawGraphiti: shouldSearchTemporalMemory(query, parsedQuery),
+  });
 }
 
 function parseEventType(value: unknown): MemoryEvent["type"] | undefined {
@@ -102,7 +104,10 @@ function parseRiskLevel(value: unknown): MemoryEvent["riskLevel"] | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-export function mergeRetrievedEvidence(evidence: RetrievedEvidence[]): RetrievedEvidence[] {
+export function mergeRetrievedEvidence(
+  evidence: RetrievedEvidence[],
+  options: { preserveRawGraphiti?: boolean } = {},
+): RetrievedEvidence[] {
   const byKey = new Map<string, RetrievedEvidence>();
   for (const item of evidence) {
     const key = `${item.retrievalSource}:${item.sourceId}:${item.eventId ?? item.summary}`;
@@ -112,7 +117,41 @@ export function mergeRetrievedEvidence(evidence: RetrievedEvidence[]): Retrieved
     }
   }
 
-  return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, 12);
+  const ranked = [...byKey.values()].sort((a, b) => b.score - a.score);
+  const selected = ranked.slice(0, 12);
+  if (!options.preserveRawGraphiti || selected.some((item) => item.retrievalSource === "graphiti")) {
+    return selected;
+  }
+
+  const rawGraphiti = ranked.find((item) => item.retrievalSource === "graphiti");
+  if (!rawGraphiti) return selected;
+  if (selected.length < 12) return [...selected, rawGraphiti];
+
+  const replacementIndex = lowestPriorityReplacementIndex(selected);
+  return selected.map((item, index) => index === replacementIndex ? rawGraphiti : item)
+    .sort((a, b) => b.score - a.score);
+}
+
+function lowestPriorityReplacementIndex(evidence: RetrievedEvidence[]): number {
+  const nonPostgresIndex = lastLowestScoreIndex(evidence, (item) => item.retrievalSource !== "postgres");
+  return nonPostgresIndex >= 0 ? nonPostgresIndex : lastLowestScoreIndex(evidence, () => true);
+}
+
+function lastLowestScoreIndex(
+  evidence: RetrievedEvidence[],
+  canReplace: (item: RetrievedEvidence) => boolean,
+): number {
+  let index = -1;
+  let score = Number.POSITIVE_INFINITY;
+  for (let current = 0; current < evidence.length; current += 1) {
+    const item = evidence[current];
+    if (!item || !canReplace(item)) continue;
+    if (item.score <= score) {
+      score = item.score;
+      index = current;
+    }
+  }
+  return index;
 }
 
 export function shouldSearchTemporalMemory(_query: string, parsedQuery: ParsedMemoryQuery): boolean {

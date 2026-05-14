@@ -1,5 +1,5 @@
-import type { MemoryPlan, PersonalContext } from "@goldmem/memory-schema";
-import type { AuditLog } from "@goldmem/memory-store";
+import type { MemoryPlan, PersonalContext } from "@mem/memory-schema";
+import type { AuditLog } from "@mem/memory-store";
 
 export class MemoryPlanCompletenessError extends Error {
   constructor(readonly problems: string[]) {

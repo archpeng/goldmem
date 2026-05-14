@@ -2,17 +2,17 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Pool } from "pg";
 
-const defaultDatabaseUrl = "postgres://goldmem:goldmem@localhost:5432/goldmem";
-const databaseUrl = process.env.GOLDMEM_STORE_TEST_DATABASE_URL ?? defaultDatabaseUrl;
+const defaultDatabaseUrl = "postgres://mem:mem@localhost:5432/mem";
+const databaseUrl = process.env.MEM_STORE_TEST_DATABASE_URL ?? defaultDatabaseUrl;
 
-if (!process.env.GOLDMEM_STORE_TEST_DATABASE_URL) {
+if (!process.env.MEM_STORE_TEST_DATABASE_URL) {
   await run("docker", ["compose", "-f", "infra/docker-compose.yml", "up", "-d", "postgres"], process.env);
 }
 
 await waitForPostgres(databaseUrl);
-await run("pnpm", ["--filter", "@goldmem/memory-store", "test"], {
+await run("pnpm", ["--filter", "@mem/memory-store", "test"], {
   ...process.env,
-  GOLDMEM_STORE_TEST_DATABASE_URL: databaseUrl,
+  MEM_STORE_TEST_DATABASE_URL: databaseUrl,
 });
 
 async function waitForPostgres(connectionString: string): Promise<void> {

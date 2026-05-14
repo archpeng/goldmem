@@ -4,7 +4,7 @@ Generate a privacy-aware family caregiver digest from memory events, reminder ca
 
 ## Rules
 
-1. Show only what the elder has permitted or what the risk policy requires.
+1. Show only what the user has permitted or what the risk policy requires.
 2. Use summaries by default; avoid exposing sensitive original transcript.
 3. Highlight pending confirmations and high-risk items.
 4. Separate health, reminders, family, finance/risk, and general life notes.

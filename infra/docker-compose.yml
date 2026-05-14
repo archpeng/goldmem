@@ -2,9 +2,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: goldmem
-      POSTGRES_PASSWORD: goldmem
-      POSTGRES_DB: goldmem
+      POSTGRES_USER: mem
+      POSTGRES_PASSWORD: mem
+      POSTGRES_DB: mem
     ports:
       - "5432:5432"
 
@@ -36,7 +36,7 @@ services:
     build:
       context: ..
       dockerfile: services/graphiti-sidecar/Dockerfile
-    image: goldmem-graphiti-sidecar:local
+    image: mem-graphiti-sidecar:local
     profiles: ["graphiti"]
     depends_on:
       postgres:
@@ -46,7 +46,7 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-      DATABASE_URL: postgres://goldmem:goldmem@postgres:5432/goldmem
+      DATABASE_URL: postgres://mem:mem@postgres:5432/mem
       MODEL_NAME: ${GRAPHITI_MODEL:-${OPENAI_MODEL:-gpt-4.1-mini}}
       GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
       GRAPHITI_NEO4J_URI: ${GRAPHITI_SIDECAR_NEO4J_URI:-bolt://graphiti-neo4j:7687}
@@ -68,7 +68,7 @@ services:
       graphiti-sidecar:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://goldmem:goldmem@postgres:5432/goldmem
+      DATABASE_URL: postgres://mem:mem@postgres:5432/mem
       GRAPHITI_BASE_URL: http://graphiti-sidecar:8000
       GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
       GRAPHITI_WORKER_BATCH_SIZE: ${GRAPHITI_WORKER_BATCH_SIZE:-10}

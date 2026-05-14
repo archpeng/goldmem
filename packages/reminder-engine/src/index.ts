@@ -1,5 +1,5 @@
-import type { Reminder, ReminderCandidateDraft } from "@goldmem/memory-schema";
-import type { CreateReminderInput, ReminderStore } from "@goldmem/memory-store";
+import type { Reminder, ReminderCandidateDraft } from "@mem/memory-schema";
+import type { CreateReminderInput, ReminderStore } from "@mem/memory-store";
 
 export type CreateReminderCandidateInput = ReminderCandidateDraft & {
   tenantId: string;

@@ -1,5 +1,5 @@
-import { DEFAULT_TENANT_ID, type FamilyAssistTask, type FamilyTask, type MemoryEvent } from "@goldmem/memory-schema";
-import type { AuditLog, EventStore, FamilyTaskStore } from "@goldmem/memory-store";
+import { DEFAULT_TENANT_ID, type FamilyAssistTask, type FamilyTask, type MemoryEvent } from "@mem/memory-schema";
+import type { AuditLog, EventStore, FamilyTaskStore } from "@mem/memory-store";
 
 export type ListFamilyAssistTasksInput = {
   tenantId?: string;

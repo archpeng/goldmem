@@ -1,4 +1,4 @@
-import type { MemoryPlan } from "@goldmem/memory-schema";
+import type { MemoryPlan } from "@mem/memory-schema";
 
 export interface PermissionEngine {
   applyDefaultVisibility(plan: MemoryPlan, elderId: string): Promise<MemoryPlan>;

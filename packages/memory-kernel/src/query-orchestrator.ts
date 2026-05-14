@@ -2,7 +2,7 @@ import {
   DEFAULT_TENANT_ID,
   ParsedMemoryQuerySchema,
   type MemoryAnswer,
-} from "@goldmem/memory-schema";
+} from "@mem/memory-schema";
 import {
   evidenceBoundMatchedSources,
   mergeEvidence,
@@ -107,6 +107,8 @@ export class QueryOrchestrator {
       graphitiRawAlignedCount: alignedTemporalResults.filter((result) => result.origin === "graphiti_raw").length,
       graphitiProvenanceCount: temporalResults.filter((result) => result.origin === "provenance_fallback").length,
       graphitiProvenanceAlignedCount: alignedTemporalResults.filter((result) => result.origin === "provenance_fallback").length,
+      graphitiRawEvidenceCount: evidence.filter((item) => item.retrievalSource === "graphiti").length,
+      graphitiProvenanceEvidenceCount: evidence.filter((item) => item.retrievalSource === "graphiti_provenance").length,
       contextLinkCount: 0,
       evidenceCount: evidence.length,
     };

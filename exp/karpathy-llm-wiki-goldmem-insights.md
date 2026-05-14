@@ -1,4 +1,4 @@
-# Karpathy LLM Wiki 对 GoldMem 的启发
+# Karpathy LLM Wiki 对 mem 的启发
 
 来源：<https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>
 
@@ -23,11 +23,11 @@ Karpathy 的 gist 提出一种不同于普通 RAG 的个人知识库模式：
 要把理解过程沉淀成可持续维护、可追溯、会复利的中间资产。
 ```
 
-## 2. 和 GoldMem 的映射
+## 2. 和 mem 的映射
 
-Karpathy 的 wiki pattern 和 GoldMem 当前架构高度相似，但 GoldMem 的领域更高风险，不能直接照搬 markdown wiki。
+Karpathy 的 wiki pattern 和 mem 当前架构高度相似，但 mem 的领域更高风险，不能直接照搬 markdown wiki。
 
-| LLM Wiki 概念 | GoldMem 对应层 |
+| LLM Wiki 概念 | mem 对应层 |
 |---|---|
 | Raw sources | `memory_sources`，原始语音/文字输入 |
 | Wiki pages | MemoryEvent summaries、Graphiti temporal facts、未来的 elder-facing memory pages |
@@ -38,7 +38,7 @@ Karpathy 的 wiki pattern 和 GoldMem 当前架构高度相似，但 GoldMem 的
 | Query | PostgreSQL + pgvector + Graphiti evidence merge -> answer |
 | Lint | golden e2e、architecture check、future memory consistency audit |
 
-GoldMem 已经不是简单 RAG。它已经有：
+mem 已经不是简单 RAG。它已经有：
 
 - PostgreSQL truth。
 - pgvector semantic recall index。
@@ -50,9 +50,9 @@ GoldMem 已经不是简单 RAG。它已经有：
 
 但还需要补上 Karpathy 模式里最关键的“持续维护中间资产”意识。
 
-## 3. 对老人端产品的启发
+## 3. 对用户端产品的启发
 
-老人端不应该只是：
+用户端不应该只是：
 
 ```text
 你说一句话 -> 系统存一条记录 -> 下次搜索
@@ -64,7 +64,7 @@ GoldMem 已经不是简单 RAG。它已经有：
 你说一句话 -> 系统先记下 -> 后台整理成长期生活记忆 -> 以后越用越懂你的生活脉络
 ```
 
-这能直接支持 GoldMem 的核心差异化：
+这能直接支持 mem 的核心差异化：
 
 - 不是只记“明天去医院”。
 - 而是知道“这次医院复查后来改过时间”。
@@ -73,7 +73,7 @@ GoldMem 已经不是简单 RAG。它已经有：
 - 不是只记“有人要验证码”。
 - 而是知道“补贴、验证码、身份证号多次共同出现，是风险链”。
 
-因此老人端交互要表达的是：
+因此用户端交互要表达的是：
 
 ```text
 我先帮你记下。
@@ -81,7 +81,7 @@ GoldMem 已经不是简单 RAG。它已经有：
 等你想不起来时，我能按最新、最可靠的记录帮你找。
 ```
 
-不要把“后台整理长期关系”暴露成技术状态。老人只需要感知到：
+不要把“后台整理长期关系”暴露成技术状态。用户只需要感知到：
 
 - 已记下。
 - 正在整理。
@@ -91,7 +91,7 @@ GoldMem 已经不是简单 RAG。它已经有：
 
 ## 4. 对 Graphiti 的启发
 
-Karpathy 的 wiki 是 LLM 持续维护的 interlinked knowledge base。GoldMem 的长期关系层不应重新发明 markdown wiki，而应把 Graphiti 作为更适合时间关系的“长期记忆维护层”。
+Karpathy 的 wiki 是 LLM 持续维护的 interlinked knowledge base。mem 的长期关系层不应重新发明 markdown wiki，而应把 Graphiti 作为更适合时间关系的“长期记忆维护层”。
 
 Graphiti 应该承担：
 
@@ -122,7 +122,7 @@ PostgreSQL truth 写完之后
 
 ## 5. 对后台整理机制的启发
 
-Karpathy 强调 ingest、query、lint 三种操作。GoldMem 可以对应建设三条后台能力。
+Karpathy 强调 ingest、query、lint 三种操作。mem 可以对应建设三条后台能力。
 
 ### Ingest Consolidation
 
@@ -148,7 +148,7 @@ Karpathy 强调 ingest、query、lint 三种操作。GoldMem 可以对应建设�
 
 ### Query Filing
 
-Karpathy 提到查询结果也可以沉淀。GoldMem 可以谨慎引入：
+Karpathy 提到查询结果也可以沉淀。mem 可以谨慎引入：
 
 - 用户明确纠正后的答案，进入 feedback。
 - 多证据综合出的稳定结论，进入 PostgreSQL/Graphiti consolidation。
@@ -157,7 +157,7 @@ Karpathy 提到查询结果也可以沉淀。GoldMem 可以谨慎引入：
 适合回写的内容：
 
 - 家人确认后的复查时间。
-- 老人确认后的改期结果。
+- 用户确认后的改期结果。
 - 多次记录共同形成的趋势摘要。
 - 高风险事件处理结果。
 
@@ -169,7 +169,7 @@ Karpathy 提到查询结果也可以沉淀。GoldMem 可以谨慎引入：
 
 ### Memory Lint
 
-GoldMem 需要类似 wiki lint 的长期健康检查：
+mem 需要类似 wiki lint 的长期健康检查：
 
 - 同一事项是否有多个未解决时间。
 - 已确认提醒是否仍标记 `confirmationRequired=true`。
@@ -183,12 +183,12 @@ GoldMem 需要类似 wiki lint 的长期健康检查：
 
 ## 6. 对前端交互的启发
 
-LLM Wiki 的用户体验不是“每次都问搜索引擎”，而是“浏览一个持续维护的知识结构”。GoldMem 老人端可以转译为：
+LLM Wiki 的用户体验不是“每次都问搜索引擎”，而是“浏览一个持续维护的知识结构”。mem 用户端可以转译为：
 
 - 首页仍是任务列表，不变复杂。
 - 查询答案里轻量展示“依据”和“最新说法”。
 - 隐私状态要可见。
-- 长期关系不要用图谱 UI 展示给老人。
+- 长期关系不要用图谱 UI 展示给用户。
 - Graphiti 价值通过自然语言表达。
 
 推荐交互文案：
@@ -209,7 +209,7 @@ LLM Wiki 的用户体验不是“每次都问搜索引擎”，而是“浏览�
 
 ## 7. 不应直接照搬的地方
 
-Karpathy 的场景偏个人知识管理，GoldMem 面向老人生活、用药、金融、诈骗和隐私，风险更高。
+Karpathy 的场景偏个人知识管理，mem 面向用户生活、用药、金融、诈骗和隐私，风险更高。
 
 不能照搬：
 
@@ -219,7 +219,7 @@ Karpathy 的场景偏个人知识管理，GoldMem 面向老人生活、用药、
 - 不能让家人浏览完整 wiki。
 - 不能把“维护得很丰富”置于“使用者尊严和隐私”之上。
 
-GoldMem 的约束更强：
+mem 的约束更强：
 
 ```text
 LLM 可以维护理解层。
@@ -254,7 +254,7 @@ Graphiti 只能提供长期关系 evidence。
 
 ### E3: Elder-Facing Memory Digest
 
-为老人端生成低频摘要，不做 dashboard：
+为用户端生成低频摘要，不做 dashboard：
 
 - 最近整理出的重要变化。
 - 最近需要确认的事项。
@@ -273,21 +273,21 @@ Graphiti 只能提供长期关系 evidence。
 
 ### E5: Memory Workbench
 
-先做内部 debug/admin，不给老人和家人：
+先做内部 debug/admin，不给用户和家人：
 
 - source -> MemoryPlan -> PostgreSQL writes -> semantic row -> Graphiti episode -> query evidence -> final answer。
 - 用于排查和评估，不作为产品 UI。
 
 ## 9. 最终判断
 
-Karpathy 的 gist 对 GoldMem 最大启发是：
+Karpathy 的 gist 对 mem 最大启发是：
 
 ```text
 真正有黏性的记忆系统，不是检索更多 raw data，
 而是持续维护一个会复利的理解层。
 ```
 
-GoldMem 应把这个理解层实现为：
+mem 应把这个理解层实现为：
 
 ```text
 PostgreSQL truth
@@ -297,7 +297,7 @@ PostgreSQL truth
 + deterministic memory lint
 ```
 
-老人端不需要看到这个复杂系统。老人只需要感受到：
+用户端不需要看到这个复杂系统。用户只需要感受到：
 
 ```text
 我说的话不会丢。

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MemoryPlan, ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError } from "@goldmem/model-gateway";
+import type { MemoryPlan, ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError } from "@mem/model-gateway";
 import {
   RecordingTemporalMemoryStore,
   buildEvent,
@@ -203,7 +203,7 @@ describe("ElderMemoryKernel ingest", () => {
         events: [
           buildEvent({
             title: "上周社区医院复查",
-            summary: "老人上周已经去社区医院复查血压。",
+            summary: "用户上周已经去社区医院复查血压。",
             type: "appointment",
             timeText: "上周",
             eventTimeStart: "2020-05-01T01:00:00.000Z",

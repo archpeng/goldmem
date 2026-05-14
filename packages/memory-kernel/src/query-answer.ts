@@ -1,6 +1,6 @@
-import { MemoryAnswerSchema, toElderSecretaryVoiceText, type MemoryAnswer, type ParsedMemoryQuery } from "@goldmem/memory-schema";
-import { ModelGatewayError, type ModelGateway, type RetrievedEvidence } from "@goldmem/model-gateway";
-import type { AuditLog } from "@goldmem/memory-store";
+import { MemoryAnswerSchema, toElderSecretaryVoiceText, type MemoryAnswer, type ParsedMemoryQuery } from "@mem/memory-schema";
+import { ModelGatewayError, type ModelGateway, type RetrievedEvidence } from "@mem/model-gateway";
+import type { AuditLog } from "@mem/memory-store";
 import { clampScore, evidenceBoundMatchedSources } from "./retrieval.js";
 import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 

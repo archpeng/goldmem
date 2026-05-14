@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./infra/db/migrations",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://goldmem:goldmem@localhost:5432/goldmem",
+    url: process.env.DATABASE_URL ?? "postgres://mem:mem@localhost:5432/mem",
   },
 });

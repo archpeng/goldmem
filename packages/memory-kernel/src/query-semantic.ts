@@ -1,5 +1,5 @@
-import type { AuditLog, MemoryRecallResult, SemanticMemoryStore } from "@goldmem/memory-store";
-import type { ModelGateway } from "@goldmem/model-gateway";
+import type { AuditLog, MemoryRecallResult, SemanticMemoryStore } from "@mem/memory-store";
+import type { ModelGateway } from "@mem/model-gateway";
 import { consumeProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 
 export async function searchSemanticMemorySafely(input: {

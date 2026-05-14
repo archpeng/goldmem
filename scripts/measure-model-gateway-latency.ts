@@ -32,7 +32,7 @@ for (const model of models) {
     baseURL: process.env.OPENAI_BASE_URL,
     model,
     timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS ?? 60_000),
-    promptsDir: process.env.GOLDMEM_PROMPTS_DIR ?? "prompts",
+    promptsDir: process.env.MEM_PROMPTS_DIR ?? "prompts",
   });
 
   results.push({

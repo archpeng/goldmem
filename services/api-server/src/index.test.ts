@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildServer, buildTemporalMemoryFromEnv, type ApiServerDeps } from "./index.js";
-import type { DebugTrace, ElderTurnResult, FamilyAssistTask, FamilyTask, Feedback, IngestStatus, MemoryAnswer, MemoryEvent, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderTurnResult, FamilyAssistTask, FamilyTask, Feedback, IngestStatus, MemoryAnswer, MemoryEvent, Reminder } from "@mem/memory-schema";
 
 describe("api-server", () => {
   it("handles elder turn, reminder list, and family assist endpoints", async () => {
@@ -73,6 +73,32 @@ describe("api-server", () => {
     });
     expect(events.statusCode).toBe(200);
     expect(events.json()).toHaveLength(1);
+
+    const profile = await server.inject({
+      method: "GET",
+      url: "/elder/profile?elderId=elder-1",
+    });
+    expect(profile.statusCode).toBe(200);
+    expect(profile.json().displayName).toBe("elder-1");
+
+    const savedProfile = await server.inject({
+      method: "PUT",
+      url: "/elder/profile",
+      payload: {
+        elderId: "elder-1",
+        displayName: "王奶奶",
+        medications: [{ name: "降压药" }],
+      },
+    });
+    expect(savedProfile.statusCode).toBe(200);
+    expect(savedProfile.json().medications).toEqual([{ name: "降压药" }]);
+
+    const snapshot = await server.inject({
+      method: "GET",
+      url: "/elder/today-snapshot?elderId=elder-1&timezone=Asia%2FShanghai",
+    });
+    expect(snapshot.statusCode).toBe(200);
+    expect(snapshot.json().date).toBe("2026-05-14");
 
     const tasks = await server.inject({
       method: "GET",
@@ -258,6 +284,12 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
         retrievedEvidence: [],
         suggestedActions: [],
       }),
+      getTodaySnapshot: async () => ({
+        date: "2026-05-14",
+        todayReminders: [reminder],
+        yesterdayConfirmed: [],
+        weekTopics: [{ type: "shopping", count: 1, sampleTitles: ["Bought vegetables"] }],
+      }),
       elderTurn: async (input): Promise<ElderTurnResult> => {
         if (input.text.includes("?")) {
           return {
@@ -359,12 +391,30 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
     eventStore: {
       create: async (input) => ({ ...input, id: "event-2", createdAt: event.createdAt }),
       search: async () => [event],
+      getByIds: async () => [event],
+      aggregateByTypeWithin: async () => [{ type: "shopping", count: 1, sampleTitles: ["Bought vegetables"] }],
     },
     reminderStore: {
       create: async (input) => ({ ...input, id: "reminder-2", createdAt: reminder.createdAt }),
       get: async () => reminder,
       listByElder: async () => [reminder],
-      update: async (_id, patch) => ({ ...reminder, ...patch }),
+      findByRemindAtRange: async () => [reminder],
+      findByConfirmedAtRange: async () => [],
+      update: async (input) => ({ ...reminder, ...input.patch }),
+    },
+    elderProfileStore: {
+      get: async () => null,
+      upsert: async (input) => ({
+        tenantId: input.tenantId,
+        elderId: input.elderId,
+        displayName: input.displayName ?? input.elderId,
+        timezone: input.timezone ?? "Asia/Shanghai",
+        medications: input.medications ?? [],
+        places: input.places ?? [],
+        wakeTime: input.wakeTime,
+        sleepTime: input.sleepTime,
+        notes: input.notes,
+      }),
     },
     debugTraceStore: {
       getByTrace: async () => debugTrace,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NullTemporalMemoryStore } from "@goldmem/temporal-memory";
+import { NullTemporalMemoryStore } from "@mem/temporal-memory";
 import { buildMemorySourceTemporalEpisode, writeMemorySourceTemporalEpisode } from "./temporal.js";
 
 const source = {

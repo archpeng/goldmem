@@ -1,6 +1,6 @@
 # 03. Memory Layer Responsibilities
 
-GoldMem should not have multiple competing memory truth sources. It should have clearly separated memory roles.
+mem should not have multiple competing memory truth sources. It should have clearly separated memory roles.
 
 ## Layer summary
 
@@ -20,7 +20,7 @@ PostgreSQL owns business and evidence truth.
 ```text
 tenants
 users
-elder profiles
+user profiles
 family links
 raw memory sources
 ASR transcripts
@@ -188,7 +188,7 @@ family_task if confirmation required
 semantic recall index:
 
 ```text
-老人记录：张医生建议降压药早饭后吃一片。
+用户记录：张医生建议降压药早饭后吃一片。
 metadata: sourceId, eventId, riskLevel, visibility
 ```
 

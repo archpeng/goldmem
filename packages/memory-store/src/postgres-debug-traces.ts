@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { AuditRecord, DebugTrace } from "@goldmem/memory-schema";
+import type { AuditRecord, DebugTrace } from "@mem/memory-schema";
 import type { DebugTraceStore } from "./index.js";
 import { mapSource } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";

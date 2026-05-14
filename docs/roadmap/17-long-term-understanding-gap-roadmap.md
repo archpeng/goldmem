@@ -1,27 +1,27 @@
 # 17. Long-Term Understanding Gap Roadmap
 
-本文记录当前 GoldMem 架构距离最终“持续维护长期理解层”的缺口。当前方向已经正确：不是普通 RAG，也不是简单备忘录，而是 `PostgreSQL truth + pgvector recall + Graphiti temporal memory + Kernel evidence-bound synthesis`。但最终产品能力还没有完全成熟。
+本文记录当前 mem 架构距离最终“持续维护长期理解层”的缺口。当前方向已经正确：不是普通 RAG，也不是简单备忘录，而是 `PostgreSQL truth + pgvector recall + Graphiti temporal memory + Kernel evidence-bound synthesis`。但最终产品能力还没有完全成熟。
 
 ## 0. 节奏修正
 
 当前风险不是方向错误，而是节奏偏激进。
 
-Graphiti 已经进入生产路径，但还不能被默认当作成熟飞轮支柱。老人端留存、Graphiti A/B 增益、隐私协助接受度都还属于假设。因此下一阶段应先做 6 周验证门：
+Graphiti 已经进入生产路径，但还不能被默认当作成熟飞轮支柱。用户端留存、Graphiti A/B 增益、隐私协助接受度都还属于假设。因此下一阶段应先做 6 周验证门：
 
 ```text
 Memory Lint v1 最小闭环
 + Graphiti A/B 高密度黄金测试
-+ 老人端真实留存/信任试点
++ 用户端真实留存/信任试点
 ```
 
 只有这些验证成立后，再启动 Curated Episode、Query-to-Correction Loop、Event-triggered / Nightly Consolidation。
 
 这样做的原因：
 
-- 如果老人端真实留存不成立，长期理解层没有产品支点。
+- 如果用户端真实留存不成立，长期理解层没有产品支点。
 - 如果 Graphiti enabled 不明显优于 disabled，继续投入 curated episode 和 consolidation 的收益不足。
 - 如果 Memory Lint 没有 triage 闭环，lint 会变成告警噪音。
-- 如果隐私协助破坏信任，家人端越强，老人端越弱。
+- 如果隐私协助破坏信任，家人端越强，用户端越弱。
 
 本文件后续的缺口仍然成立，但推荐顺序必须先验证，再飞轮化。
 
@@ -170,7 +170,7 @@ lint finding
 
 适合回写的内容：
 
-- 老人明确纠正。
+- 用户明确纠正。
 - 家人确认后的时间、地点、事项。
 - 已确认的提醒变更。
 - 高风险事件处理结果。
@@ -183,9 +183,9 @@ lint finding
 - 每次修正都可 audit。
 - 修正前后的查询有 regression case。
 
-## 5. 缺口四：老人端还没有充分表达“长期整理感”
+## 5. 缺口四：用户端还没有充分表达“长期整理感”
 
-当前老人端主要是任务列表和即时输入，方向正确，但长期关系能力还没有充分产品化。
+当前用户端主要是任务列表和即时输入，方向正确，但长期关系能力还没有充分产品化。
 
 需要让用户感受到：
 
@@ -259,18 +259,18 @@ lint finding
 ```text
 1. Graphiti A/B 高密度黄金测试。
 2. Memory Lint v1 + triage 闭环。
-3. 老人端 6 周真实留存/信任试点。
+3. 用户端 6 周真实留存/信任试点。
 4. 根据证据决定是否优化 Graphiti curated episode builder。
 5. 再建 Query-to-Correction Loop。
 6. 最后建 Event-triggered / Nightly Consolidation。
-7. 同步在老人端表达“长期整理感”。
+7. 同步在用户端表达“长期整理感”。
 ```
 
 原因：
 
 - Graphiti A/B 先回答“这个长期关系层值不值得继续加码”。
 - Memory Lint 先建立长期记忆健康边界，但必须带 triage 闭环。
-- 老人端试点回答“长期理解层有没有真实产品支点”。
+- 用户端试点回答“长期理解层有没有真实产品支点”。
 - Curated episode 决定 Graphiti 质量上限，但应在 A/B 有信号后加大投入。
 - Correction loop 和 consolidation 会扩大写入面，必须等 provenance 和 lint 稳定。
 - 前端表达让用户感知长期记忆价值，但不能超前承诺系统还没验证的能力。
@@ -280,13 +280,13 @@ lint finding
 ```text
 Agent A: Graphiti A/B fixture 和 runner
 Agent B: Memory Lint + triage report
-Agent C: 老人端试点 instrumentation
+Agent C: 用户端试点 instrumentation
 Main: 汇总证据，决定是否进入长期飞轮建设
 ```
 
 ## 8. 最终验收标准
 
-GoldMem 达到最终长期理解层能力时，应满足：
+mem 达到最终长期理解层能力时，应满足：
 
 - 普通任务可以即时记录，不等待长期整理。
 - 高价值事件可以进入 Graphiti 后台关系整理。
@@ -295,12 +295,12 @@ GoldMem 达到最终长期理解层能力时，应满足：
 - 用户纠正可以形成可审计的长期修正。
 - memory lint 能发现长期记忆健康问题。
 - 家人端只保留最小必要协助。
-- 老人端能感受到系统可靠、克制、保护隐私。
+- 用户端能感受到系统可靠、克制、保护隐私。
 
 一句话：
 
 ```text
 当前项目已经具备正确架构骨架。
-下一阶段要把 Graphiti、lint、correction、consolidation 和老人端表达
+下一阶段要把 Graphiti、lint、correction、consolidation 和用户端表达
 合成一个会持续复利的长期生活记忆系统。
 ```

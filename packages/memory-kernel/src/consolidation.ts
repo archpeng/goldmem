@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { FamilyTask, MemoryEvent, MemorySource, Reminder, RiskFlagRecord } from "@goldmem/memory-schema";
-import { buildTemporalGroupId, type AddTemporalEpisodeInput } from "@goldmem/temporal-memory";
+import type { FamilyTask, MemoryEvent, MemorySource, Reminder, RiskFlagRecord } from "@mem/memory-schema";
+import { buildTemporalGroupId, type AddTemporalEpisodeInput } from "@mem/temporal-memory";
 
 export type DailyConsolidationInput = {
   tenantId: string;

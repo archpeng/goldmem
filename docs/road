@@ -1,15 +1,15 @@
-# GoldMem Roadmap
+# mem Roadmap
 
-本文件是 GoldMem 当前业务与产品路线总览。详细工程方案仍以 `docs/roadmap/*` 为准；本文件用于统一产品定位、阶段顺序和验收重点。
+本文件是 mem 当前业务与产品路线总览。详细工程方案仍以 `docs/roadmap/*` 为准；本文件用于统一产品定位、阶段顺序和验收重点。
 
 ## 1. 产品定位
 
-GoldMem 不是“老人监控系统”，也不是普通智能备忘录。
+mem 不是“用户监控系统”，也不是普通智能备忘录。
 
 核心定位：
 
 ```text
-老人本人主权的 AI 生活记忆秘书
+用户本人主权的 AI 生活记忆秘书
 ```
 
 产品承诺：
@@ -20,11 +20,11 @@ GoldMem 不是“老人监控系统”，也不是普通智能备忘录。
 有风险时，我只在必要范围内帮你找人确认。
 ```
 
-因此产品重心是老人端。家人端只作为最小协助通道，不做完整 dashboard，不做全量记录流，不做“今天老人说了什么”，不做轨迹式监控。
+因此产品重心是用户端。家人端只作为最小协助通道，不做完整 dashboard，不做全量记录流，不做“今天用户说了什么”，不做轨迹式监控。
 
 ## 2. 核心战略
 
-GoldMem 的长期价值来自三层能力：
+mem 的长期价值来自三层能力：
 
 | 层级 | 产品价值 | 业务意义 |
 |---|---|---|
@@ -35,16 +35,16 @@ GoldMem 的长期价值来自三层能力：
 一句话：
 
 ```text
-老人端负责日常使用和信任。
+用户端负责日常使用和信任。
 Graphiti 负责长期差异化。
 家人端只负责必要协助。
 ```
 
 ## 3. 当前能力基线
 
-当前代码已经具备老人端 MVP 的主要后端和前端基础：
+当前代码已经具备用户端 MVP 的主要后端和前端基础：
 
-- `apps/web-mvp`：移动优先老人端任务列表，语音/文字统一输入，草稿态展示，提醒确认。
+- `apps/web-mvp`：移动优先用户端任务列表，语音/文字统一输入，草稿态展示，提醒确认。
 - `services/api-server`：thin Fastify API，只做请求解析和 Kernel 调用。
 - `packages/memory-kernel`：source ingest、MemoryPlan validation、guardrails、persistence、recall、evidence merge、audit。
 - `packages/memory-store`：PostgreSQL truth adapter、pgvector semantic recall index、processing job、temporal job。
@@ -66,7 +66,7 @@ Graphiti 负责长期差异化。
 ## 4. 目标架构
 
 ```text
-Elder Web
+User Web
   -> /elder/turn
   -> Kernel
   -> PostgreSQL truth
@@ -136,9 +136,9 @@ Kernel 是唯一编排层：
 
 ## 5. 阶段路线
 
-### M1: 老人端任务体验打磨
+### M1: 用户端任务体验打磨
 
-目标：让老人每天愿意用。
+目标：让用户每天愿意用。
 
 交互哲学：
 
@@ -192,10 +192,10 @@ Kernel 是唯一编排层：
 - 有风险：主动作是“请家人确认”或“先别急着做”。
 - 查询结果不对：主动作是“这不对，改一下”。
 
-老人端文案禁区：
+用户端文案禁区：
 
 - 不说 `queued`、`processing`、`semantic`、`Graphiti`、`confidence`、`family_required`。
-- 不说“老人说”“老人提到”“该老人”。
+- 不说“用户说”“用户提到”“该用户”。
 - 不说“已通知监护人”。
 - 不用恐吓式风险提示。
 
@@ -282,7 +282,7 @@ Graphiti 能力的产品表达：
 - normal / medical / sensitive event 默认 `private`。
 - financial / fraud_risk event 才 `family_required`。
 - medication change、验证码、转账、身份类 risk flag 触发 human/family review。
-- family-created reminder 必须待老人确认，不能直接确认。
+- family-created reminder 必须待用户确认，不能直接确认。
 
 验收：
 
@@ -292,7 +292,7 @@ Graphiti 能力的产品表达：
 - notification intent family route 不存在。
 - family assist read 写入 audit。
 
-### M4: 老人端隐私状态可视化
+### M4: 用户端隐私状态可视化
 
 目标：让使用者知道自己的记忆是否被分享。
 
@@ -306,7 +306,7 @@ Graphiti 能力的产品表达：
 实现原则：
 
 - 不做复杂权限管理 UI。
-- 不让老人理解技术字段。
+- 不让用户理解技术字段。
 - 不在前端复制后端规则。
 - 前端只展示后端返回的 visibility/share status。
 
@@ -349,8 +349,8 @@ Graphiti 能力的产品表达：
 优先用户：
 
 - 慢病、复查、用药事项多的人。
-- 独居或半独居老人。
-- 子女不在身边，但老人仍希望保持自主的人。
+- 独居或半独居用户。
+- 子女不在身边，但用户仍希望保持自主的人。
 - 经常忘记改期、证件、医保卡、药物安排的人。
 
 第一版商业包装：
@@ -364,23 +364,23 @@ Graphiti 能力的产品表达：
 - 免费：基础任务和少量记忆。
 - Plus：长期记忆查询、Graphiti 关系整理、更多历史容量。
 - Family Assist：可选家人协助，不作为默认主卖点。
-- B2B2C：社区、养老服务、慢病管理机构，前提是老人授权。
+- B2B2C：社区、养老服务、慢病管理机构，前提是用户授权。
 
 验收：
 
-- 老人端 7 日留存高于普通备忘录假设。
+- 用户端 7 日留存高于普通备忘录假设。
 - 至少 5 个真实用户长期查询场景成立。
 - 隐私顾虑不会成为主要流失原因。
-- 家人协助不破坏老人端使用意愿。
+- 家人协助不破坏用户端使用意愿。
 
 ## 6. 当前优先级
 
 近期顺序：
 
 ```text
-1. 老人端任务体验继续打磨到极顺。
+1. 用户端任务体验继续打磨到极顺。
 2. 强化 Graphiti 长期查询黄金用例。
-3. 增加老人端隐私状态展示。
+3. 增加用户端隐私状态展示。
 4. 家人端保持最小协助，不扩展 dashboard。
 5. 开始小范围真实用户试点。
 ```
@@ -388,7 +388,7 @@ Graphiti 能力的产品表达：
 不要做：
 
 - 不要做完整家人监控端。
-- 不要展示“老人今天说了什么”的全量流。
+- 不要展示“用户今天说了什么”的全量流。
 - 不要让家人默认看到 raw transcript/audio。
 - 不要把 Graphiti 输出当业务 truth。
 - 不要用一堆关键词规则代替模型理解。
@@ -421,7 +421,7 @@ PostgreSQL 负责业务 truth。
 当前最需要警惕的是：产品假设和 Graphiti 价值还没有被真实证据充分验证，但工程路线已经铺到 Correction Loop、Nightly Consolidation 和长期飞轮。下一阶段必须先用最小工程投入回答两个问题：
 
 ```text
-老人端是否真的比普通备忘录更容易留住用户？
+用户端是否真的比普通备忘录更容易留住用户？
 Graphiti enabled 是否在高价值关系问题上显著优于 disabled？
 ```
 
@@ -431,7 +431,7 @@ Graphiti enabled 是否在高价值关系问题上显著优于 disabled？
 前 6 周：验证门
   -> Memory Lint v1 最小闭环
   -> Graphiti A/B 高密度 golden 扩展
-  -> 老人端真实留存/信任试点
+  -> 用户端真实留存/信任试点
 
 通过验证后：长期飞轮
   -> Curated Episode v1
@@ -452,7 +452,7 @@ Graphiti enabled 是否在高价值关系问题上显著优于 disabled？
 
 | 假设 | 验证方式 | 继续投入标准 |
 |---|---|---|
-| 老人端留存成立 | 5-10 个真实试点用户，至少 7 天 | 用户持续输入真实任务，不只体验一次 |
+| 用户端留存成立 | 5-10 个真实试点用户，至少 7 天 | 用户持续输入真实任务，不只体验一次 |
 | Graphiti 有明显增益 | enabled / disabled A/B golden | 关系类 query 胜率显著高于 disabled |
 | 隐私协助不伤害信任 | 家人协助最小 DTO + 访谈 | 用户接受“摘要协助”，拒绝“全量监控” |
 | 后台化不伤交互 | timing baseline | source/draft ack 不被 Graphiti 拖慢 |
@@ -460,7 +460,7 @@ Graphiti enabled 是否在高价值关系问题上显著优于 disabled？
 停止或降级条件：
 
 - Graphiti enabled 不能稳定优于 disabled。
-- 老人端真实输入频率接近普通备忘录，没有长期查询需求。
+- 用户端真实输入频率接近普通备忘录，没有长期查询需求。
 - 家人协助导致明显隐私抵触。
 - Memory Lint 产生大量噪音且没有可消化闭环。
 
@@ -525,9 +525,9 @@ lint finding
 - 可预期的低风险 finding 必须支持限时 suppression，避免噪音。
 - 重复 finding 需要聚合，不要每天制造重复 alert。
 
-### P3: 老人端真实试点与隐私验证
+### P3: 用户端真实试点与隐私验证
 
-长期理解层是否值得做，最终取决于老人端是否形成真实使用。
+长期理解层是否值得做，最终取决于用户端是否形成真实使用。
 
 试点目标：
 
@@ -600,7 +600,7 @@ episode 应表达：
 
 ### P6: Event-triggered / Nightly Consolidation
 
-Karpathy 的 wiki 模式不能直接照搬。GoldMem 是低频读、高风险、多利益方系统，不一定需要每天生成大量 curated episode。
+Karpathy 的 wiki 模式不能直接照搬。mem 是低频读、高风险、多利益方系统，不一定需要每天生成大量 curated episode。
 
 更克制的第一版：
 
@@ -626,9 +626,9 @@ Karpathy 的 wiki 模式不能直接照搬。GoldMem 是低频读、高风险、
 - 不覆盖 PostgreSQL truth。
 - 不扩大分享范围。
 
-### P7: 老人端长期整理感
+### P7: 用户端长期整理感
 
-长期能力必须转化为老人能理解的交互语言。
+长期能力必须转化为用户能理解的交互语言。
 
 前端表达：
 
@@ -668,11 +668,11 @@ Bitter Lesson 不是“把规则全删掉交给模型”。更准确的分工是
 ```text
 1. Graphiti A/B Golden 高密度扩展。
 2. Memory Lint v1 + Triage 闭环。
-3. 老人端 6 周真实试点。
+3. 用户端 6 周真实试点。
 4. 根据证据决定是否启动 Curated Episode v1。
 5. 再启动 Query-to-Correction Loop。
 6. 最后启动 Event-triggered / Nightly Consolidation。
-7. 持续把长期整理感翻译成老人端可理解文案。
+7. 持续把长期整理感翻译成用户端可理解文案。
 ```
 
 如果并行开发，只允许并行验证，不并行扩大飞轮：
@@ -680,7 +680,7 @@ Bitter Lesson 不是“把规则全删掉交给模型”。更准确的分工是
 ```text
 Agent A: Graphiti A/B fixtures + runner
 Agent B: Memory Lint + triage report
-Agent C: Elder pilot instrumentation
+Agent C: User pilot instrumentation
 Main: 汇总证据，决定是否进入 P4-P6
 ```
 
@@ -706,7 +706,7 @@ Nightly Consolidation = 后台复利机制
 pnpm typecheck
 pnpm test
 pnpm architecture:check
-pnpm --filter @goldmem/web-mvp build
+pnpm --filter @mem/web-mvp build
 ```
 
 MVP confidence：
@@ -728,7 +728,7 @@ pnpm e2e:graphiti:compare
 
 ## 9. 优化目标与多角度 E2E 验证设计
 
-这一阶段的目标不是继续堆功能，而是证明 GoldMem 已经从“智能备忘录”进化为：
+这一阶段的目标不是继续堆功能，而是证明 mem 已经从“智能备忘录”进化为：
 
 ```text
 即时可信记录
@@ -743,18 +743,18 @@ E2E 设计必须从不同路径验证同一件事：系统是否真的按这个�
 
 #### 目标一：实时交互不被长期整理阻塞
 
-老人输入一句话后，系统必须先完成即时反馈：
+用户输入一句话后，系统必须先完成即时反馈：
 
 - 原始 source 已保存。
 - 前端出现草稿态或“已记下”状态。
 - 普通提醒和候选提醒可以随后补齐。
-- Graphiti、semantic index、nightly consolidation 不阻塞老人端响应。
+- Graphiti、semantic index、nightly consolidation 不阻塞用户端响应。
 
 验收信号：
 
 - source ack / draft visible 延迟可被单独记录。
 - Graphiti enabled 和 disabled 时，记录链路首屏响应差异很小。
-- 后台失败不会造成老人端重复写入或卡死。
+- 后台失败不会造成用户端重复写入或卡死。
 
 #### 目标二：长期关系能力由 Graphiti 承担，并能被 A/B 证明
 
@@ -811,12 +811,12 @@ feedback
 
 #### 目标五：家人端只做隐私保护下的协助，不做监控
 
-家人端不是 dashboard，不展示完整记录流，不展示“今天老人说了什么”。
+家人端不是 dashboard，不展示完整记录流，不展示“今天用户说了什么”。
 
 只允许：
 
 - 高风险协助。
-- 老人主动分享摘要。
+- 用户主动分享摘要。
 - 待确认事项摘要。
 - 分享审计。
 
@@ -825,9 +825,9 @@ feedback
 - family assist DTO 不包含 raw transcript/audio/full evidence。
 - 默认 private。
 - high-risk 才 family_required。
-- 老人端能看到谁看过、看了什么、什么时候看。
+- 用户端能看到谁看过、看了什么、什么时候看。
 
-#### 目标六：老人端表达“贴身秘书”而不是“系统分析老人”
+#### 目标六：用户端表达“贴身秘书”而不是“系统分析用户”
 
 前端和模型输出都必须保持第二人称、低技术感、高信赖感：
 
@@ -839,7 +839,7 @@ feedback
 
 禁止用户可见表达：
 
-- 老人说、老人提到、该老人、用户表示。
+- 用户说、用户提到、该用户、用户表示。
 - Graphiti、semantic、temporal evidence、queued、confidence。
 - 暗示监控或评估人格的文案。
 
@@ -854,7 +854,7 @@ feedback
 | 纠错闭环路径 | 用户纠正变长期资产 | 追加 correction event，不覆盖旧 truth |
 | Memory Lint 路径 | 长期记忆有质量安全网 | 脏数据被报告，不被静默吞掉 |
 | Nightly Consolidation 路径 | 后台整理可复利 | 幂等、可 retry、可 audit，不扩大 sharing |
-| 前端信任路径 | 老人端能理解且不害怕 | 第二人称、隐私标识、无技术词、移动端稳定 |
+| 前端信任路径 | 用户端能理解且不害怕 | 第二人称、隐私标识、无技术词、移动端稳定 |
 | 无证据回答路径 | 不编造 | 无 evidence 时明确说没找到可靠记录 |
 | 性能基线路径 | 证明异步化有效 | 分节点 timing，Graphiti 不进入首屏延迟 |
 
@@ -1145,13 +1145,13 @@ seed：
 
 断言：
 
-- 老人端显示风险提醒和“可请家人确认/已通知家人”。
+- 用户端显示风险提醒和“可请家人确认/已通知家人”。
 - family assist API 只返回摘要、风险类型、需要协助动作。
 - 不返回 raw transcript/audio/full evidence。
 - elder audit API 能显示“谁看过/看了什么/什么时候看”。
 - 普通 private 记录不进入 family assist。
 
-#### Case L：老人端前端信任感
+#### Case L：用户端前端信任感
 
 目的：
 
@@ -1168,13 +1168,13 @@ seed：
 - 卡片状态从“正在整理”到“待确认/已确认”可见。
 - 有隐私标识：`仅你可见`、`已分享摘要`、`等待家人确认`。
 - 不出现 `Graphiti`、`semantic`、`queued`、`confidence`、`family_required`。
-- 不出现 `老人说`、`老人提到`、`该老人`、`用户表示`。
+- 不出现 `用户说`、`用户提到`、`该用户`、`用户表示`。
 - 重要/紧急状态置顶且有微动效，不影响确认按钮。
 
 建议脚本：
 
 ```bash
-pnpm --filter @goldmem/web-mvp build
+pnpm --filter @mem/web-mvp build
 pnpm e2e:web
 ```
 
@@ -1205,7 +1205,7 @@ query：
 
 目的：
 
-- 证明后台化真的改善老人端体验。
+- 证明后台化真的改善用户端体验。
 
 组合：
 
@@ -1275,7 +1275,7 @@ pnpm e2e:web
 核心思路：
 
 ```text
-用 5-8 个虚拟老人 profile
+用 5-8 个虚拟用户 profile
 每个 profile 生成 30-60 条连续生活输入
 覆盖 appointment / medication / fraud / family assist / correction / long-term trend
 同时跑 Graphiti enabled 与 disabled
@@ -1373,7 +1373,7 @@ Mode D: Graphiti enabled, sidecar failing
 - query answer 必须 evidence-bound。
 - correction 不覆盖旧 truth。
 - family assist 不绕过 Kernel 写 truth。
-- 前端用户可见文案不出现第三人称老人表述。
+- 前端用户可见文案不出现第三人称用户表述。
 
 ### 9.7 设计有效的判断标准
 
@@ -1388,7 +1388,7 @@ Mode D: Graphiti enabled, sidecar failing
 - Correction Loop 把真实用户反馈变成可审计资产。
 - 前端把复杂系统表达成简单、尊重、可信的任务体验。
 
-如果这些路径都能跑通，GoldMem 的核心差异就不再是“能记提醒”，而是：
+如果这些路径都能跑通，mem 的核心差异就不再是“能记提醒”，而是：
 
 ```text
 它能长期、审慎、可纠错地帮你维护个人生活记忆。

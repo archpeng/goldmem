@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Pool } from "pg";
 
 const env = { ...loadDotEnv(".env"), ...process.env };
-const defaultDatabaseUrl = "postgres://goldmem:goldmem@localhost:5432/goldmem";
+const defaultDatabaseUrl = "postgres://mem:mem@localhost:5432/mem";
 const defaultGraphitiBaseUrl = "http://localhost:8890";
 const externalGraphitiBaseUrl = process.env.GRAPHITI_BASE_URL;
 const databaseUrl = env.DATABASE_URL ?? defaultDatabaseUrl;
@@ -19,7 +19,7 @@ if (!externalGraphitiBaseUrl) {
 }
 
 await waitForPostgres(databaseUrl);
-if (env.GOLDMEM_SKIP_GRAPHITI_MIGRATE !== "true") {
+if (env.MEM_SKIP_GRAPHITI_MIGRATE !== "true") {
   await run("pnpm", ["db:migrate"], { ...env, DATABASE_URL: databaseUrl });
 }
 await waitForGraphiti(graphitiBaseUrl);

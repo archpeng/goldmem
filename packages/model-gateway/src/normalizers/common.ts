@@ -1,4 +1,4 @@
-import { toElderSecretaryVoiceText } from "@goldmem/memory-schema";
+import { toElderSecretaryVoiceText } from "@mem/memory-schema";
 
 export type JsonRecord = Record<string, unknown>;
 

@@ -341,7 +341,7 @@ function scopedFilter(alias: string, scope: Scope): { sql: string; values: strin
     clauses.push(`and ${alias}.elder_id = $${values.length}`);
   }
   if (!scope.includeTestData) {
-    clauses.push(`and ${alias}.tenant_id not like 'goldmem-smoke%'`);
+    clauses.push(`and ${alias}.tenant_id not like 'mem-smoke%'`);
   }
   return { sql: clauses.join("\n"), values };
 }

@@ -1,4 +1,4 @@
-import { MemoryPlanSchema, type MemorySource, type PersonalContext } from "@goldmem/memory-schema";
+import { MemoryPlanSchema, type MemorySource, type PersonalContext } from "@mem/memory-schema";
 import { isString } from "./guards.js";
 import { MemoryPlanApplier } from "./ingest-plan-applier.js";
 import { IngestTemporalWriter } from "./ingest-temporal-writer.js";

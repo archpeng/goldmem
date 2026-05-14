@@ -103,7 +103,7 @@ Graphiti and semantic recall index have their own grouping/user concepts. Mistak
 ### Mitigation
 
 ```text
-GoldMem constructs a Graphiti-safe groupId from tenantId and elderId.
+mem constructs a Graphiti-safe groupId from tenantId and elderId.
 Frontend never calls Graphiti or semantic recall index directly.
 All memory backend calls go through Kernel/API.
 All memory backend metadata includes tenantId and elderId.

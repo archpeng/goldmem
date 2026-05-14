@@ -3,15 +3,15 @@ import { z } from "zod";
 export const ISODateTimeSchema = z.string().datetime();
 export const DEFAULT_TENANT_ID = "tenant-mvp";
 export const TenantIdSchema = z.string().min(1).default(DEFAULT_TENANT_ID);
-export const ELDER_THIRD_PERSON_PATTERN = /老人说|老人提到|该老人|用户表示/;
+export const ELDER_THIRD_PERSON_PATTERN = /用户说|用户提到|该用户|用户表示/;
 
 export function toElderSecretaryVoiceText(value: string): string {
   return value
-    .replaceAll("该老人", "你")
+    .replaceAll("该用户", "你")
     .replaceAll("用户表示", "你提到")
-    .replaceAll("老人说", "你说")
-    .replaceAll("老人提到", "你提到")
-    .replaceAll("老人", "你")
+    .replaceAll("用户说", "你说")
+    .replaceAll("用户提到", "你提到")
+    .replaceAll("用户", "你")
     .replaceAll("The elder", "You")
     .replaceAll("the elder", "you");
 }
@@ -387,6 +387,18 @@ export const ReminderSchema = z.object({
 });
 export type Reminder = z.infer<typeof ReminderSchema>;
 
+export const TodaySnapshotSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  todayReminders: z.array(ReminderSchema),
+  yesterdayConfirmed: z.array(ReminderSchema),
+  weekTopics: z.array(z.object({
+    type: EventTypeSchema,
+    count: z.number().int().positive(),
+    sampleTitles: z.array(z.string().min(1)).max(3),
+  })),
+});
+export type TodaySnapshot = z.infer<typeof TodaySnapshotSchema>;
+
 export const ParsedMemoryQuerySchema = z.object({
   intent: z.enum([
     "recall_event",
@@ -550,6 +562,47 @@ export const ElderTurnResultSchema = z.object({
   answer: MemoryAnswerSchema.optional(),
 });
 export type ElderTurnResult = z.infer<typeof ElderTurnResultSchema>;
+
+export const ElderProfileMedicationSchema = z.object({
+  name: z.string().min(1),
+  alias: z.string().optional(),
+  dosage: z.string().optional(),
+  frequency: z.string().optional(),
+});
+export type ElderProfileMedication = z.infer<typeof ElderProfileMedicationSchema>;
+
+export const ElderProfilePlaceSchema = z.object({
+  name: z.string().min(1),
+  kind: z.string().optional(),
+});
+export type ElderProfilePlace = z.infer<typeof ElderProfilePlaceSchema>;
+
+export const ElderProfileSchema = z.object({
+  tenantId: z.string().min(1).default(DEFAULT_TENANT_ID),
+  elderId: z.string().min(1),
+  displayName: z.string().min(1),
+  timezone: z.string().min(1).default("Asia/Shanghai"),
+  wakeTime: z.string().optional(),
+  sleepTime: z.string().optional(),
+  medications: z.array(ElderProfileMedicationSchema).default([]),
+  places: z.array(ElderProfilePlaceSchema).default([]),
+  notes: z.string().optional(),
+  updatedAt: ISODateTimeSchema.optional(),
+});
+export type ElderProfile = z.infer<typeof ElderProfileSchema>;
+
+export const UpsertElderProfileRequestSchema = z.object({
+  tenantId: z.string().min(1).default(DEFAULT_TENANT_ID),
+  elderId: z.string().min(1),
+  displayName: z.string().min(1).optional(),
+  timezone: z.string().min(1).optional(),
+  wakeTime: z.string().optional(),
+  sleepTime: z.string().optional(),
+  medications: z.array(ElderProfileMedicationSchema).optional(),
+  places: z.array(ElderProfilePlaceSchema).optional(),
+  notes: z.string().optional(),
+});
+export type UpsertElderProfileRequest = z.infer<typeof UpsertElderProfileRequestSchema>;
 
 export const PersonalContextSchema = z.object({
   elderProfile: z.record(z.unknown()).optional(),

@@ -1,4 +1,5 @@
 import type {
+  ElderProfile,
   FamilyTask,
   Feedback,
   DebugTrace,
@@ -12,13 +13,18 @@ import type {
   Reminder,
   RiskFlag,
   RiskFlagRecord,
-} from "@goldmem/memory-schema";
+} from "@mem/memory-schema";
 
 export type CreateSourceInput = Omit<MemorySource, "id">;
 export type CreateSourceForClientTurnResult = { source: MemorySource; reused: boolean };
 export type CreateEventInput = Omit<MemoryEvent, "id" | "createdAt">;
 export type CreateReminderInput = Omit<Reminder, "id" | "createdAt">;
 export type CreateContextLinkInput = Omit<MemoryContextLink, "id" | "createdAt">;
+export type EventTypeAggregate = {
+  type: MemoryEvent["type"];
+  count: number;
+  sampleTitles: string[];
+};
 export type CreateRiskFlagInput = RiskFlag & {
   tenantId: string;
   elderId: string;
@@ -45,6 +51,7 @@ export interface EventStore {
     entityNames?: string[];
     limit?: number;
   }): Promise<MemoryEvent[]>;
+  aggregateByTypeWithin(input: { tenantId: string; elderId: string; fromIso: string; limit?: number }): Promise<EventTypeAggregate[]>;
 }
 
 export interface ContextLinkStore {
@@ -57,6 +64,19 @@ export interface ReminderStore {
   create(input: CreateReminderInput): Promise<Reminder>;
   get(input: { tenantId: string; reminderId: string }): Promise<Reminder | null>;
   listByElder(input: { tenantId: string; elderId: string }): Promise<Reminder[]>;
+  findByRemindAtRange(input: {
+    tenantId: string;
+    elderId: string;
+    fromIso: string;
+    toIso: string;
+    statuses?: Reminder["status"][];
+  }): Promise<Reminder[]>;
+  findByConfirmedAtRange(input: {
+    tenantId: string;
+    elderId: string;
+    fromIso: string;
+    toIso: string;
+  }): Promise<Reminder[]>;
   update(input: { tenantId: string; reminderId: string; patch: Partial<Reminder> }): Promise<Reminder>;
 }
 
@@ -152,6 +172,24 @@ export interface SemanticMemoryStore {
 
 export interface PersonalContextStore {
   buildContext(input: { tenantId: string; elderId: string; queryText: string }): Promise<PersonalContext>;
+  buildPlanContext?(input: { tenantId: string; elderId: string }): Promise<PersonalContext>;
+}
+
+export type UpsertElderProfileInput = {
+  tenantId: string;
+  elderId: string;
+  displayName?: string;
+  timezone?: string;
+  wakeTime?: string;
+  sleepTime?: string;
+  medications?: ElderProfile["medications"];
+  places?: ElderProfile["places"];
+  notes?: string;
+};
+
+export interface ElderProfileStore {
+  get(input: { tenantId: string; elderId: string }): Promise<ElderProfile | null>;
+  upsert(input: UpsertElderProfileInput): Promise<ElderProfile>;
 }
 
 export type TemporalMemoryJobStatus = "pending" | "running" | "succeeded" | "failed" | "dead";

@@ -13,7 +13,7 @@ import {
   type MemoryPlan,
   type PersonalContext,
   type ParsedMemoryQuery,
-} from "@goldmem/memory-schema";
+} from "@mem/memory-schema";
 import {
   normalizeMemoryPlanResult,
 } from "./normalizers/memory-plan.js";
@@ -167,6 +167,7 @@ export type OpenAIModelGatewayOptions = {
   model: string;
   embeddingModel?: string;
   baseURL?: string;
+  project?: string;
   transcriptionModel?: string;
   promptsDir?: string;
   promptVersion?: string;
@@ -183,6 +184,7 @@ export class OpenAIModelGateway implements ModelGateway {
     this.client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.baseURL,
+      project: options.project,
       timeout: options.timeoutMs ?? 15_000,
       maxRetries: 0,
     });

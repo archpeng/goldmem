@@ -6,7 +6,7 @@ This document turns the target architecture into concrete implementation package
 
 ### Goal
 
-Prepare GoldMem for multi-tenant growth.
+Prepare mem for multi-tenant growth.
 
 ### Scope
 
@@ -134,8 +134,8 @@ Neo4j is more mature, easier to inspect visually, and matches Graphiti's primary
 
 ```text
 Graphiti can start independently.
-GoldMem development and tests can run without Graphiti.
-GoldMem production fails fast when Graphiti is required but not configured.
+mem development and tests can run without Graphiti.
+mem production fails fast when Graphiti is required but not configured.
 Graphiti health check is visible from API/worker environment.
 ```
 
@@ -143,7 +143,7 @@ Graphiti health check is visible from API/worker environment.
 
 ### Goal
 
-Convert GoldMem records into Graphiti episodes.
+Convert mem records into Graphiti episodes.
 
 ### Inputs
 
@@ -257,7 +257,7 @@ No-evidence queries still return no answer.
 
 ### Goal
 
-Validate whether Graphiti materially improves GoldMem.
+Validate whether Graphiti materially improves mem.
 
 ### Categories
 

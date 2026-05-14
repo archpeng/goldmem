@@ -1,4 +1,4 @@
-import { ModelGatewayError, type ModelGateway, type ModelGatewayProviderTiming } from "@goldmem/model-gateway";
+import { ModelGatewayError, type ModelGateway, type ModelGatewayProviderTiming } from "@mem/model-gateway";
 
 export function consumeProviderTimings(modelGateway: ModelGateway): ModelGatewayProviderTiming[] {
   return modelGateway.consumeProviderTimings?.() ?? [];

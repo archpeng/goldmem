@@ -1,4 +1,4 @@
-import { type MemoryPlan, type MemorySource } from "@goldmem/memory-schema";
+import { type MemoryPlan, type MemorySource } from "@mem/memory-schema";
 import { buildMemorySourceTemporalEpisode } from "./temporal.js";
 import type { ElderMemoryKernelDeps, IngestResult } from "./index.js";
 import type { AppliedMemoryPlan } from "./ingest-types.js";

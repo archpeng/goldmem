@@ -1,4 +1,4 @@
-import type { DebugTrace, ElderTurnResult, Feedback, IngestStatus, Reminder } from "@goldmem/memory-schema";
+import type { DebugTrace, ElderProfile, ElderTurnResult, Feedback, IngestStatus, Reminder, TodaySnapshot } from "@mem/memory-schema";
 
 export type MvpLists = {
   reminders: Reminder[];
@@ -68,6 +68,43 @@ export async function getDebugTrace(traceId: string): Promise<DebugTrace> {
   return request<DebugTrace>(`/debug/traces/${encodeURIComponent(traceId)}`);
 }
 
+export async function getElderProfile(elderId: string): Promise<ElderProfile> {
+  const encoded = encodeURIComponent(elderId);
+  return request<ElderProfile>(`/elder/profile?elderId=${encoded}`);
+}
+
+export async function upsertElderProfile(input: {
+  elderId: string;
+  tenantId?: string;
+  displayName?: string;
+  timezone?: string;
+  wakeTime?: string;
+  sleepTime?: string;
+  medications?: Array<{ name: string; dosage?: string; frequency?: string }>;
+  places?: Array<{ name: string; kind?: string }>;
+  notes?: string;
+}): Promise<ElderProfile> {
+  return request<ElderProfile>("/elder/profile", {
+    method: "PUT",
+    body: {
+      tenantId: input.tenantId,
+      elderId: input.elderId,
+      displayName: input.displayName,
+      timezone: input.timezone,
+      wakeTime: input.wakeTime,
+      sleepTime: input.sleepTime,
+      medications: input.medications,
+      places: input.places,
+      notes: input.notes,
+    },
+  });
+}
+
+export async function getTodaySnapshot(elderId: string, timezone: string): Promise<TodaySnapshot> {
+  const params = new URLSearchParams({ elderId, timezone });
+  return request<TodaySnapshot>(`/elder/today-snapshot?${params.toString()}`);
+}
+
 async function request<T>(path: string, options: { method?: string; body?: Record<string, unknown> } = {}): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
@@ -95,7 +132,7 @@ async function request<T>(path: string, options: { method?: string; body?: Recor
 
 function toUserMessage(message: string): string {
   if (message.includes("Cannot confirm reminder without remindAt")) return "请先补充提醒时间。";
-  if (message.includes("elderId is required")) return "请填写老人 ID。";
+  if (message.includes("elderId is required")) return "请填写用户 ID。";
   if (message.includes("schema_validation_error")) return "模型输出格式校验失败，请稍后重试。";
   if (message.includes("aborted") || message.includes("timeout") || message.includes("OpenAI JSON completion failed")) {
     return "模型服务响应较慢，请稍后再试。";

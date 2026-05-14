@@ -11,27 +11,30 @@ import {
   type MemorySource,
   type Feedback,
   type Reminder,
-} from "@goldmem/memory-schema";
+  type TodaySnapshot,
+} from "@mem/memory-schema";
 import { randomUUID } from "node:crypto";
-import type { ModelGateway } from "@goldmem/model-gateway";
-import type { TemporalMemoryStore } from "@goldmem/temporal-memory";
+import type { ModelGateway } from "@mem/model-gateway";
+import type { TemporalMemoryStore } from "@mem/temporal-memory";
 import type {
   AuditLog,
   ContextLinkStore,
+  ElderProfileStore,
   EventStore,
   FamilyReminderCommandStore,
   FamilyTaskStore,
   FeedbackStore,
   MemoryProcessingJobStore,
   PersonalContextStore,
+  ReminderStore,
   RiskFlagStore,
   SemanticMemoryStore,
   SourceStore,
   TemporalMemoryJobStore,
-} from "@goldmem/memory-store";
-import type { ReminderEngine } from "@goldmem/reminder-engine";
-import type { RiskEngine } from "@goldmem/risk-engine";
-import type { PermissionEngine } from "@goldmem/permission-engine";
+} from "@mem/memory-store";
+import type { ReminderEngine } from "@mem/reminder-engine";
+import type { RiskEngine } from "@mem/risk-engine";
+import type { PermissionEngine } from "@mem/permission-engine";
 import { createFamilyReminderCommand } from "./family-reminders.js";
 import { listFamilyAssistTasksCommand, type ListFamilyAssistTasksInput } from "./family-assist.js";
 import {
@@ -45,7 +48,8 @@ import { appendProviderTimings } from "./model-gateway-timings.js";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { QueryOrchestrator } from "./query-orchestrator.js";
 import { MemoryProcessingOrchestrator } from "./memory-processing.js";
-import { emptyTurnContext, planElderTurnSafely } from "./elder-turn-planner.js";
+import { buildTurnPlanContext, planElderTurnSafely } from "./elder-turn-planner.js";
+import { getTodaySnapshot as buildTodaySnapshot, type GetTodaySnapshotInput } from "./today-snapshot.js";
 
 export type IngestTextInput = {
   tenantId?: string;
@@ -107,12 +111,14 @@ export type ElderTurnInput = {
 
 export type CreateFamilyReminderInput = CreateFamilyReminderRequest;
 export type CreateFeedbackInput = CreateFeedbackRequest;
+export type { GetTodaySnapshotInput };
 export type { ConfirmReminderInput, ListFamilyAssistTasksInput, UpdateFamilyTaskStatusInput };
 
 export type ElderMemoryKernelDeps = {
   sourceStore: SourceStore;
   eventStore: EventStore;
   contextLinkStore: ContextLinkStore;
+  reminderStore: ReminderStore;
   reminderEngine: ReminderEngine;
   familyReminderCommandStore: FamilyReminderCommandStore;
   familyTaskStore: FamilyTaskStore;
@@ -120,6 +126,7 @@ export type ElderMemoryKernelDeps = {
   riskFlagStore: RiskFlagStore;
   semanticMemory: SemanticMemoryStore;
   personalContextStore: PersonalContextStore;
+  elderProfileStore?: ElderProfileStore;
   modelGateway: ModelGateway;
   riskEngine: RiskEngine;
   permissionEngine: PermissionEngine;
@@ -203,6 +210,18 @@ export class ElderMemoryKernel {
     return this.memoryProcessing.getStatus(input);
   }
 
+  async getTodaySnapshot(input: Omit<GetTodaySnapshotInput, "tenantId" | "now"> & {
+    tenantId?: string;
+    now?: string;
+  }): Promise<TodaySnapshot> {
+    return buildTodaySnapshot(this.deps, {
+      tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
+      elderId: input.elderId,
+      now: input.now ?? new Date().toISOString(),
+      timezone: input.timezone,
+    });
+  }
+
   async processMemoryProcessingJobs(input: Parameters<MemoryProcessingOrchestrator["processJobs"]>[0] = {}) {
     return this.memoryProcessing.processJobs(input);
   }
@@ -213,7 +232,7 @@ export class ElderMemoryKernel {
     const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
     const traceId = input.traceId ?? randomUUID();
     const now = input.now ?? new Date().toISOString();
-    const context = emptyTurnContext();
+    const context = await buildTurnPlanContext(this.deps, { tenantId, elderId: input.elderId });
 
     const turnPlanStartedAt = Date.now();
     const plan = await planElderTurnSafely(this.deps, {

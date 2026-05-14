@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import type { MemorySource } from "@goldmem/memory-schema";
+import type { MemorySource } from "@mem/memory-schema";
 import type { CreateSourceForClientTurnResult, CreateSourceInput, SourceStore } from "./index.js";
 import { isUniqueViolation } from "./postgres-errors.js";
 import { mapSource } from "./postgres-mappers.js";
@@ -16,11 +16,11 @@ export class PostgresSourceStore implements SourceStore {
   ) {}
 
   async saveAudio(audio: Uint8Array): Promise<string> {
-    const audioDir = this.options.audioDir ?? ".goldmem/audio";
+    const audioDir = this.options.audioDir ?? ".mem/audio";
     await mkdir(audioDir, { recursive: true });
     const filename = `${randomUUID()}.wav`;
     await writeFile(join(audioDir, filename), audio);
-    const baseUrl = this.options.publicAudioBaseUrl ?? "file://.goldmem/audio";
+    const baseUrl = this.options.publicAudioBaseUrl ?? "file://.mem/audio";
     return `${baseUrl.replace(/\/$/, "")}/${filename}`;
   }
 

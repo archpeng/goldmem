@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DebugTrace } from "@goldmem/memory-schema";
+import type { DebugTrace } from "@mem/memory-schema";
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
 
@@ -28,10 +28,10 @@ export function DevPanel({
     <details className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
       <summary className="cursor-pointer text-base font-medium text-slate-700">开发工具</summary>
       <div className="mt-4 grid gap-3">
-        <Field label="老人 ID">
+        <Field label="用户 ID">
           <Input value={elderId} onChange={(event) => onElderChange(event.target.value)} />
         </Field>
-        <Field label="老人操作人">
+        <Field label="用户操作人">
           <Input value={actorUserId} onChange={(event) => onActorChange(event.target.value)} />
         </Field>
         <Field label="traceId">

@@ -6,19 +6,21 @@ import {
   CreateFeedbackRequestSchema,
   CreateFamilyReminderRequestSchema,
   ElderTurnRequestSchema,
-} from "@goldmem/memory-schema";
-import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "@goldmem/memory-kernel";
-import { DefaultPermissionEngine } from "@goldmem/permission-engine";
-import { DefaultReminderEngine } from "@goldmem/reminder-engine";
-import { DefaultRiskEngine } from "@goldmem/risk-engine";
+  UpsertElderProfileRequestSchema,
+} from "@mem/memory-schema";
+import { ElderMemoryKernel, type ElderMemoryKernelDeps } from "@mem/memory-kernel";
+import { DefaultPermissionEngine } from "@mem/permission-engine";
+import { DefaultReminderEngine } from "@mem/reminder-engine";
+import { DefaultRiskEngine } from "@mem/risk-engine";
 import {
   createPostgresStores,
   type DebugTraceStore,
+  type ElderProfileStore,
   type EventStore,
   type ReminderStore,
-} from "@goldmem/memory-store";
-import { NotImplementedModelGateway, OpenAIModelGateway, type ModelGateway } from "@goldmem/model-gateway";
-import { GraphitiTemporalMemoryStore, NullTemporalMemoryStore, type TemporalMemoryStore } from "@goldmem/temporal-memory";
+} from "@mem/memory-store";
+import { NotImplementedModelGateway, OpenAIModelGateway, type ModelGateway } from "@mem/model-gateway";
+import { GraphitiTemporalMemoryStore, NullTemporalMemoryStore, type TemporalMemoryStore } from "@mem/temporal-memory";
 
 export const apiRouteContract = {
   elder: {
@@ -28,6 +30,9 @@ export const apiRouteContract = {
     listReminders: "GET /elder/reminders",
     confirmReminder: "POST /elder/reminders/:id/confirm",
     sendFeedback: "POST /elder/feedback",
+    getProfile: "GET /elder/profile",
+    upsertProfile: "PUT /elder/profile",
+    todaySnapshot: "GET /elder/today-snapshot",
   },
   family: {
     pendingTasks: "GET /family/elders/:elderId/pending-tasks",
@@ -49,6 +54,7 @@ export type ApiServerDeps = {
   kernel: ElderMemoryKernel;
   eventStore: EventStore;
   reminderStore: ReminderStore;
+  elderProfileStore: ElderProfileStore;
   debugTraceStore?: DebugTraceStore;
   healthCheck?: () => Promise<Record<string, unknown>>;
 };
@@ -91,6 +97,47 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     const tenantId = String(query.tenantId ?? "tenant-mvp");
     if (!elderId) throw new Error("elderId is required");
     return deps.reminderStore.listByElder({ tenantId, elderId });
+  });
+
+  server.get("/elder/today-snapshot", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const elderId = String(query.elderId ?? "");
+    const tenantId = String(query.tenantId ?? "tenant-mvp");
+    const timezone = String(query.timezone ?? "Asia/Shanghai");
+    if (!elderId) return reply.code(400).send({ message: "elderId is required" });
+    return deps.kernel.getTodaySnapshot({ tenantId, elderId, timezone });
+  });
+
+  server.get("/elder/profile", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const elderId = String(query.elderId ?? "");
+    const tenantId = String(query.tenantId ?? "tenant-mvp");
+    if (!elderId) return reply.code(400).send({ message: "elderId is required" });
+    const existing = await deps.elderProfileStore.get({ tenantId, elderId });
+    if (existing) return existing;
+    return {
+      tenantId,
+      elderId,
+      displayName: elderId,
+      timezone: "Asia/Shanghai",
+      medications: [],
+      places: [],
+    };
+  });
+
+  server.put("/elder/profile", async (request) => {
+    const input = UpsertElderProfileRequestSchema.parse(request.body);
+    return deps.elderProfileStore.upsert({
+      tenantId: input.tenantId,
+      elderId: input.elderId,
+      displayName: input.displayName,
+      timezone: input.timezone,
+      wakeTime: input.wakeTime,
+      sleepTime: input.sleepTime,
+      medications: input.medications,
+      places: input.places,
+      notes: input.notes,
+    });
   });
 
   server.post("/elder/reminders/:id/confirm", async (request) => {
@@ -191,8 +238,8 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
   const databaseUrl = requiredEnv("DATABASE_URL");
   const postgres = createPostgresStores({
     databaseUrl,
-    audioDir: process.env.GOLDMEM_AUDIO_DIR,
-    publicAudioBaseUrl: process.env.GOLDMEM_AUDIO_BASE_URL,
+    audioDir: process.env.MEM_AUDIO_DIR,
+    publicAudioBaseUrl: process.env.MEM_AUDIO_BASE_URL,
   });
   const reminderEngine = new DefaultReminderEngine(postgres.reminderStore);
   const modelGateway = buildModelGatewayFromEnv();
@@ -204,15 +251,17 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
 
   const kernelDeps: ElderMemoryKernelDeps = {
     sourceStore: postgres.sourceStore,
-    eventStore: postgres.eventStore,
-    contextLinkStore: postgres.contextLinkStore,
-    reminderEngine,
+	    eventStore: postgres.eventStore,
+	    contextLinkStore: postgres.contextLinkStore,
+	    reminderStore: postgres.reminderStore,
+	    reminderEngine,
     familyReminderCommandStore: postgres.familyReminderCommandStore,
     familyTaskStore: postgres.familyTaskStore,
     feedbackStore: postgres.feedbackStore,
     riskFlagStore: postgres.riskFlagStore,
     semanticMemory: postgres.semanticMemoryStore,
     personalContextStore: postgres.personalContextStore,
+    elderProfileStore: postgres.elderProfileStore,
     modelGateway,
     riskEngine: new DefaultRiskEngine(),
     permissionEngine: new DefaultPermissionEngine(),
@@ -227,6 +276,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       kernel: new ElderMemoryKernel(kernelDeps),
       eventStore: postgres.eventStore,
       reminderStore: postgres.reminderStore,
+      elderProfileStore: postgres.elderProfileStore,
       debugTraceStore: postgres.debugTraceStore,
       healthCheck: async () => {
         await postgres.pool.query("select 1");
@@ -270,7 +320,7 @@ export function buildTemporalMemoryFromEnv(): TemporalMemoryStore {
 function isGraphitiRequired(): boolean {
   return (
     process.env.GRAPHITI_REQUIRED_IN_PRODUCTION === "true" ||
-    process.env.GOLDMEM_REQUIRE_GRAPHITI === "true" ||
+    process.env.MEM_REQUIRE_GRAPHITI === "true" ||
     process.env.NODE_ENV === "production"
   );
 }
@@ -299,9 +349,10 @@ function buildModelGatewayFromEnv(): ModelGateway {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
     baseURL: process.env.OPENAI_BASE_URL,
+    project: process.env.OPENAI_PROJECT_ID,
     transcriptionModel: process.env.OPENAI_TRANSCRIBE_MODEL,
-    promptsDir: process.env.GOLDMEM_PROMPTS_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "prompts"),
-    promptVersion: process.env.GOLDMEM_PROMPT_VERSION ?? "v1",
+    promptsDir: process.env.MEM_PROMPTS_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "prompts"),
+    promptVersion: process.env.MEM_PROMPT_VERSION ?? "v1",
     timeoutMs,
     operationTimeouts: {
       generateMemoryPlan: parseOpenAIMemoryPlanTimeoutMs(timeoutMs),
@@ -342,9 +393,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 function startMemoryProcessingWorker(kernel: ElderMemoryKernel): () => void {
-  if (process.env.GOLDMEM_API_BACKGROUND_WORKERS === "false") return () => undefined;
-  const intervalMs = parsePositiveInt(process.env.GOLDMEM_MEMORY_WORKER_POLL_MS, 2_000);
-  const limit = parsePositiveInt(process.env.GOLDMEM_MEMORY_WORKER_BATCH_SIZE, 5);
+  if (process.env.MEM_API_BACKGROUND_WORKERS === "false") return () => undefined;
+  const intervalMs = parsePositiveInt(process.env.MEM_MEMORY_WORKER_POLL_MS, 2_000);
+  const limit = parsePositiveInt(process.env.MEM_MEMORY_WORKER_BATCH_SIZE, 5);
   const timer = setInterval(() => {
     kernel.processMemoryProcessingJobs({ limit }).catch((error) => {
       console.error("memory processing worker failed", error);

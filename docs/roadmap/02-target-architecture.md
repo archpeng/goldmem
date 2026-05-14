@@ -6,10 +6,10 @@
 Elder App / Family App / Admin Console
         |
         v
-GoldMem API Server
+mem API Server
         |
         v
-GoldMem Kernel
+mem Kernel
         |
         +---------------- PostgreSQL ----------------+
         | business state, evidence, permissions       |
@@ -172,7 +172,7 @@ what recent or personal memory should be injected
 
 ## Multi-tenant boundary
 
-Graphiti group identifiers should be created by GoldMem, not by the client.
+Graphiti group identifiers should be created by mem, not by the client.
 
 Recommended group ID:
 
@@ -180,7 +180,7 @@ Recommended group ID:
 groupId = Graphiti-safe encoding of tenantId + elderId
 ```
 
-PostgreSQL remains the tenant authority. Graphiti queries must go through GoldMem Kernel, never directly from frontend clients.
+PostgreSQL remains the tenant authority. Graphiti queries must go through mem Kernel, never directly from frontend clients.
 
 ## Fail-safe design
 
@@ -189,7 +189,7 @@ If Graphiti is unavailable:
 ```text
 record source/event/reminder in PostgreSQL
 write semantic memory to semantic recall index
-return elder-facing response with internal temporal write failure status
+return user-facing response with internal temporal write failure status
 record audit with graphiti_enqueue_failed
 queue Graphiti episode for retry when retry queue exists
 ```

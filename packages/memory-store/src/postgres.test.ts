@@ -5,19 +5,20 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   FamilyTaskSchema,
+  ElderProfileSchema,
   MemoryContextLinkSchema,
   MemoryEventSchema,
   MemorySourceSchema,
   PersonalContextSchema,
   ReminderSchema,
-} from "@goldmem/memory-schema";
+} from "@mem/memory-schema";
 import { createPostgresStores, type PostgresStores } from "./postgres.js";
 
-const databaseUrl = process.env.GOLDMEM_STORE_TEST_DATABASE_URL;
+const databaseUrl = process.env.MEM_STORE_TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
 
 describePostgres("PostgresStores integration", () => {
-  const schemaName = `goldmem_store_test_${process.pid}_${Date.now()}`;
+  const schemaName = `mem_store_test_${process.pid}_${Date.now()}`;
   let stores: PostgresStores;
 
   beforeAll(async () => {
@@ -65,7 +66,7 @@ describePostgres("PostgresStores integration", () => {
     const secondEvent = await stores.eventStore.create({
       ...firstEvent,
       title: "准备晚饭",
-      summary: "老人准备晚饭。",
+      summary: "用户准备晚饭。",
       type: "family",
       evidence: [{ sourceId: source.id, quote: "准备晚饭。" }],
       status: "active",
@@ -110,6 +111,45 @@ describePostgres("PostgresStores integration", () => {
       confirmationRequired: false,
       timeText: "2026年5月10日 16:00",
       reason: "已按确认时间设置提醒：2026年5月10日 16:00。",
+    });
+    expect((await stores.reminderStore.findByRemindAtRange({
+      tenantId: source.tenantId,
+      elderId: source.elderId,
+      fromIso: "2026-05-11T00:00:00.000Z",
+      toIso: "2026-05-12T00:00:00.000Z",
+      statuses: ["confirmed"],
+    })).map((item) => item.id)).toEqual([reminder.id]);
+    expect((await stores.reminderStore.findByConfirmedAtRange({
+      tenantId: source.tenantId,
+      elderId: source.elderId,
+      fromIso: "2026-05-10T00:00:00.000Z",
+      toIso: "2026-05-11T00:00:00.000Z",
+    })).map((item) => item.id)).toEqual([reminder.id]);
+
+    const topics = await stores.eventStore.aggregateByTypeWithin({
+      tenantId: source.tenantId,
+      elderId: source.elderId,
+      fromIso: "2026-05-01T00:00:00.000Z",
+      limit: 5,
+    });
+    expect(topics.some((topic) => topic.type === "shopping" && topic.sampleTitles.includes("买青菜"))).toBe(true);
+
+    const profile = await stores.elderProfileStore.upsert({
+      tenantId: source.tenantId,
+      elderId: source.elderId,
+      displayName: "王奶奶",
+      timezone: "Asia/Shanghai",
+      wakeTime: "07:00",
+      sleepTime: "21:00",
+      medications: [{ name: "降压药", dosage: "早餐后一片" }],
+      places: [{ name: "社区医院", kind: "医院" }],
+      notes: "右耳听不太清",
+    });
+    expect(ElderProfileSchema.parse(await stores.elderProfileStore.get({ tenantId: source.tenantId, elderId: source.elderId }))).toMatchObject({
+      elderId: profile.elderId,
+      displayName: "王奶奶",
+      medications: [{ name: "降压药", dosage: "早餐后一片" }],
+      places: [{ name: "社区医院", kind: "医院" }],
     });
 
     const link = await stores.contextLinkStore.create({
@@ -293,7 +333,7 @@ describePostgres("PostgresStores integration", () => {
       sourceId: source.id,
       type: "general",
       title: "昨天散步",
-      summary: "老人昨天傍晚散步。",
+      summary: "用户昨天傍晚散步。",
       timeText: "昨天傍晚",
       eventTimeStart: "2026-05-08T09:00:00.000Z",
       timeConfidence: 0.8,
@@ -309,7 +349,7 @@ describePostgres("PostgresStores integration", () => {
     const today = await stores.eventStore.create({
       ...yesterday,
       title: "今天散步",
-      summary: "老人今天上午散步。",
+      summary: "用户今天上午散步。",
       timeText: "今天上午",
       eventTimeStart: "2026-05-09T09:00:00.000Z",
       evidence: [{ sourceId: source.id, quote: "今天上午散步。" }],

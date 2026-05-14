@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
-import type { NotificationIntent } from "@goldmem/memory-schema";
+import type { NotificationIntent } from "@mem/memory-schema";
 import type { NotificationIntentStore } from "./index.js";
 import { mapNotificationIntent } from "./postgres-mappers.js";
 import * as schema from "./postgres-schema.js";

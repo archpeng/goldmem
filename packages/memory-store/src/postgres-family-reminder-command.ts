@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { MemorySource, Reminder } from "@goldmem/memory-schema";
+import type { MemorySource, Reminder } from "@mem/memory-schema";
 import type {
   CreateFamilyReminderCommandInput,
   CreateFamilyReminderCommandResult,

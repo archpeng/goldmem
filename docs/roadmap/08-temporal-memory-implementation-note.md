@@ -51,7 +51,7 @@ Added:
 packages/memory-kernel/src/temporal.ts
 ```
 
-This module builds a curated temporal episode from persisted GoldMem truth records:
+This module builds a curated temporal episode from persisted mem truth records:
 
 ```text
 MemorySource
