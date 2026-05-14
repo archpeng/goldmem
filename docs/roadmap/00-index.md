@@ -23,6 +23,7 @@ The key architectural decision is to stop treating PostgreSQL as the only memory
 15. [Capability Boundary E2E Test Plan](./20-capability-boundary-e2e-test-plan.md)
 16. [P1 Graphiti Technical Test Startup](./21-p1-graphiti-technical-test-startup.md)
 17. [Neko Model Speed Benchmark](./22-neko-model-speed-benchmark.md)
+18. [P1 Graphiti E2E and System Review](./23-p1-graphiti-e2e-system-review.md)
 
 ## One-line direction
 

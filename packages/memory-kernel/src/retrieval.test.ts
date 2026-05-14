@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryEvent, ParsedMemoryQuery } from "@mem/memory-schema";
-import type { MemoryRecallResult } from "@mem/memory-store";
 import type { RetrievedEvidence } from "@mem/model-gateway";
 import { mergeEvidence, mergeRetrievedEvidence } from "./retrieval.js";
 import { now } from "../test/harness.js";
@@ -12,21 +11,16 @@ describe("retrieval evidence merge", () => {
       summary: "你女儿小敏确认了复查时间变更，医保卡仍需携带。",
       timeText: "下周一上午九点",
     });
-    const semantic: MemoryRecallResult = {
-      memory: "semantic memory",
+    const semantic: RetrievedEvidence = item({
       score: 0.8,
-      metadata: {
-        sourceId: "semantic-source",
-        eventId: "semantic-event",
-        title: "语义召回标题包含下周一上午九点",
-        summary: "语义召回摘要只说复查改期，医保卡仍需携带。",
-        timeText: "下周一上午九点",
-        createdAt: now,
-        eventType: "appointment",
-        riskLevel: "medical",
-        requiresConfirmation: true,
-      },
-    };
+      sourceId: "semantic-source",
+      eventId: "semantic-event",
+      summary: "语义召回已由 PostgreSQL 对齐，下周一上午九点，医保卡仍需携带。",
+      retrievalSource: "semantic",
+      eventType: "appointment",
+      riskLevel: "medical",
+      requiresConfirmation: true,
+    });
 
     const merged = mergeEvidence([event], [semantic], [], parsedQuery(), "社区医院复查是不是改期了？", now);
 

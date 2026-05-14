@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DebugTrace, MemoryAnswer, Reminder, TodaySnapshot } from "@mem/memory-schema";
+import type { MemoryAnswer, Reminder, TodaySnapshot } from "@mem/memory-schema";
 import {
   confirmReminder,
   getIngestStatus,
@@ -8,6 +8,7 @@ import {
   sendElderTurn,
   sendFeedback,
   type MvpLists,
+  type RedactedDebugTrace,
 } from "./lib/api.js";
 import { createClientTurnId, formatConfirmedReminderText, refreshLists, runRequest, sleep, type RequestState } from "./lib/app-helpers.js";
 import { copy } from "./lib/copy.js";
@@ -60,7 +61,7 @@ export function App() {
   const [drafts, setDrafts] = useState<DraftCard[]>([]);
   const [confirmTimes, setConfirmTimes] = useState<Record<string, string>>({});
   const [debugTraceId, setDebugTraceId] = useState("");
-  const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
+  const [debugTrace, setDebugTrace] = useState<RedactedDebugTrace | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [inputText, setInputText] = useState("");
@@ -78,6 +79,7 @@ export function App() {
 
   const now = useMemo(() => new Date(), [reminders]);
   const taskItems = useMemo(() => buildTaskItems(reminders, now), [reminders, now]);
+  const devPanelEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_PANEL === "true";
 
   useEffect(() => {
     const initial = readTextScale();
@@ -309,7 +311,7 @@ export function App() {
           {latestAnswer ? (
             <LatestAnswer answer={latestAnswer} correction={latestCorrection} loading={state.loading} onSendFeedback={handleSendAnswerFeedback} />
           ) : null}
-          {import.meta.env.DEV ? (
+          {devPanelEnabled ? (
             <DevPanel
               actorUserId={actorUserId} debugTrace={debugTrace} debugTraceId={debugTraceId}
               elderId={elderId} loading={state.loading}

@@ -1,5 +1,4 @@
 import { EventTypeSchema, RiskLevelSchema, type MemoryAnswer, type MemoryEvent, type ParsedMemoryQuery } from "@mem/memory-schema";
-import type { MemoryRecallResult } from "@mem/memory-store";
 import type { RetrievedEvidence } from "@mem/model-gateway";
 import type { TemporalEvidence } from "@mem/temporal-memory";
 
@@ -31,7 +30,7 @@ export function evidenceBoundMatchedSources(
 
 export function mergeEvidence(
   events: MemoryEvent[],
-  semanticResults: MemoryRecallResult[],
+  semanticEvidence: RetrievedEvidence[],
   temporalResults: TemporalEvidence[],
   parsedQuery: ParsedMemoryQuery,
   query: string,
@@ -49,24 +48,6 @@ export function mergeEvidence(
     riskLevel: event.riskLevel,
     requiresConfirmation: event.requiresConfirmation,
   }));
-
-  const semanticEvidence: RetrievedEvidence[] = semanticResults.flatMap((result) => {
-    if (typeof result.metadata?.sourceId !== "string" || typeof result.metadata.summary !== "string") return [];
-    return [
-      {
-        sourceId: result.metadata.sourceId,
-        eventId: typeof result.metadata.eventId === "string" ? result.metadata.eventId : undefined,
-        createdAt: typeof result.metadata.createdAt === "string" ? result.metadata.createdAt : new Date().toISOString(),
-        summary: buildSemanticEvidenceSummary(result.metadata),
-        score: result.score ?? 0.5,
-        canPlayAudio: true,
-        retrievalSource: "semantic" as const,
-        eventType: parseEventType(result.metadata.eventType),
-        riskLevel: parseRiskLevel(result.metadata.riskLevel),
-        requiresConfirmation: typeof result.metadata.requiresConfirmation === "boolean" ? result.metadata.requiresConfirmation : undefined,
-      },
-    ];
-  });
 
   const eventsById = new Map(events.map((event) => [event.id, event]));
 
@@ -94,19 +75,11 @@ export function mergeEvidence(
   });
 }
 
-function buildEventEvidenceSummary(event: MemoryEvent): string {
+export function buildEventEvidenceSummary(event: MemoryEvent): string {
   return compactEvidenceSummary([
     event.title,
     event.summary,
     informativeTimeText(event.timeText) ? `Time: ${event.timeText}` : undefined,
-  ]);
-}
-
-function buildSemanticEvidenceSummary(metadata: Record<string, unknown>): string {
-  return compactEvidenceSummary([
-    stringValue(metadata.title),
-    stringValue(metadata.summary),
-    informativeTimeText(stringValue(metadata.timeText)) ? `Time: ${stringValue(metadata.timeText)}` : undefined,
   ]);
 }
 
@@ -120,10 +93,6 @@ function compactEvidenceSummary(parts: Array<string | undefined>): string {
     compacted.push(value);
   }
   return compacted.join(" ");
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function informativeTimeText(value: string | undefined): value is string {

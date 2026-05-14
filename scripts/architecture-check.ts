@@ -115,21 +115,22 @@ for (const file of [
 }
 
 const retrieval = await readFile("packages/memory-kernel/src/retrieval.ts", "utf8");
-if (!/metadata\.summary/.test(retrieval)) {
+const querySemantic = await readFile("packages/memory-kernel/src/query-semantic.ts", "utf8");
+if (!/alignSemanticEvidence/.test(querySemantic) || !/eventStore\.getByIds/.test(querySemantic) || !/sourceStore\.get/.test(querySemantic)) {
   violations.push({
-    file: "packages/memory-kernel/src/retrieval.ts",
-    reason: "Semantic evidence must prefer PostgreSQL-derived metadata.summary.",
+    file: "packages/memory-kernel/src/query-semantic.ts",
+    reason: "Semantic recall candidates must be rehydrated from PostgreSQL source/event records before final evidence.",
   });
 }
-if (/summary:\s*(?:typeof\s+result\.metadata\.summary[\s\S]{0,120})?\?\s*result\.memory/.test(retrieval)) {
+if (/metadata\.summary/.test(retrieval) || /result\.memory/.test(retrieval)) {
   violations.push({
     file: "packages/memory-kernel/src/retrieval.ts",
-    reason: "Semantic evidence must not fall back to provider/index memory text.",
+    reason: "Final semantic evidence must not use semantic index metadata.summary or provider/index memory text.",
   });
 }
-if (!/retrievalSource:\s*"semantic"/.test(retrieval)) {
+if (!/retrievalSource:\s*"semantic"/.test(querySemantic)) {
   violations.push({
-    file: "packages/memory-kernel/src/retrieval.ts",
+    file: "packages/memory-kernel/src/query-semantic.ts",
     reason: "Semantic recall evidence must use retrievalSource=semantic.",
   });
 }

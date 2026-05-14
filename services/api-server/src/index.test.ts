@@ -180,8 +180,76 @@ describe("api-server", () => {
       method: "GET",
       url: "/debug/traces/trace-1",
     });
-    expect(trace.statusCode).toBe(200);
-    expect(trace.json().traceId).toBe("trace-1");
+    expect(trace.statusCode).toBe(404);
+  });
+
+  it("requires explicit debug registration and token before serving traces", async () => {
+    const server = buildServer(createDeps({ debugApiToken: "debug-secret-1234" }));
+
+    const missingToken = await server.inject({
+      method: "GET",
+      url: "/debug/traces/trace-1",
+    });
+    expect(missingToken.statusCode).toBe(403);
+
+    const wrongToken = await server.inject({
+      method: "GET",
+      url: "/debug/traces/trace-1",
+      headers: { "x-mem-debug-token": "wrong-secret-1234" },
+    });
+    expect(wrongToken.statusCode).toBe(403);
+  });
+
+  it("returns a redacted debug trace DTO without raw memory content", async () => {
+    const server = buildServer(createDeps({
+      debugApiToken: "debug-secret-1234",
+      debugTrace: sensitiveDebugTrace(),
+    }));
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/debug/traces/trace-sensitive",
+      headers: { "x-mem-debug-token": "debug-secret-1234" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      traceId: "trace-sensitive",
+      source: {
+        id: "source-sensitive",
+        contentRedacted: true,
+        audioRedacted: true,
+      },
+      planSummary: {
+        present: true,
+        eventCount: 1,
+        reminderCandidateCount: 1,
+        riskFlagCount: 1,
+      },
+      auditTrail: [{
+        id: "audit-sensitive",
+        payloadSummary: { kind: "object" },
+      }],
+      queryDiagnostics: {
+        retrieval: {
+          graphitiAlignedCount: 1,
+        },
+      },
+    });
+    expect(body.source).not.toHaveProperty("transcript");
+    expect(body.source).not.toHaveProperty("audioUrl");
+    expect(body).not.toHaveProperty("memoryPlan");
+    expect(body.auditTrail[0]).not.toHaveProperty("payload");
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("raw transcript");
+    expect(serialized).not.toContain("audio.example.com");
+    expect(serialized).not.toContain("raw evidence quote");
+    expect(serialized).not.toContain("raw memory plan");
+    expect(serialized).not.toContain("arbitrary audit payload");
+    expect(serialized).not.toContain("\"quote\"");
+    expect(serialized).not.toContain("\"transcript\"");
+    expect(serialized).not.toContain("\"audioUrl\"");
   });
 
   it("fails fast when production requires Graphiti config", () => {
@@ -202,7 +270,7 @@ describe("api-server", () => {
   });
 });
 
-function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> } {
+function createDeps(options: { debugApiToken?: string; debugTrace?: DebugTrace } = {}): ApiServerDeps & { auditRecords: Array<{ type: string }> } {
   const reminder: Reminder = {
     id: "reminder-1",
     elderId: "elder-1",
@@ -245,7 +313,7 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
   };
 
   const auditRecords: Array<{ type: string }> = [];
-  const debugTrace: DebugTrace = {
+  const debugTrace: DebugTrace = options.debugTrace ?? {
     traceId: "trace-1",
     auditTrail: [{
       id: "audit-1",
@@ -421,7 +489,65 @@ function createDeps(): ApiServerDeps & { auditRecords: Array<{ type: string }> }
       getBySource: async () => debugTrace,
       getByAuditId: async () => debugTrace,
     },
+    debugApi: options.debugApiToken ? { token: options.debugApiToken } : undefined,
     healthCheck: async () => ({ postgres: "ok" }),
     auditRecords,
+  };
+}
+
+function sensitiveDebugTrace(): DebugTrace {
+  return {
+    traceId: "trace-sensitive",
+    source: {
+      id: "source-sensitive",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "voice",
+      transcript: "raw transcript should never leave the debug API",
+      audioUrl: "https://audio.example.com/raw.wav",
+      createdAt: "2026-05-09T12:00:00.000Z",
+      metadata: {
+        language: "zh-CN",
+        locationHint: "private home location",
+        appVersion: "test",
+        timezone: "Asia/Shanghai",
+        clientTurnId: "turn-sensitive",
+      },
+    },
+    memoryPlan: {
+      raw: "raw memory plan secret",
+      events: [{ evidence: [{ sourceId: "source-sensitive", quote: "raw evidence quote" }] }],
+      reminderCandidates: [{}],
+      riskFlags: [{}],
+      familyTasks: [],
+      contextLinks: [],
+      relationEnrichmentSignals: [],
+      uncertainties: ["private uncertainty"],
+    },
+    evidenceMerge: {
+      evidence: [{ sourceId: "source-sensitive", transcriptQuote: "raw evidence quote" }],
+    },
+    finalAnswer: {
+      answerText: "private answer text",
+    },
+    auditTrail: [{
+      id: "audit-sensitive",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      sourceId: "source-sensitive",
+      traceId: "trace-sensitive",
+      type: "memory_query",
+      payload: {
+        traceId: "trace-sensitive",
+        transcript: "raw transcript should never leave the debug API",
+        audioUrl: "https://audio.example.com/raw.wav",
+        plan: { raw: "raw memory plan secret" },
+        retrieval: { graphitiAlignedCount: 1, note: "not numeric" },
+        timings: { totalMs: 12 },
+        evidence: [{ quote: "raw evidence quote" }],
+        arbitrary: "arbitrary audit payload secret",
+      },
+      createdAt: "2026-05-09T12:00:00.000Z",
+    }],
   };
 }

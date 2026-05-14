@@ -34,6 +34,21 @@ describe("ElderMemoryKernel query", () => {
       retrievedEvidence: [],
       suggestedActions: [],
     };
+    harness.sourceStore.sources.push({
+      id: "source-1",
+      tenantId: "tenant-mvp",
+      elderId: "elder-1",
+      type: "text",
+      transcript: "I bought vegetables at the market.",
+      createdAt: now,
+    });
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-semantic",
+      sourceId: "source-1",
+      title: "Current PostgreSQL shopping event",
+      summary: "Current PostgreSQL summary says you bought vegetables.",
+      type: "shopping",
+    }));
     harness.semanticMemory.searchResults = [
       {
         memory: "A compressed semantic fact.",
@@ -41,7 +56,7 @@ describe("ElderMemoryKernel query", () => {
         metadata: {
           sourceId: "source-1",
           eventId: "event-semantic",
-          summary: "The elder bought vegetables at the market.",
+          summary: "Stale semantic index summary must not be used.",
           createdAt: now,
         },
       },
@@ -67,14 +82,17 @@ describe("ElderMemoryKernel query", () => {
 
     expect(answer.answerText).toContain("vegetables");
     expect(answer.retrievedEvidence.some((item) => item.retrievalSource === "semantic")).toBe(true);
-    expect(answer.retrievedEvidence.some((item) => item.summary === "You bought vegetables at the market.")).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.summary.includes("Current PostgreSQL summary"))).toBe(true);
+    expect(answer.retrievedEvidence.some((item) => item.summary.includes("Stale semantic index"))).toBe(false);
     expect(answer.retrievedEvidence.some((item) => item.summary.includes("Provider-only semantic"))).toBe(false);
     expect(harness.audit.records.at(-1)?.type).toBe("memory_query");
     expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
       expect.objectContaining({
         semanticCount: 3,
-        semanticMetadataCount: 1,
-        semanticUnlinkedCount: 2,
+        semanticCandidateLinkedCount: 2,
+        semanticAlignedCount: 1,
+        semanticUnalignedCount: 2,
+        semanticEvidenceCount: 1,
       }),
     );
 

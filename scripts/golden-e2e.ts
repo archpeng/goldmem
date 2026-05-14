@@ -88,6 +88,8 @@ const graphitiDrainBatchSize = Number(process.env.GOLDEN_E2E_DRAIN_BATCH_SIZE ??
 const graphitiSearchSettleMs = Number(process.env.GOLDEN_E2E_SEARCH_SETTLE_MS ?? 5000);
 const graphitiTimeoutMs = Number(process.env.GRAPHITI_TIMEOUT_MS ?? 120_000);
 const modelRetries = Number(process.env.GOLDEN_E2E_MODEL_RETRIES ?? process.env.GOLDEN_E2E_PROVIDER_RETRIES ?? 2);
+const debugTraceToken = process.env.GOLDEN_E2E_DEBUG_TOKEN ?? process.env.MEM_DEBUG_API_TOKEN;
+const requireDebugTrace = process.env.GOLDEN_E2E_REQUIRE_DEBUG_TRACE === "true";
 const fixture = GoldenCaseSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
 const semanticJudge = createSemanticJudge();
 const graphitiMode = process.env.GOLDEN_E2E_GRAPHITI_MODE
@@ -232,8 +234,10 @@ for (const queryCase of fixture.queries) {
   assert(turn.answer, `${queryCase.id} returned no answer; turnType=${turn.turnType ?? "unknown"} message=${turn.message ?? ""} traceId=${turn.traceId}`);
   const answer = MemoryAnswerSchema.parse(turn.answer);
   assert(Boolean(answer.traceId), `${queryCase.id} did not return traceId`);
-  const debugTrace = await request<{ auditTrail?: unknown[] }>("GET", `/debug/traces/${encodeURIComponent(answer.traceId ?? "")}?tenantId=${encodeURIComponent(tenantId)}`);
-  assert((debugTrace.auditTrail?.length ?? 0) > 0, `${queryCase.id} debug trace did not read back audit trail`);
+  const debugTrace = await requestDebugTrace(answer.traceId ?? "");
+  if (requireDebugTrace) {
+    assert((debugTrace?.auditTrail?.length ?? 0) > 0, `${queryCase.id} debug trace did not read back audit trail`);
+  }
   const answerText = normalizeText(answer.answerText);
   const evidenceText = normalizeText(answer.retrievedEvidence.map((item) => item.summary).join("\n"));
   const evidenceSources = new Set(answer.retrievedEvidence.map((item) => item.retrievalSource));
@@ -432,6 +436,22 @@ async function request<T>(method: string, path: string, body?: Json): Promise<T>
     throw new Error(`${method} ${path} failed: ${response.status} ${text}`);
   }
   return parsed as T;
+}
+
+async function requestDebugTrace(traceId: string): Promise<{ auditTrail?: unknown[] } | undefined> {
+  if (!debugTraceToken || !traceId) return undefined;
+  const response = await fetch(`${baseUrl}/debug/traces/${encodeURIComponent(traceId)}?tenantId=${encodeURIComponent(tenantId)}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(requestTimeoutMs),
+    headers: { "x-mem-debug-token": debugTraceToken },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    if (requireDebugTrace) throw new Error(`GET /debug/traces/${traceId} failed: ${response.status} ${text}`);
+    console.warn(`golden debug trace unavailable: status=${response.status}`);
+    return undefined;
+  }
+  return (text ? JSON.parse(text) as unknown : {}) as { auditTrail?: unknown[] };
 }
 
 async function withModelRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {

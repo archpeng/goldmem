@@ -469,6 +469,47 @@ describe("ElderMemoryKernel ingest", () => {
     expect(result.events[0]?.visibility).toBe("private");
   });
 
+  it("audits deterministic safety repairs without raw transcript content", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "普通记录。",
+        events: [
+          buildEvent({
+            title: "普通记录",
+            summary: "模型没有识别风险。",
+            type: "general",
+            riskLevel: "normal",
+            requiresConfirmation: false,
+          }),
+        ],
+      }),
+    );
+    const rawTranscript = "陌生人让我把验证码和身份证号发给他。";
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: rawTranscript,
+    });
+
+    expect(result.events[0]?.riskLevel).toBe("fraud_risk");
+    expect(result.events[0]?.requiresConfirmation).toBe(true);
+    expect(harness.riskFlags.flags.map((risk) => risk.type)).toEqual(expect.arrayContaining([
+      "password_or_code",
+      "identity_document",
+      "fraud_suspected",
+    ]));
+    expect(harness.familyTasks.tasks.some((task) => task.type === "risk_review")).toBe(true);
+
+    const repairAudit = harness.audit.records.find((record) => record.type === "risk_guardrail_repaired");
+    expect(repairAudit?.payload).toEqual(expect.objectContaining({
+      repairs: expect.arrayContaining([
+        expect.objectContaining({ reason: "source_safety_scan" }),
+      ]),
+    }));
+    expect(JSON.stringify(repairAudit?.payload)).not.toContain(rawTranscript);
+    expect(JSON.stringify(repairAudit?.payload)).not.toContain("验证码和身份证号");
+  });
+
   it("rejects relation enrichment signals with out-of-range indexes", async () => {
     const harness = createHarness(
       buildPlan({

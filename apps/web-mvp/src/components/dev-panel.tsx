@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DebugTrace } from "@mem/memory-schema";
+import type { RedactedDebugTrace } from "../lib/api.js";
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
 
@@ -15,7 +15,7 @@ export function DevPanel({
   onLoadTrace,
 }: {
   actorUserId: string;
-  debugTrace: DebugTrace | null;
+  debugTrace: RedactedDebugTrace | null;
   debugTraceId: string;
   elderId: string;
   loading: boolean;

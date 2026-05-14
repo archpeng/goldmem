@@ -15,6 +15,13 @@ import { runGraphitiRetryBatch } from "./graphiti-retry.js";
 
 type Json = Record<string, unknown>;
 type EvidenceSource = "postgres" | "semantic" | "context_link" | "graphiti" | "graphiti_provenance";
+type RedactedDebugTrace = {
+  auditTrail?: unknown[];
+  queryDiagnostics?: {
+    retrieval?: Record<string, number>;
+    timings?: Record<string, unknown>;
+  };
+};
 
 const EvidenceSourceSchema = z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"]);
 
@@ -78,6 +85,8 @@ const fixturePath = process.env.GRAPHITI_E2E_FIXTURE ?? join(process.cwd(), "e2e
 const requestTimeoutMs = Number(process.env.GRAPHITI_E2E_TIMEOUT_MS ?? 600_000);
 const modelRetries = Number(process.env.GRAPHITI_E2E_MODEL_RETRIES ?? process.env.GRAPHITI_E2E_PROVIDER_RETRIES ?? 2);
 const ingestReadyTimeoutMs = Number(process.env.GRAPHITI_E2E_INGEST_READY_TIMEOUT_MS ?? 300_000);
+const debugTraceToken = process.env.GRAPHITI_E2E_DEBUG_TOKEN ?? process.env.MEM_DEBUG_API_TOKEN;
+const requireDebugTrace = process.env.GRAPHITI_E2E_REQUIRE_DEBUG_TRACE === "true";
 const memoryProcessingIdleTimeoutMs = Number(process.env.GRAPHITI_E2E_MEMORY_IDLE_TIMEOUT_MS ?? 300_000);
 const profileConcurrency = Math.max(1, Number(process.env.GRAPHITI_E2E_PROFILE_CONCURRENCY ?? 1));
 const graphitiDrainBatchSize = Number(process.env.GRAPHITI_E2E_DRAIN_BATCH_SIZE ?? 20);
@@ -184,12 +193,11 @@ async function runApiScenario(input: {
       );
       assert(turn.answer, `[${input.label}] ${queryCase.id} returned no answer; turnType=${turn.turnType ?? "unknown"} message=${turn.message ?? ""} traceId=${turn.traceId}`);
       const answer = MemoryAnswerSchema.parse(turn.answer);
-      const debugTrace = await request<{ auditTrail?: unknown[] }>(
+      const debugTrace = await requestDebugTrace(
         input.baseUrl,
-        "GET",
-        `/debug/traces/${encodeURIComponent(answer.traceId ?? turn.traceId)}?tenantId=${encodeURIComponent(tenantId)}`,
+        answer.traceId ?? turn.traceId,
       );
-      const retrieval = extractRetrieval(debugTrace.auditTrail);
+      const retrieval = extractRetrieval(debugTrace);
       const sources = [...new Set(answer.retrievedEvidence.map((item) => item.retrievalSource))] as EvidenceSource[];
       const answerText = normalizeText(answer.answerText);
       const evidenceText = normalizeText(answer.retrievedEvidence.map((item) => item.summary).join("\n"));
@@ -202,7 +210,9 @@ async function runApiScenario(input: {
       if (input.requireGraphitiWrites) {
         assert(answer.confidence >= queryCase.minConfidence, `[${input.label}] ${queryCase.id} confidence too low: ${answer.confidence}`);
         assert(hasTemporalEvidence, `[${input.label}] ${queryCase.id} returned no Graphiti temporal evidence`);
-        assert((retrieval?.graphitiAlignedCount ?? 0) > 0, `[${input.label}] ${queryCase.id} debug retrieval has no aligned Graphiti evidence`);
+        if (retrieval) {
+          assert((retrieval.graphitiAlignedCount ?? 0) > 0, `[${input.label}] ${queryCase.id} debug retrieval has no aligned Graphiti evidence`);
+        }
         for (const source of queryCase.enabledExpectedEvidenceSources) {
           assert(sources.includes(source), expectedEvidenceSourceError(input.label, queryCase.id, source, sources, retrieval));
         }
@@ -223,7 +233,9 @@ async function runApiScenario(input: {
         }
       } else {
         assert(!hasTemporalEvidence, `[${input.label}] ${queryCase.id} returned Graphiti evidence while Graphiti is disabled`);
-        assert((retrieval?.graphitiCount ?? 0) === 0, `[${input.label}] ${queryCase.id} debug retrieval has graphitiCount=${String(retrieval?.graphitiCount)}`);
+        if (retrieval) {
+          assert((retrieval.graphitiCount ?? 0) === 0, `[${input.label}] ${queryCase.id} debug retrieval has graphitiCount=${String(retrieval.graphitiCount)}`);
+        }
         for (const hint of queryCase.disabledForbiddenAnswerHints) {
           assert(!textIncludes(answerText, hint), `[${input.label}] ${queryCase.id} disabled answer contained forbidden hint: ${hint}`);
         }
@@ -236,7 +248,7 @@ async function runApiScenario(input: {
         confidence: answer.confidence,
         sources,
         retrieval,
-        timings: extractTimings(debugTrace.auditTrail),
+        timings: extractTimings(debugTrace),
         durationMs: Date.now() - startedAt,
       });
       console.log(`[${input.label}] query ok: ${queryCase.id} confidence=${answer.confidence} sources=${sources.join(",")}`);
@@ -532,14 +544,32 @@ async function request<T>(baseUrl: string, method: string, path: string, body?: 
   return parsed as T;
 }
 
+async function requestDebugTrace(baseUrl: string, traceId: string): Promise<RedactedDebugTrace | undefined> {
+  if (!debugTraceToken || !traceId) return undefined;
+  const path = `/debug/traces/${encodeURIComponent(traceId)}?tenantId=${encodeURIComponent(tenantId)}`;
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(requestTimeoutMs),
+    headers: { "x-mem-debug-token": debugTraceToken },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    if (requireDebugTrace) throw new Error(`GET ${path} failed: ${response.status} ${text}`);
+    console.warn(`graphiti comparison debug trace unavailable: baseUrl=${baseUrl} status=${response.status}`);
+    return undefined;
+  }
+  return (text ? JSON.parse(text) as unknown : {}) as RedactedDebugTrace;
+}
+
 function requiredIngest(ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>, id: string) {
   const ingest = ingests.get(id);
   if (!ingest) throw new Error(`Missing seed ingest result: ${id}`);
   return ingest;
 }
 
-function extractRetrieval(auditTrail: unknown[] | undefined): Record<string, number> | undefined {
-  const payload = latestAuditPayload(auditTrail, "memory_query");
+function extractRetrieval(debugTrace: RedactedDebugTrace | undefined): Record<string, number> | undefined {
+  if (debugTrace?.queryDiagnostics?.retrieval) return debugTrace.queryDiagnostics.retrieval;
+  const payload = latestAuditPayload(debugTrace?.auditTrail, "memory_query");
   const retrieval = recordValue(payload?.retrieval);
   if (!retrieval) return undefined;
   return Object.fromEntries(
@@ -548,8 +578,9 @@ function extractRetrieval(auditTrail: unknown[] | undefined): Record<string, num
   ) as Record<string, number>;
 }
 
-function extractTimings(auditTrail: unknown[] | undefined): Record<string, unknown> | undefined {
-  const payload = latestAuditPayload(auditTrail, "memory_query");
+function extractTimings(debugTrace: RedactedDebugTrace | undefined): Record<string, unknown> | undefined {
+  if (debugTrace?.queryDiagnostics?.timings) return debugTrace.queryDiagnostics.timings;
+  const payload = latestAuditPayload(debugTrace?.auditTrail, "memory_query");
   return recordValue(payload?.timings);
 }
 

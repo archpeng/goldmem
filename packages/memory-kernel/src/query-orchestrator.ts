@@ -10,7 +10,7 @@ import {
 import { appendProviderTimings, modelGatewayErrorPayload } from "./model-gateway-timings.js";
 import type { ElderMemoryKernelDeps, QueryMemoryInput } from "./index.js";
 import { applyElderSecretaryVoice, enforceQueryAnswerSafety, generateAnswerWithFallback } from "./query-answer.js";
-import { searchSemanticMemorySafely } from "./query-semantic.js";
+import { alignSemanticEvidence, searchSemanticMemorySafely } from "./query-semantic.js";
 import { alignTemporalEvidence, searchTemporalFactsSafely } from "./query-temporal-evidence.js";
 
 export class QueryOrchestrator {
@@ -66,6 +66,16 @@ export class QueryOrchestrator {
     timings.semanticSearchMs = Date.now() - semanticSearchStartedAt;
     appendProviderTimings(timings, this.deps.modelGateway);
 
+    const semanticAlignStartedAt = Date.now();
+    const alignedSemantic = await alignSemanticEvidence({
+      sourceStore: this.deps.sourceStore,
+      eventStore: this.deps.eventStore,
+      tenantId,
+      elderId: input.elderId,
+      semanticResults,
+    });
+    timings.semanticAlignMs = Date.now() - semanticAlignStartedAt;
+
     const temporalSearchStartedAt = Date.now();
     const temporalResults = await searchTemporalFactsSafely({
       temporalMemory: this.deps.temporalMemory,
@@ -89,18 +99,16 @@ export class QueryOrchestrator {
     timings.temporalAlignMs = Date.now() - temporalAlignStartedAt;
 
     const mergeEvidenceStartedAt = Date.now();
-    const evidence = mergeEvidence(structuredEvents, semanticResults, alignedTemporalResults, parsedQuery, input.query, now);
+    const evidence = mergeEvidence(structuredEvents, alignedSemantic.evidence, alignedTemporalResults, parsedQuery, input.query, now);
     timings.mergeEvidenceMs = Date.now() - mergeEvidenceStartedAt;
 
     const retrieval = {
       postgresCount: structuredEvents.length,
       semanticCount: semanticResults.length,
-      semanticMetadataCount: semanticResults.filter((result) => (
-        typeof result.metadata?.sourceId === "string" && typeof result.metadata.summary === "string"
-      )).length,
-      semanticUnlinkedCount: semanticResults.filter((result) => (
-        typeof result.metadata?.sourceId !== "string" || typeof result.metadata.summary !== "string"
-      )).length,
+      semanticCandidateLinkedCount: alignedSemantic.candidateLinkedCount,
+      semanticAlignedCount: alignedSemantic.alignedCount,
+      semanticUnalignedCount: alignedSemantic.unalignedCount,
+      semanticEvidenceCount: evidence.filter((item) => item.retrievalSource === "semantic").length,
       graphitiCount: temporalResults.length,
       graphitiAlignedCount: alignedTemporalResults.length,
       graphitiRawCount: temporalResults.filter((result) => result.origin === "graphiti_raw").length,

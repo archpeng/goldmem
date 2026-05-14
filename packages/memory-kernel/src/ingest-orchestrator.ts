@@ -58,8 +58,19 @@ export class IngestOrchestrator {
       timings.schemaValidationMs = Date.now() - schemaValidationStartedAt;
 
       const riskGuardStartedAt = Date.now();
-      const riskGuardedPlan = await this.deps.riskEngine.enforce(validatedPlan);
+      const riskGuarded = await this.deps.riskEngine.enforce({ plan: validatedPlan, source });
+      const riskGuardedPlan = riskGuarded.plan;
       timings.riskGuardMs = Date.now() - riskGuardStartedAt;
+      if (riskGuarded.repairs.length > 0) {
+        await this.deps.auditLog.record({
+          type: "risk_guardrail_repaired",
+          tenantId: source.tenantId,
+          elderId: source.elderId,
+          sourceId: source.id,
+          traceId,
+          payload: { traceId, repairs: riskGuarded.repairs },
+        });
+      }
 
       const permissionStartedAt = Date.now();
       const permissionedPlan = await this.deps.permissionEngine.applyDefaultVisibility(

@@ -1,4 +1,9 @@
-import type { DebugTrace, ElderProfile, ElderTurnResult, Feedback, IngestStatus, Reminder, TodaySnapshot } from "@mem/memory-schema";
+import type { ElderProfile, ElderTurnResult, Feedback, IngestStatus, Reminder, TodaySnapshot } from "@mem/memory-schema";
+
+export type RedactedDebugTrace = {
+  traceId: string;
+  [key: string]: unknown;
+};
 
 export type MvpLists = {
   reminders: Reminder[];
@@ -64,8 +69,8 @@ export async function confirmReminder(input: {
   });
 }
 
-export async function getDebugTrace(traceId: string): Promise<DebugTrace> {
-  return request<DebugTrace>(`/debug/traces/${encodeURIComponent(traceId)}`);
+export async function getDebugTrace(traceId: string): Promise<RedactedDebugTrace> {
+  return request<RedactedDebugTrace>(`/debug/traces/${encodeURIComponent(traceId)}`);
 }
 
 export async function getElderProfile(elderId: string): Promise<ElderProfile> {

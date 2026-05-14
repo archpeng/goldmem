@@ -1,10 +1,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ConfirmReminderRequestSchema,
   CreateFeedbackRequestSchema,
   CreateFamilyReminderRequestSchema,
+  type DebugTrace,
   ElderTurnRequestSchema,
   UpsertElderProfileRequestSchema,
 } from "@mem/memory-schema";
@@ -56,11 +58,76 @@ export type ApiServerDeps = {
   reminderStore: ReminderStore;
   elderProfileStore: ElderProfileStore;
   debugTraceStore?: DebugTraceStore;
+  debugApi?: {
+    token: string;
+  };
   healthCheck?: () => Promise<Record<string, unknown>>;
+};
+
+type RedactedDebugTraceDto = {
+  traceId: string;
+  source?: {
+    id: string;
+    tenantId: string;
+    elderId: string;
+    type: string;
+    createdAt: string;
+    localCreatedAt?: string;
+    asrConfidence?: number;
+    contentRedacted: true;
+    audioRedacted: boolean;
+    metadata?: {
+      language?: string;
+      appVersion?: string;
+      timezone?: string;
+      clientTurnId?: string;
+    };
+  };
+  planSummary?: RedactedMemoryPlanSummary;
+  guardrailSummary?: RedactedValueSummary;
+  postgresWriteSummary?: RedactedValueSummary;
+  semanticSummary?: RedactedValueSummary;
+  graphitiSummary?: RedactedValueSummary;
+  evidenceMergeSummary?: RedactedValueSummary;
+  finalAnswerSummary?: RedactedValueSummary;
+  queryDiagnostics?: {
+    retrieval?: Record<string, number>;
+    timings?: Record<string, unknown>;
+  };
+  auditTrail: RedactedAuditRecord[];
+};
+
+type RedactedMemoryPlanSummary = {
+  present: true;
+  eventCount?: number;
+  reminderCandidateCount?: number;
+  riskFlagCount?: number;
+  familyTaskCount?: number;
+  contextLinkCount?: number;
+  relationSignalCount?: number;
+  uncertaintyCount?: number;
+};
+
+type RedactedValueSummary = {
+  kind: "missing" | "object" | "array" | "string" | "number" | "boolean";
+  keyCount?: number;
+  itemCount?: number;
+};
+
+type RedactedAuditRecord = {
+  id: string;
+  tenantId: string;
+  elderId: string;
+  sourceId?: string;
+  traceId?: string;
+  type: string;
+  createdAt: string;
+  payloadSummary: RedactedValueSummary;
 };
 
 export function buildServer(deps: ApiServerDeps): FastifyInstance {
   const server = Fastify({ logger: true });
+  if (deps.debugApi) validateDebugApiToken(deps.debugApi.token);
 
   server.get("/health", async () => ({
     ok: true,
@@ -204,32 +271,7 @@ export function buildServer(deps: ApiServerDeps): FastifyInstance {
     return deps.kernel.createFamilyReminder(input);
   });
 
-  server.get("/debug/traces/:traceId", async (request, reply) => {
-    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
-    const params = request.params as { traceId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    const trace = await deps.debugTraceStore.getByTrace({ tenantId, traceId: params.traceId });
-    if (!trace) return reply.code(404).send({ message: "Trace not found" });
-    return trace;
-  });
-
-  server.get("/debug/sources/:sourceId", async (request, reply) => {
-    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
-    const params = request.params as { sourceId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    const trace = await deps.debugTraceStore.getBySource({ tenantId, sourceId: params.sourceId });
-    if (!trace) return reply.code(404).send({ message: "Trace not found" });
-    return trace;
-  });
-
-  server.get("/debug/queries/:auditId", async (request, reply) => {
-    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
-    const params = request.params as { auditId: string };
-    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
-    const trace = await deps.debugTraceStore.getByAuditId({ tenantId, auditId: params.auditId });
-    if (!trace) return reply.code(404).send({ message: "Trace not found" });
-    return trace;
-  });
+  if (deps.debugApi) registerDebugRoutes(server, deps, deps.debugApi.token);
 
   return server;
 }
@@ -248,6 +290,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     throw new Error("SEMANTIC_MEMORY_PROVIDER must be pgvector");
   }
   const temporalMemory = buildTemporalMemoryFromEnv();
+  const debugApi = buildDebugApiConfigFromEnv();
 
   const kernelDeps: ElderMemoryKernelDeps = {
     sourceStore: postgres.sourceStore,
@@ -278,6 +321,7 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
       reminderStore: postgres.reminderStore,
       elderProfileStore: postgres.elderProfileStore,
       debugTraceStore: postgres.debugTraceStore,
+      ...(debugApi ? { debugApi } : {}),
       healthCheck: async () => {
         await postgres.pool.query("select 1");
         const graphiti = await checkGraphitiHealth(temporalMemory);
@@ -301,6 +345,167 @@ export function buildKernelDepsFromEnv(): { deps: ApiServerDeps; close: () => Pr
     },
     close: postgres.close,
   };
+}
+
+function registerDebugRoutes(server: FastifyInstance, deps: ApiServerDeps, token: string): void {
+  server.get("/debug/traces/:traceId", async (request, reply) => {
+    if (!hasValidDebugToken(request.headers["x-mem-debug-token"], token)) {
+      return reply.code(403).send({ message: "Forbidden" });
+    }
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { traceId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getByTrace({ tenantId, traceId: params.traceId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return redactDebugTrace(trace);
+  });
+
+  server.get("/debug/sources/:sourceId", async (request, reply) => {
+    if (!hasValidDebugToken(request.headers["x-mem-debug-token"], token)) {
+      return reply.code(403).send({ message: "Forbidden" });
+    }
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { sourceId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getBySource({ tenantId, sourceId: params.sourceId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return redactDebugTrace(trace);
+  });
+
+  server.get("/debug/queries/:auditId", async (request, reply) => {
+    if (!hasValidDebugToken(request.headers["x-mem-debug-token"], token)) {
+      return reply.code(403).send({ message: "Forbidden" });
+    }
+    if (!deps.debugTraceStore) return reply.code(404).send({ message: "Debug trace store is not configured" });
+    const params = request.params as { auditId: string };
+    const tenantId = String((request.query as Record<string, unknown>).tenantId ?? "tenant-mvp");
+    const trace = await deps.debugTraceStore.getByAuditId({ tenantId, auditId: params.auditId });
+    if (!trace) return reply.code(404).send({ message: "Trace not found" });
+    return redactDebugTrace(trace);
+  });
+}
+
+function buildDebugApiConfigFromEnv(): ApiServerDeps["debugApi"] | undefined {
+  if (process.env.MEM_ENABLE_DEBUG_API !== "true") return undefined;
+  const token = process.env.MEM_DEBUG_API_TOKEN?.trim();
+  if (!token) throw new Error("MEM_DEBUG_API_TOKEN is required when MEM_ENABLE_DEBUG_API=true");
+  validateDebugApiToken(token);
+  return { token };
+}
+
+function validateDebugApiToken(token: string): void {
+  if (token.length < 16) {
+    throw new Error("MEM_DEBUG_API_TOKEN must be at least 16 characters when debug API is enabled");
+  }
+}
+
+function hasValidDebugToken(rawToken: string | string[] | undefined, expectedToken: string): boolean {
+  const token = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+  if (!token) return false;
+  const actual = Buffer.from(token);
+  const expected = Buffer.from(expectedToken);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function redactDebugTrace(trace: DebugTrace): RedactedDebugTraceDto {
+  return {
+    traceId: trace.traceId,
+    source: redactDebugSource(trace.source),
+    planSummary: summarizeMemoryPlan(trace.memoryPlan),
+    guardrailSummary: summarizeValue(trace.guardrails),
+    postgresWriteSummary: summarizeValue(trace.postgresWrites),
+    semanticSummary: summarizeValue(trace.semanticWritesOrCandidates),
+    graphitiSummary: summarizeValue(trace.graphitiEpisodesOrFacts),
+    evidenceMergeSummary: summarizeValue(trace.evidenceMerge),
+    finalAnswerSummary: summarizeValue(trace.finalAnswer),
+    queryDiagnostics: redactQueryDiagnostics(trace),
+    auditTrail: trace.auditTrail.map((record) => ({
+      id: record.id,
+      tenantId: record.tenantId,
+      elderId: record.elderId,
+      sourceId: record.sourceId,
+      traceId: record.traceId,
+      type: record.type,
+      createdAt: record.createdAt,
+      payloadSummary: summarizeValue(record.payload) ?? { kind: "missing" },
+    })),
+  };
+}
+
+function redactQueryDiagnostics(trace: DebugTrace): RedactedDebugTraceDto["queryDiagnostics"] | undefined {
+  const queryPayload = latestAuditPayload(trace, "memory_query");
+  const retrieval = numericRecord(readRecord(queryPayload?.retrieval));
+  const timings = readRecord(queryPayload?.timings);
+  if (!retrieval && Object.keys(timings).length === 0) return undefined;
+  return {
+    retrieval,
+    timings: Object.keys(timings).length > 0 ? timings : undefined,
+  };
+}
+
+function redactDebugSource(source: DebugTrace["source"]): RedactedDebugTraceDto["source"] | undefined {
+  if (!source) return undefined;
+  return {
+    id: source.id,
+    tenantId: source.tenantId,
+    elderId: source.elderId,
+    type: source.type,
+    createdAt: source.createdAt,
+    localCreatedAt: source.localCreatedAt,
+    asrConfidence: source.asrConfidence,
+    contentRedacted: true,
+    audioRedacted: Boolean(source.audioUrl),
+    metadata: source.metadata ? {
+      language: source.metadata.language,
+      appVersion: source.metadata.appVersion,
+      timezone: source.metadata.timezone,
+      clientTurnId: source.metadata.clientTurnId,
+    } : undefined,
+  };
+}
+
+function summarizeMemoryPlan(value: unknown): RedactedMemoryPlanSummary | undefined {
+  if (!value) return undefined;
+  const plan = readRecord(value);
+  return {
+    present: true,
+    eventCount: countArray(plan.events),
+    reminderCandidateCount: countArray(plan.reminderCandidates),
+    riskFlagCount: countArray(plan.riskFlags),
+    familyTaskCount: countArray(plan.familyTasks),
+    contextLinkCount: countArray(plan.contextLinks),
+    relationSignalCount: countArray(plan.relationEnrichmentSignals),
+    uncertaintyCount: countArray(plan.uncertainties),
+  };
+}
+
+function summarizeValue(value: unknown): RedactedValueSummary | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return { kind: "missing" };
+  if (Array.isArray(value)) return { kind: "array", itemCount: value.length };
+  if (typeof value === "object") return { kind: "object", keyCount: Object.keys(value).length };
+  if (typeof value === "string") return { kind: "string" };
+  if (typeof value === "number") return { kind: "number" };
+  if (typeof value === "boolean") return { kind: "boolean" };
+  return { kind: "missing" };
+}
+
+function countArray(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function latestAuditPayload(trace: DebugTrace, type: string): Record<string, unknown> | undefined {
+  const record = trace.auditTrail.filter((item) => item.type === type).at(-1);
+  return readRecord(record?.payload);
+}
+
+function numericRecord(value: Record<string, unknown>): Record<string, number> | undefined {
+  const entries = Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === "number");
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 export function buildTemporalMemoryFromEnv(): TemporalMemoryStore {
