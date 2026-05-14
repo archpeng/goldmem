@@ -313,7 +313,7 @@ async function ingestNote(baseUrl: string, elderId: string, transcript: string) 
   }>(baseUrl, "POST", "/elder/turn", {
     tenantId,
     elderId,
-    text: transcript,
+    text: `请记下：${transcript}`,
     clientTurnId: `graphiti-e2e-${elderId}-${Math.random().toString(36).slice(2)}`,
   });
   if (!turn.draft) throw new Error("Elder turn did not return draft for seed note");

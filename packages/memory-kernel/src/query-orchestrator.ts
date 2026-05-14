@@ -113,15 +113,7 @@ export class QueryOrchestrator {
       evidenceCount: evidence.length,
     };
     if (evidence.length === 0) {
-      const answer: MemoryAnswer = {
-        answerText: "我没有找到可以回答这件事的记忆。",
-        traceId,
-        confidence: 0,
-        matchedSources: [],
-        retrievedEvidence: [],
-        suggestedActions: [],
-        safetyNote: "没有找到可引用的来源依据。",
-      };
+      const answer = buildNoEvidenceAnswer(traceId);
 
       await this.deps.auditLog.record({
         type: "memory_query",
@@ -148,6 +140,20 @@ export class QueryOrchestrator {
     timings.answerGenerationMs = Date.now() - answerGenerationStartedAt;
     appendProviderTimings(timings, this.deps.modelGateway);
     timings.totalMs = Date.now() - startedAt;
+    if (isNoEvidenceAnswer(generatedAnswer)) {
+      const answer = buildNoEvidenceAnswer(traceId);
+
+      await this.deps.auditLog.record({
+        type: "memory_query",
+        tenantId,
+        elderId: input.elderId,
+        traceId,
+        payload: { traceId, query: input.query, parsedQuery, evidence, retrieval, answer, noEvidence: true, failureType: "answer_declined_evidence", timings },
+      });
+
+      return answer;
+    }
+
     const safetyCheckedAnswer = enforceQueryAnswerSafety(generatedAnswer, evidence, parsedQuery);
     const answer: MemoryAnswer = applyElderSecretaryVoice({
       ...safetyCheckedAnswer,
@@ -186,4 +192,22 @@ export class QueryOrchestrator {
     }
   }
 
+}
+
+function buildNoEvidenceAnswer(traceId: string): MemoryAnswer {
+  return {
+    answerText: "我没有找到可以回答这件事的记忆。",
+    traceId,
+    confidence: 0,
+    matchedSources: [],
+    retrievedEvidence: [],
+    suggestedActions: [],
+    safetyNote: "没有找到可引用的来源依据。",
+  };
+}
+
+function isNoEvidenceAnswer(answer: MemoryAnswer): boolean {
+  if (answer.confidence > 0.4) return false;
+  if (/但是|但我找到了|但有|不过我找到了|however|but/i.test(answer.answerText)) return false;
+  return /没有找到|没找到|未找到|没有记录|没有相关|not find|not found/i.test(answer.answerText);
 }

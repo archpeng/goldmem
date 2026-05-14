@@ -23,7 +23,7 @@
     "e2e:p0": "bash -lc 'set -a; source .env; set +a; GOLDEN_E2E_API_MODEL=${GOLDEN_E2E_API_MODEL:-${OPENAI_MODEL:-deepseek-v4-flash}} GOLDEN_E2E_FIXTURE=e2e/golden-capability-boundary.json GOLDEN_E2E_GRAPHITI_MODE=required tsx scripts/golden-e2e.ts'",
     "e2e:actions": "GOLDEN_E2E_FIXTURE=e2e/golden-action-obligations.json GOLDEN_E2E_GRAPHITI_MODE=optional tsx scripts/golden-e2e.ts",
     "e2e:context": "GOLDEN_E2E_FIXTURE=e2e/golden-context-links.json GOLDEN_E2E_GRAPHITI_MODE=required tsx scripts/golden-e2e.ts",
-    "e2e:graphiti": "GOLDEN_E2E_FIXTURE=e2e/golden-graphiti.json GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts",
+    "e2e:graphiti": "bash -lc 'set -a; source .env; set +a; GOLDEN_E2E_FIXTURE=e2e/golden-graphiti.json GOLDEN_E2E_API_MODEL=${GOLDEN_E2E_API_MODEL:-${OPENAI_MODEL:-deepseek-v4-flash}} GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts'",
     "e2e:graphiti:compare": "GRAPHITI_E2E_FIXTURE=e2e/golden-graphiti-core.json tsx scripts/graphiti-comparison-e2e.ts",
     "e2e:graphiti:density": "GRAPHITI_E2E_FIXTURE=e2e/golden-graphiti-density.json tsx scripts/graphiti-comparison-e2e.ts",
     "e2e:relation": "GOLDEN_E2E_FIXTURE=e2e/golden-relation-enrichment.json GOLDEN_E2E_GRAPHITI_MODE=required GRAPHITI_REQUIRED_IN_PRODUCTION=true tsx scripts/golden-e2e.ts",

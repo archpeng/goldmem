@@ -9,6 +9,7 @@ export class SemanticIndexer {
     const memory = [
       `Title: ${event.title}`,
       `Summary: ${event.summary}`,
+      `Time: ${event.timeText}`,
       `Type: ${event.type}`,
       `Risk: ${event.riskLevel}`,
       `Source: ${event.sourceId}`,
@@ -21,6 +22,7 @@ export class SemanticIndexer {
       eventType: event.type,
       title: event.title,
       summary: event.summary,
+      timeText: event.timeText,
       createdAt: event.createdAt,
       riskLevel: event.riskLevel,
       requiresConfirmation: event.requiresConfirmation,

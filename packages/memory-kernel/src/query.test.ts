@@ -128,7 +128,7 @@ describe("ElderMemoryKernel query", () => {
     });
 
     expect(answer.matchedSources).toEqual([
-      expect.objectContaining({ sourceId: "source-shopping", summary: "你买了青菜。" }),
+      expect.objectContaining({ sourceId: "source-shopping", summary: expect.stringContaining("你买了青菜。") }),
     ]);
     expect(JSON.stringify(answer)).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
     expect(answer.matchedSources.some((source) => source.sourceId === "source-hallucinated")).toBe(false);
@@ -164,7 +164,7 @@ describe("ElderMemoryKernel query", () => {
 
     expect(answer.answerText).toContain("你买了青菜");
     expect(answer.matchedSources).toEqual([
-      expect.objectContaining({ sourceId: "source-shopping", summary: "你买了青菜。" }),
+      expect.objectContaining({ sourceId: "source-shopping", summary: expect.stringContaining("你买了青菜。") }),
     ]);
     expect(JSON.stringify(answer)).not.toMatch(ELDER_THIRD_PERSON_PATTERN);
     expect(harness.audit.records.some((record) => record.type === "memory_query_answer_generation_failed")).toBe(true);
@@ -394,6 +394,63 @@ describe("ElderMemoryKernel query", () => {
     });
   });
 
+  it("does not expose broad recall candidates when the answer model declines them as no evidence", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.eventStore.searchResults = [
+      memoryEvent({
+        id: "event-unrelated",
+        sourceId: "source-unrelated",
+        summary: "有人以办理补贴为名要求提供验证码。",
+        riskLevel: "fraud_risk",
+      }),
+    ];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      requiresTemporalEvidence: false,
+      relationQueryIntent: "none",
+      eventTypes: ["general"],
+      safetyTags: [],
+      entities: [{ type: "unknown", name: "屋顶安装太阳能板", confidence: 0.5 }],
+    };
+    harness.model.answer = {
+      answerText: "我没有找到可以回答这件事的记忆。",
+      confidence: 0.3,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "请查一下记忆：我有没有说过要在屋顶安装太阳能板？",
+      now,
+      traceId: "trace-query-answer-declined-evidence",
+    });
+
+    expect(harness.model.answerCalls).toBe(1);
+    expect(answer.confidence).toBe(0);
+    expect(answer.matchedSources).toEqual([]);
+    expect(answer.retrievedEvidence).toEqual([]);
+    expect(answer.safetyNote).toContain("没有找到可引用的来源依据");
+    expect(harness.audit.records.at(-1)).toMatchObject({
+      traceId: "trace-query-answer-declined-evidence",
+      payload: expect.objectContaining({
+        failureType: "answer_declined_evidence",
+        noEvidence: true,
+        evidence: expect.arrayContaining([
+          expect.objectContaining({ sourceId: "source-unrelated" }),
+        ]),
+        answer: expect.objectContaining({
+          confidence: 0,
+          retrievedEvidence: [],
+          matchedSources: [],
+        }),
+      }),
+    });
+  });
+
   it("uses event type as a ranking signal instead of a hard recall filter", async () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     harness.eventStore.searchResults = [
@@ -450,7 +507,7 @@ describe("ElderMemoryKernel query", () => {
       expect.arrayContaining([
         expect.objectContaining({
           eventId: "event-city-shopping",
-          summary: "你说上午去一趟城里，想买生活用品，比如牙膏。",
+          summary: expect.stringContaining("你说上午去一趟城里，想买生活用品，比如牙膏。"),
         }),
       ]),
     );

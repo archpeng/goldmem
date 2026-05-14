@@ -41,7 +41,7 @@ export function mergeEvidence(
     sourceId: event.sourceId,
     eventId: event.id,
     createdAt: event.createdAt,
-    summary: event.summary,
+    summary: buildEventEvidenceSummary(event),
     score: scoreStructuredEvent(event, parsedQuery, query),
     canPlayAudio: true,
     retrievalSource: "postgres",
@@ -57,7 +57,7 @@ export function mergeEvidence(
         sourceId: result.metadata.sourceId,
         eventId: typeof result.metadata.eventId === "string" ? result.metadata.eventId : undefined,
         createdAt: typeof result.metadata.createdAt === "string" ? result.metadata.createdAt : new Date().toISOString(),
-        summary: result.metadata.summary,
+        summary: buildSemanticEvidenceSummary(result.metadata),
         score: result.score ?? 0.5,
         canPlayAudio: true,
         retrievalSource: "semantic" as const,
@@ -92,6 +92,43 @@ export function mergeEvidence(
   return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence, ...temporalEvidence], {
     preserveRawGraphiti: shouldSearchTemporalMemory(query, parsedQuery),
   });
+}
+
+function buildEventEvidenceSummary(event: MemoryEvent): string {
+  return compactEvidenceSummary([
+    event.title,
+    event.summary,
+    informativeTimeText(event.timeText) ? `Time: ${event.timeText}` : undefined,
+  ]);
+}
+
+function buildSemanticEvidenceSummary(metadata: Record<string, unknown>): string {
+  return compactEvidenceSummary([
+    stringValue(metadata.title),
+    stringValue(metadata.summary),
+    informativeTimeText(stringValue(metadata.timeText)) ? `Time: ${stringValue(metadata.timeText)}` : undefined,
+  ]);
+}
+
+function compactEvidenceSummary(parts: Array<string | undefined>): string {
+  const seen = new Set<string>();
+  const compacted: string[] = [];
+  for (const part of parts) {
+    const value = part?.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    compacted.push(value);
+  }
+  return compacted.join(" ");
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function informativeTimeText(value: string | undefined): value is string {
+  if (!value) return false;
+  return !/未提到时间|没有时间|no time/i.test(value);
 }
 
 function parseEventType(value: unknown): MemoryEvent["type"] | undefined {
