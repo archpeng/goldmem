@@ -14,7 +14,7 @@ services:
       - "6379:6379"
 
   graphiti-neo4j:
-    image: neo4j:5.26.4
+    image: ${GRAPHITI_NEO4J_IMAGE:-neo4j:5.26.4}
     profiles: ["graphiti"]
     environment:
       NEO4J_AUTH: neo4j/graphitimem
@@ -60,7 +60,7 @@ services:
       - "8890:8000"
 
   graphiti-worker:
-    image: node:25-alpine
+    image: ${GRAPHITI_WORKER_IMAGE:-node:25-alpine}
     profiles: ["graphiti"]
     working_dir: /app
     depends_on:

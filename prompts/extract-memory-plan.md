@@ -88,6 +88,15 @@ Allowed `visibility` values only:
 - `shared_full`
 - `family_required`
 
+Allowed `entity.type` values only:
+
+- `person`
+- `place`
+- `medicine`
+- `object`
+- `organization`
+- `unknown`
+
 Each event must include:
 
 - `type`
@@ -102,6 +111,13 @@ Each event must include:
 - `requiresConfirmation`
 - `visibility`
 - `evidence`
+
+Each entity must include:
+
+- `type`
+- `name`
+- `aliases`
+- `confidence`
 
 Each reminder candidate must include:
 

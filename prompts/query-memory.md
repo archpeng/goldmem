@@ -23,3 +23,4 @@ Examples:
 6. Use safetyTags only for structured safety domains: medical, medication, financial, fraud, identity, privacy.
 7. Set `requiresTemporalEvidence` true only when the query needs long-term relationship evidence, such as "后来改了吗", "哪个说法有效", "和哪件旧事有关", "风险是否演化", "是否形成长期趋势", or "谁确认过".
 8. Set `relationQueryIntent` to one of: none, temporal_change, conflict_resolution, same_matter_link, safety_chain, caregiver_context, long_term_pattern. Use none for simple lookup, today's tasks, or one-time reminders.
+9. Use only these `eventTypes` values: health, medication, appointment, family, shopping, finance, place, object, general. Never output synonyms such as purchase, meal, transport, or reminder as event types.

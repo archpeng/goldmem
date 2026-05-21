@@ -5,6 +5,7 @@ const elderId = process.env.MVP_ELDER_ID ?? `mvp-smoke-${Date.now()}`;
 const actorUserId = process.env.MVP_ACTOR_USER_ID ?? elderId;
 
 await request("GET", "/health");
+const baselineJobs = await readMemoryProcessingJobStats();
 
 const ingestTurn = await request("POST", "/elder/turn", {
   elderId,
@@ -14,7 +15,7 @@ const draft = (ingestTurn as Json).draft as Json | undefined;
 if (!draft?.sourceId) throw new Error("draft.sourceId is required");
 const ingest = await waitForIngestReady(String(draft.sourceId));
 console.log("ingest", pick(ingest, ["sourceId", "summary", "status"]));
-await waitForMemoryProcessingIdle();
+await waitForMemoryProcessingIdle(baselineJobs);
 
 const reminders = await request("GET", `/elder/reminders?elderId=${encodeURIComponent(elderId)}`) as Json[];
 console.log("reminders", reminders.length);
@@ -69,15 +70,48 @@ async function waitForIngestReady(sourceId: string): Promise<Json> {
   throw new Error(`ingest did not become ready: ${sourceId}`);
 }
 
-async function waitForMemoryProcessingIdle(): Promise<void> {
+type MemoryProcessingJobStats = {
+  pending: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  dead: number;
+};
+
+async function readMemoryProcessingJobStats(): Promise<MemoryProcessingJobStats> {
+  const health = await request("GET", "/health") as Json;
+  return normalizeMemoryProcessingJobStats(health.memoryProcessingJobs);
+}
+
+async function waitForMemoryProcessingIdle(baseline: MemoryProcessingJobStats): Promise<void> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const health = await request("GET", "/health") as Json;
-    const stats = health.memoryProcessingJobs as Json | undefined;
-    if (!stats) return;
-    const active = Number(stats.pending ?? 0) + Number(stats.running ?? 0) + Number(stats.failed ?? 0);
-    if (Number(stats.dead ?? 0) > 0) throw new Error(`memory processing jobs dead: ${JSON.stringify(stats)}`);
+    const stats = await readMemoryProcessingJobStats();
+    const active = countNewJobs(stats, baseline, "pending") +
+      countNewJobs(stats, baseline, "running") +
+      countNewJobs(stats, baseline, "failed");
+    const dead = countNewJobs(stats, baseline, "dead");
+    if (dead > 0) throw new Error(`memory processing jobs dead: ${JSON.stringify(stats)}`);
     if (active === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error("memory processing jobs did not become idle");
+}
+
+function normalizeMemoryProcessingJobStats(value: unknown): MemoryProcessingJobStats {
+  const stats = (value ?? {}) as Json;
+  return {
+    pending: Number(stats.pending ?? 0),
+    running: Number(stats.running ?? 0),
+    succeeded: Number(stats.succeeded ?? 0),
+    failed: Number(stats.failed ?? 0),
+    dead: Number(stats.dead ?? 0),
+  };
+}
+
+function countNewJobs(
+  current: MemoryProcessingJobStats,
+  baseline: MemoryProcessingJobStats,
+  key: keyof MemoryProcessingJobStats,
+): number {
+  return Math.max(0, current[key] - baseline[key]);
 }

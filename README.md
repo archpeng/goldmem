@@ -110,6 +110,9 @@ pnpm mvp:smoke
 - a populated `.env`
 - a running local API server for `pnpm mvp:smoke`
 - PostgreSQL and Graphiti availability, which the helper scripts will start or validate as needed
+- if Docker Hub is flaky, you can override `GRAPHITI_NEO4J_IMAGE` or set `GRAPHITI_NEO4J_IMAGE_FALLBACK` to a mirror image; `pnpm test:graphiti` will retry pulls before failing
+- `pnpm test:graphiti` starts the local compose Graphiti stack by default; set `GRAPHITI_TEST_USE_EXISTING=true` only when you deliberately want to validate an already-running external Graphiti service
+- if your normal `DATABASE_URL` points at a different database, set `GRAPHITI_TEST_DATABASE_URL` to control which Postgres instance `pnpm test:graphiti` should validate; localhost Graphiti defaults to `postgres://mem:mem@localhost:5432/mem`
 
 If you want only one real dependency check:
 
