@@ -2,33 +2,21 @@ import type { GenerateMemoryPlanInput } from "../index.js";
 import {
   arrayValue,
   asRecord,
-  booleanValue,
   CONTEXT_LINK_STATUSES,
   CONTEXT_LINK_TYPES,
   elderSecretaryText,
-  ENTITY_TYPES,
   enumValue,
   EVENT_ACTIONS,
-  EVENT_TYPES,
   FAMILY_TASK_TYPES,
-  inferEntityType,
-  inferEventType,
-  inferRequiresConfirmation,
-  inferRequiresFamilyReview,
-  inferRiskLevel,
-  inferRiskType,
-  inferSeverity,
   integerValue,
   isRecord,
   MEMORY_UPDATE_OPERATIONS,
   MEMORY_UPDATE_TARGETS,
   numberValue,
+  optionalBooleanValue,
   optionalIso,
   optionalString,
   RELATION_ENRICHMENT_INTENTS,
-  RISK_LEVELS,
-  RISK_TYPES,
-  SEVERITIES,
   stringValue,
   UNCERTAINTY_ACTIONS,
   URGENCIES,
@@ -116,11 +104,10 @@ function normalizeEventDraft(raw: unknown, input: GenerateMemoryPlanInput): Json
   const record = typeof raw === "string" ? { summary: raw, title: raw } : asRecord(raw);
   const summary = secretaryText(record.summary, stringValue(record.title, input.transcript.slice(0, 240)));
   const title = secretaryText(record.title, summary.slice(0, 80) || "Memory note");
-  const textForInference = `${title} ${summary} ${input.transcript}`;
 
   return {
     ...record,
-    type: enumValue(record.type, EVENT_TYPES, inferEventType(textForInference)),
+    type: optionalString(record.type),
     title,
     summary,
     timeText: optionalString(record.timeText),
@@ -130,8 +117,8 @@ function normalizeEventDraft(raw: unknown, input: GenerateMemoryPlanInput): Json
     entities: arrayValue(record.entities).map(normalizeEntity).filter(isRecord),
     importance: numberValue(record.importance, 0.5),
     confidence: numberValue(record.confidence, 0.5),
-    riskLevel: enumValue(record.riskLevel, RISK_LEVELS, inferRiskLevel(textForInference)),
-    requiresConfirmation: booleanValue(record.requiresConfirmation, inferRequiresConfirmation(textForInference)),
+    riskLevel: optionalString(record.riskLevel),
+    requiresConfirmation: optionalBooleanValue(record.requiresConfirmation),
     visibility: enumValue(record.visibility, VISIBILITIES, "private"),
     evidence: normalizeEvidenceRefs(record.evidence, input, true),
   };
@@ -152,7 +139,7 @@ function normalizeReminderDraft(raw: unknown, eventCount: number): JsonRecord | 
     remindAt: optionalIso(record.remindAt),
     timeConfidence: numberValue(record.timeConfidence, 0.5),
     relatedEventIndex: relatedEventIndex !== undefined && relatedEventIndex < eventCount ? relatedEventIndex : undefined,
-    confirmationRequired: booleanValue(record.confirmationRequired, true),
+    confirmationRequired: optionalBooleanValue(record.confirmationRequired),
     suggestedConfirmers: arrayValue(record.suggestedConfirmers).map(normalizeSuggestedConfirmer).filter(isRecord),
     confidence: numberValue(record.confidence, 0.5),
     reason: secretaryText(record.reason, "Reminder candidate extracted from note."),
@@ -163,17 +150,16 @@ function normalizeRiskFlag(raw: unknown, input: GenerateMemoryPlanInput): JsonRe
   const record = typeof raw === "string" ? { summary: raw, reason: raw } : asRecord(raw);
   const summary = secretaryText(record.summary, stringValue(record.reason, ""));
   if (!summary) return undefined;
-  const textForInference = `${summary} ${stringValue(record.reason, "")}`;
   const evidence = normalizeEvidenceRefs(record.evidence, input, false);
 
   return {
     ...record,
-    type: enumValue(record.type, RISK_TYPES, inferRiskType(textForInference)),
-    severity: enumValue(record.severity, SEVERITIES, inferSeverity(textForInference)),
+    type: optionalString(record.type),
+    severity: optionalString(record.severity),
     summary,
     reason: secretaryText(record.reason, summary),
-    requiresFamilyReview: booleanValue(record.requiresFamilyReview, inferRequiresFamilyReview(textForInference)),
-    requiresHumanConfirmation: booleanValue(record.requiresHumanConfirmation, true),
+    requiresFamilyReview: optionalBooleanValue(record.requiresFamilyReview),
+    requiresHumanConfirmation: optionalBooleanValue(record.requiresHumanConfirmation),
     evidence: evidence.length > 0 ? evidence : [sourceEvidence(input)],
   };
 }
@@ -260,7 +246,7 @@ function normalizeEntity(raw: unknown): JsonRecord | undefined {
 
   return {
     ...record,
-    type: enumValue(record.type, ENTITY_TYPES, inferEntityType(name)),
+    type: optionalString(record.type),
     name,
     aliases: arrayValue(record.aliases).map((alias) => stringValue(alias, "")).filter(Boolean),
     confidence: numberValue(record.confidence, 0.5),

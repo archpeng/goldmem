@@ -150,16 +150,21 @@ describe("model-gateway normalization", () => {
       {
         summary: "陌生人索要验证码。",
         events: [{
+          type: "finance",
           title: "疑似诈骗",
           summary: "陌生人索要验证码。",
           timeText: "刚才",
           confidence: 0.8,
+          riskLevel: "fraud_risk",
+          requiresConfirmation: true,
           evidence: ["陌生人索要验证码"],
         }],
         riskFlags: [{
           type: "fraud_suspected",
           severity: "high",
           summary: "陌生人索要验证码。",
+          requiresFamilyReview: true,
+          requiresHumanConfirmation: true,
           evidence: [],
         }],
       },
@@ -178,10 +183,13 @@ describe("model-gateway normalization", () => {
       {
         summary: "你要去社区医院复查。",
         events: [{
+          type: "appointment",
           title: "社区医院复查",
           summary: "用户下周三下午三点要去社区医院复查血压。",
           timeText: "下周三下午三点",
           confidence: 0.8,
+          riskLevel: "medical",
+          requiresConfirmation: true,
           evidence: ["下周三下午三点要去社区医院复查血压"],
         }],
         reminderCandidates: [{
@@ -219,10 +227,13 @@ describe("model-gateway normalization", () => {
       {
         summary: "用户说今天要去买青菜。",
         events: [{
+          type: "shopping",
           title: "用户买青菜",
           summary: "用户提到今天要去买青菜。",
           timeText: "今天",
           confidence: 0.8,
+          riskLevel: "normal",
+          requiresConfirmation: true,
           evidence: ["今天要去买青菜"],
         }],
         reminderCandidates: [{
@@ -260,10 +271,13 @@ describe("model-gateway normalization", () => {
       {
         summary: "社区医院复查改期。",
         events: [{
+          type: "appointment",
           title: "社区医院复查改期",
           summary: "社区医院复查改到下周一上午九点。",
           timeText: "下周一上午九点",
           confidence: 0.8,
+          riskLevel: "medical",
+          requiresConfirmation: true,
           evidence: ["改到下周一上午九点"],
         }],
         eventActionDecisions: [{
@@ -319,6 +333,77 @@ describe("model-gateway normalization", () => {
           relatedEventIndexes: [],
           reason: "缺少 evidence。",
           evidence: [],
+        }],
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(() => MemoryPlanSchema.parse(normalized)).toThrow();
+  });
+
+  it("fails schema validation when event type and risk fields are missing", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "你买了青菜。",
+        events: [{
+          title: "买青菜",
+          summary: "你买了青菜。",
+          timeText: "今天",
+          confidence: 0.8,
+          evidence: ["今天买了青菜"],
+        }],
+        modelInfo: { provider: "test", model: "test", promptVersion: "test" },
+        confidence: 0.8,
+      },
+      planInput(),
+      "test-model",
+      "test-prompt",
+    );
+
+    expect(() => MemoryPlanSchema.parse(normalized)).toThrow();
+  });
+
+  it("fails schema validation when query intent is missing instead of inferring it from keywords", () => {
+    const normalized = normalizeParsedMemoryQueryResult(
+      {
+        relationQueryIntent: "none",
+        eventTypes: [],
+        safetyTags: [],
+        requiresSourceEvidence: true,
+      },
+      {
+        tenantId: "tenant-mvp",
+        elderId: "elder-1",
+        query: "我买了什么？",
+        now: "2026-05-09T12:00:00.000Z",
+        context: emptyContext(),
+      },
+    );
+
+    expect(() => ParsedMemoryQuerySchema.parse(normalized)).toThrow();
+  });
+
+  it("fails schema validation when risk flags omit family review decisions", () => {
+    const normalized = normalizeMemoryPlanResult(
+      {
+        summary: "陌生人索要验证码。",
+        events: [{
+          type: "finance",
+          title: "疑似诈骗",
+          summary: "陌生人索要验证码。",
+          timeText: "刚才",
+          confidence: 0.8,
+          riskLevel: "fraud_risk",
+          requiresConfirmation: true,
+          evidence: ["陌生人索要验证码"],
+        }],
+        riskFlags: [{
+          type: "fraud_suspected",
+          severity: "high",
+          summary: "陌生人索要验证码。",
+          evidence: ["陌生人索要验证码"],
         }],
       },
       planInput(),

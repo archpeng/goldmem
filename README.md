@@ -1,231 +1,131 @@
 # mem
 
-mem is a user-first memory and reminder system. The product surface is simple: voice memo, reminder, recall, and family confirmation. The core asset is the **Memory Kernel**: a model-driven, guardrail-constrained memory layer that turns raw voice/text into structured life events, reminder candidates, risk flags, family tasks, and long-term memory writes.
+mem is a user-first memory and reminder MVP. The current product surface is deliberately narrow: a Chinese-first Web MVP, a Fastify API, a deterministic Memory Kernel, PostgreSQL truth records, pgvector semantic recall, and Graphiti-backed temporal evidence.
 
-## Product thesis
-
-mem is not only an AI notes app. It is a family-level memory service for users and families.
+The core rule is unchanged:
 
 ```text
-User voice/text
-  -> source evidence
-  -> structured memory event
-  -> reminder candidate
-  -> risk flag
-  -> family confirmation task
-  -> memory recall index
-  -> query recall
-  -> feedback/eval loop
+Models understand.
+Kernel constrains.
+PostgreSQL owns truth.
+Semantic / Graphiti recall propose evidence.
+Answers stay evidence-bound.
 ```
 
-## Architecture principles
+`README.md` is the active repo summary. The fuller current-state explanation lives in [docs/current-capabilities-and-architecture.md](docs/current-capabilities-and-architecture.md).
 
-1. **LLM understands; Kernel constrains.** Models produce a `MemoryPlan`; deterministic code validates, guards, and applies it.
-2. **PostgreSQL is the truth source.** Original source, event state, reminders, permissions, risk records, and audit logs are not delegated to memory frameworks.
-3. **Semantic recall index is fast candidate retrieval, not truth.** Pgvector stores PostgreSQL-derived canonical summaries and returns recall candidates.
-4. **Graphiti is the long-term relational memory path.** Its local Neo4j backing service is Graphiti infrastructure; mem still gates every answer and business action through the Kernel.
-5. **Failures become eval data, not ad-hoc rules.** Case-by-case mistakes are collected into evaluation cases and prompt/model improvements.
-
-## Repository layout
+## Repository Layout
 
 ```text
 apps/
-  elder-android/        # placeholder for user mobile client
-  family-web/           # placeholder for family web/miniprogram client
-  admin-web/            # placeholder for internal console
+  web-mvp/              # Chinese-first React single-page MVP
 services/
-  api-server/           # HTTP API shell
-  worker-service/       # async ingest/query jobs shell
-  reminder-service/     # reminder delivery shell
-  eval-runner/          # eval runner shell
+  api-server/           # Fastify HTTP adapter and local runtime bootstrap
+  graphiti-sidecar/     # FastAPI sidecar for Graphiti + provenance readback
 packages/
-  memory-schema/        # Zod schemas and shared domain types
-  memory-kernel/        # Memory Kernel orchestration
-  model-gateway/        # LLM/ASR abstraction
-  memory-store/         # PostgreSQL truth store and pgvector semantic recall index
-  reminder-engine/      # deterministic reminder state machine
-  risk-engine/          # hard risk guardrails
-  permission-engine/    # visibility and family sharing guardrails
-  shared-types/         # shared primitives
-prompts/                # prompt contracts
-infra/                  # docker-compose and local infra placeholders
-docs/                   # architecture and design docs
-evals/                  # eval case folders
+  memory-schema/        # Zod contracts and shared domain types
+  memory-kernel/        # Ingest/query orchestration and audit
+  memory-store/         # PostgreSQL truth store and pgvector recall store
+  model-gateway/        # OpenAI-compatible model boundary
+  permission-engine/    # Deterministic visibility rules
+  reminder-engine/      # Reminder confirmation/state transitions
+  risk-engine/          # Deterministic safety guardrails
+  temporal-memory/      # Graphiti-targeted temporal memory adapter
+prompts/                # Prompt contracts
+scripts/                # Verification, smoke, and E2E helpers
+docs/                   # Current architecture, roadmap, and debt registers
+e2e/                    # Golden fixtures
 ```
 
-## First milestone
+Broad-file debt that is intentionally allowlisted is tracked in [docs/ai-coder-debt-register.md](docs/ai-coder-debt-register.md).
 
-The first milestone is text-only ingestion:
-
-```text
-input transcript
-  -> build MemoryPlan
-  -> validate schema
-  -> enforce risk/permission guardrails
-  -> create events and reminder candidates
-  -> write recall memory
-  -> return user-facing cards
-```
-
-Then add ASR/audio, reminder scheduling, fuzzy recall hardening, family confirmation, Graphiti-backed long-term relationship evidence, and eval-driven consolidation.
-
-## Development
-
-This repo is initialized as a pnpm TypeScript monorepo.
+## Quickstart
 
 ```bash
 pnpm install
-pnpm typecheck
-```
-
-## MVP Quickstart
-
-The MVP is text-first: local PostgreSQL, Fastify API, OpenAI model gateway, deterministic Kernel guardrails, and PostgreSQL truth records.
-
-1. Install dependencies.
-
-```bash
-pnpm install
-```
-
-2. Create local environment.
-
-```bash
 cp .env.example .env
 ```
 
 Set `OPENAI_API_KEY` in `.env`.
 
-3. Start local PostgreSQL.
+Start PostgreSQL:
 
 ```bash
 set -a
 source .env
 set +a
 docker compose -f infra/docker-compose.yml up -d postgres
-```
-
-4. Apply migrations.
-
-```bash
-set -a
-source .env
-set +a
 pnpm db:migrate
 ```
 
-5. Start the API server.
+Start the API server:
 
 ```bash
 pnpm dev:api:env
 ```
 
-6. Start the Web MVP in another terminal.
+Start the Web MVP in another terminal:
 
 ```bash
 pnpm dev:web
 ```
 
-Open `http://localhost:5173` and use the single-page MVP console to save a memory, confirm reminders, ask a recall question, and review family tasks.
+Open `http://localhost:5173`.
 
-7. Run the MVP smoke flow in another terminal.
+## Verification
+
+Fast local gate without real service dependencies:
 
 ```bash
-set -a
-source .env
-set +a
-pnpm mvp:smoke
+pnpm verify:fast
 ```
 
-The smoke flow calls health, text ingest, reminder list/confirm, and recall query.
+This runs:
 
-## Local Semantic Recall
-
-Semantic recall is backed by pgvector in the main PostgreSQL database. PostgreSQL remains truth; the `semantic_memories` table is a rebuildable index of PostgreSQL-derived summaries and embeddings.
-
-Rebuild the semantic recall index from PostgreSQL truth records when needed.
-
-```bash
-set -a
-source .env
-set +a
-pnpm semantic:rebuild
-```
-
-Restart the API server after changing model or embedding settings.
-
-## Local Graphiti
-
-Graphiti is exposed to mem through a small local sidecar that wraps `graphiti-core` with the REST contract used by `@mem/temporal-memory`. The default local backend is Neo4j 5.26+.
-
-1. Set `OPENAI_API_KEY` and keep `GRAPHITI_BASE_URL=http://localhost:8890` in `.env`.
-
-2. Start Graphiti with the existing local stack.
-
-```bash
-set -a
-source .env
-set +a
-docker compose -f infra/docker-compose.yml --profile graphiti up -d graphiti-neo4j graphiti-sidecar
-```
-
-The sidecar is available at `http://localhost:8890/health`; Graphiti Neo4j Browser is exposed at `http://localhost:7475` and Bolt at `localhost:7688`. In `.env`, `GRAPHITI_NEO4J_URI` is the host-facing Bolt URL and `GRAPHITI_SIDECAR_NEO4J_URI` is the container-internal URL.
-
-3. Verify direct Graphiti write/search.
-
-```bash
-set -a
-source .env
-set +a
-pnpm graphiti:smoke
-```
-
-4. For production-style Graphiti E2E, start PostgreSQL and Graphiti, run migrations, start the API server, then run:
-
-```bash
-set -a
-source .env
-set +a
-pnpm e2e:graphiti
-```
-
-For the context-link golden fixture, keep Graphiti enabled so temporal evidence can participate in relationship and disambiguation queries:
-
-```bash
-set -a
-source .env
-set +a
-pnpm --filter @mem/api-server dev
-pnpm e2e:context
-```
-
-`pnpm e2e:context` now fails fast unless the API reports `graphiti: "ok"`.
-
-## MVP Verification
-
-Run the local non-network verification suite:
-
-```bash
-pnpm mvp:verify
-```
-
-This runs typecheck, unit tests, real PostgreSQL readback, Graphiti readback, build, lint, eval fixtures, and architecture checks. The Graphiti readback gate requires a healthy local Graphiti sidecar and its provenance PostgreSQL path; the helper will start the local compose Graphiti profile when `GRAPHITI_BASE_URL` is not already set.
-
-Architecture constraints can also be checked directly:
-
-```bash
+```text
+pnpm typecheck
+pnpm test
+pnpm build
 pnpm architecture:check
 ```
 
-## Golden E2E
+Important: `pnpm test` is the fast unit/UI/API layer. It does not claim real PostgreSQL or Graphiti coverage.
 
-The golden E2E suite is the long-lived real-service regression baseline. It requires the API server, PostgreSQL with pgvector, and the OpenAI-compatible model gateway.
+Real-dependency gate:
 
 ```bash
-set -a
-source .env
-set +a
+pnpm verify:real
+```
+
+This runs:
+
+```text
+pnpm test:postgres
+pnpm test:graphiti
+pnpm mvp:smoke
+```
+
+`pnpm verify:real` requires:
+
+- a populated `.env`
+- a running local API server for `pnpm mvp:smoke`
+- PostgreSQL and Graphiti availability, which the helper scripts will start or validate as needed
+
+If you want only one real dependency check:
+
+```bash
+pnpm test:postgres
+pnpm test:graphiti
+```
+
+`pnpm test:postgres` is the explicit real Postgres readback gate. The package-level `@mem/memory-store` test is skipped in plain `pnpm test`; `scripts/test-postgres-store.ts` enables it and honors `MEM_STORE_TEST_DATABASE_URL` when you want a non-default database.
+
+Additional gates:
+
+```bash
+pnpm doc:drift:check
+pnpm mvp:verify
 pnpm e2e:golden
 ```
 
-The fixture lives in `e2e/golden-retrieval.json`. It verifies the previously failed city-shopping recall, cross-language semantic recall, person/place recall, and reminder creation. Fraud-risk behavior remains covered by the non-network eval suite.
+`pnpm doc:drift:check` validates that active docs only describe paths that actually exist.

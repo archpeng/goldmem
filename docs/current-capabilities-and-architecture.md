@@ -204,6 +204,9 @@ flowchart TB
 当前核心门禁：
 
 ```bash
+pnpm doc:drift:check
+pnpm verify:fast
+pnpm verify:real
 pnpm typecheck
 pnpm test
 pnpm test:postgres
@@ -215,24 +218,23 @@ pnpm architecture:check
 pnpm mvp:verify
 ```
 
-`pnpm mvp:verify` 当前包含：
+推荐分层：
 
 ```text
-typecheck
-unit tests
-real PostgreSQL readback
-Graphiti readback
-build
-lint
-eval
-architecture check
+verify:fast = typecheck + test + build + architecture:check
+verify:real = test:postgres + test:graphiti + mvp:smoke
+mvp:verify = verify:fast + test:postgres + test:graphiti + lint + eval
 ```
 
 重要补充：
 
+- `pnpm test` 是快速本地 gate，不代表真实 PostgreSQL 或 Graphiti 已被覆盖。
 - `pnpm test:postgres` 会验证 PostgreSQL truth readback 和 temporal retry job store。
 - `pnpm test:graphiti` 会验证 Graphiti sidecar 健康、episode write、search provenance readback。
-- `pnpm architecture:check` 会阻止 semantic recall index `infer=true`、semantic recall index truth 叙述、Kernel 对 Null temporal store 的静默分支、核心入口超大化、安全 owner `--passWithNoTests` 等问题。
+- `packages/memory-store` 的 package-level test 在 plain `pnpm test` 下默认跳过；`scripts/test-postgres-store.ts` 会显式注入 `MEM_STORE_TEST_DATABASE_URL` 并打开真实 Postgres 集成层。
+- `pnpm mvp:smoke` 需要本地 API server 运行中。
+- `pnpm doc:drift:check` 会阻止 README 或当前能力文档声明不存在的 runtime path。
+- `pnpm architecture:check` 会阻止 semantic recall index `infer=true`、semantic recall index truth 叙述、Kernel 对 Null temporal store 的静默分支、核心入口超大化、model-gateway heuristic 回流、文档漂移与缺失的顶层 verify 脚本。
 
 ## 8. 当前实现度评价
 

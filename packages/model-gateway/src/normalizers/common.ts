@@ -136,6 +136,16 @@ export function booleanValue(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+export function optionalBooleanValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (["true", "yes", "required"].includes(normalized)) return true;
+  if (["false", "no", "not required"].includes(normalized)) return false;
+  return undefined;
+}
+
 export function enumValue<T extends readonly string[]>(value: unknown, allowed: T, fallback: T[number]): T[number] {
   return typeof value === "string" && allowed.includes(value) ? value : fallback;
 }
@@ -151,69 +161,4 @@ export function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
-}
-
-export function inferEventType(text: string): (typeof EVENT_TYPES)[number] {
-  const normalized = text.toLowerCase();
-  if (/(medicine|medication|pill|dose|药|用药|吃药)/.test(normalized)) return "medication";
-  if (/(doctor|hospital|clinic|blood pressure|health|医生|医院|血压|身体)/.test(normalized)) return "health";
-  if (/(appointment|meeting|visit|预约|复诊|见面)/.test(normalized)) return "appointment";
-  if (/(money|bank|transfer|payment|scam|fraud|钱|银行|转账|诈骗)/.test(normalized)) return "finance";
-  if (/(buy|bought|market|shop|grocery|菜场|超市|买)/.test(normalized)) return "shopping";
-  if (/(daughter|son|wife|husband|family|女儿|儿子|家人)/.test(normalized)) return "family";
-  if (/(park|home|station|place|公园|家|车站)/.test(normalized)) return "place";
-  return "general";
-}
-
-export function inferEntityType(text: string): (typeof ENTITY_TYPES)[number] {
-  const normalized = text.toLowerCase();
-  if (/(hospital|clinic|market|store|park|医院|菜场|超市|公园)/.test(normalized)) return "place";
-  if (/(medicine|pill|tablet|药)/.test(normalized)) return "medicine";
-  if (/(bank|company|hospital|银行|公司|医院)/.test(normalized)) return "organization";
-  return "unknown";
-}
-
-export function inferRiskLevel(text: string): (typeof RISK_LEVELS)[number] {
-  const normalized = text.toLowerCase();
-  if (/(scam|fraud|code|password|诈骗|验证码|密码)/.test(normalized)) return "fraud_risk";
-  if (/(transfer|bank|payment|money|转账|银行|钱)/.test(normalized)) return "financial";
-  if (/(medicine|dose|doctor|hospital|药|剂量|医生|医院)/.test(normalized)) return "medical";
-  if (/(id card|address|身份证|住址)/.test(normalized)) return "sensitive";
-  return "normal";
-}
-
-export function inferRiskType(text: string): (typeof RISK_TYPES)[number] {
-  const normalized = text.toLowerCase();
-  if (/(scam|fraud|验证码|code|诈骗)/.test(normalized)) return "fraud_suspected";
-  if (/(password|密码)/.test(normalized)) return "password_or_code";
-  if (/(transfer|bank|payment|money|转账|银行|钱)/.test(normalized)) return "financial_transfer";
-  if (/(dose|stop taking|change medication|剂量|换药|停药)/.test(normalized)) return "medication_change";
-  if (/(doctor said|medical advice|医生建议|医嘱)/.test(normalized)) return "medical_advice";
-  if (/(id card|passport|身份证|护照)/.test(normalized)) return "identity_document";
-  return "location_sensitive";
-}
-
-export function inferSeverity(text: string): (typeof SEVERITIES)[number] {
-  const normalized = text.toLowerCase();
-  if (/(scam|fraud|password|code|transfer|诈骗|密码|验证码|转账)/.test(normalized)) return "high";
-  if (/(medicine|doctor|hospital|药|医生|医院)/.test(normalized)) return "medium";
-  return "low";
-}
-
-export function inferRequiresConfirmation(text: string): boolean {
-  return inferRiskLevel(text) !== "normal" || /(remind|remember|提醒|记得)/.test(text.toLowerCase());
-}
-
-export function inferRequiresFamilyReview(text: string): boolean {
-  return inferSeverity(text) !== "low";
-}
-
-export function inferQueryIntent(query: string): (typeof QUERY_INTENTS)[number] {
-  const normalized = query.toLowerCase();
-  if (/(reminder|remind|提醒)/.test(normalized)) return "check_reminder";
-  if (/(today|今天)/.test(normalized)) return "ask_today";
-  if (/(recent|important|最近|重要)/.test(normalized)) return "ask_recent_important";
-  if (/(who|daughter|son|family|谁|女儿|儿子|家人)/.test(normalized)) return "ask_person_related";
-  if (/(what|when|where|did i|remember|什么|什么时候|哪里|记得)/.test(normalized)) return "recall_event";
-  return "unknown";
 }

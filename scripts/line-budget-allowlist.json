@@ -1,0 +1,144 @@
+{
+  "entries": [
+    {
+      "file": "packages/memory-schema/src/index.ts",
+      "maxLines": 750,
+      "owner": "memory-schema",
+      "reason": "Shared schema barrel remains centralized while domain contracts are still evolving.",
+      "exitCriteria": "Split schemas by domain slices behind a stable public export surface."
+    },
+    {
+      "file": "packages/temporal-memory/src/index.ts",
+      "maxLines": 525,
+      "owner": "temporal-memory",
+      "reason": "Graphiti adapter and transport contract still share one integration surface.",
+      "exitCriteria": "Separate transport contract, provenance alignment, and adapter implementation."
+    },
+    {
+      "file": "packages/risk-engine/src/index.ts",
+      "maxLines": 450,
+      "owner": "risk-engine",
+      "reason": "Deterministic safety rules remain in one file for audit review.",
+      "exitCriteria": "Split by risk family with a preserved public engine entrypoint."
+    },
+    {
+      "file": "packages/model-gateway/src/index.ts",
+      "maxLines": 425,
+      "owner": "model-gateway",
+      "reason": "OpenAI-compatible transport and timeout handling still share one boundary file.",
+      "exitCriteria": "Separate provider client, timeout policy, and operation wiring."
+    },
+    {
+      "file": "packages/memory-kernel/src/index.ts",
+      "maxLines": 375,
+      "owner": "memory-kernel",
+      "reason": "Kernel public surface still coordinates multiple command/query entrypoints.",
+      "exitCriteria": "Move remaining command wiring into focused modules while keeping the exported kernel API stable."
+    },
+    {
+      "file": "packages/memory-kernel/src/memory-plan-completeness.ts",
+      "maxLines": 525,
+      "owner": "memory-kernel",
+      "reason": "Completeness repair policy remains centralized for deterministic review.",
+      "exitCriteria": "Split reminder, relation, and action completeness checks into focused validators."
+    },
+    {
+      "file": "packages/memory-store/src/index.ts",
+      "maxLines": 325,
+      "owner": "memory-store",
+      "reason": "The store interface barrel still aggregates all persistence contracts.",
+      "exitCriteria": "Split store contracts by owner while preserving package-level imports."
+    },
+    {
+      "file": "services/graphiti-sidecar/src/main.py",
+      "maxLines": 550,
+      "owner": "graphiti-sidecar",
+      "reason": "The Python sidecar still bundles route handlers and Graphiti/provenance glue.",
+      "exitCriteria": "Separate request models, provenance search helpers, and route handlers."
+    },
+    {
+      "file": "packages/memory-kernel/test/harness.ts",
+      "maxLines": 900,
+      "owner": "memory-kernel",
+      "reason": "Shared kernel test harness is intentionally centralized for fixture reuse.",
+      "exitCriteria": "Split harness factories by query, ingest, and graphiti scenarios."
+    },
+    {
+      "file": "packages/memory-kernel/src/query.test.ts",
+      "maxLines": 850,
+      "owner": "memory-kernel",
+      "reason": "Query regression coverage is still concentrated in one broad suite.",
+      "exitCriteria": "Split query tests by recall mode and answer policy."
+    },
+    {
+      "file": "packages/memory-kernel/src/graphiti.test.ts",
+      "maxLines": 700,
+      "owner": "memory-kernel",
+      "reason": "Graphiti regression scenarios are still maintained in one suite.",
+      "exitCriteria": "Split ingest-side and query-side Graphiti coverage."
+    },
+    {
+      "file": "packages/memory-kernel/src/context-links.test.ts",
+      "maxLines": 700,
+      "owner": "memory-kernel",
+      "reason": "Context-link behavior is covered by a broad regression suite.",
+      "exitCriteria": "Split context-link creation, repair, and query-isolation coverage."
+    },
+    {
+      "file": "packages/memory-kernel/src/index.test.ts",
+      "maxLines": 675,
+      "owner": "memory-kernel",
+      "reason": "Core ingest regression coverage still lives in one suite.",
+      "exitCriteria": "Split ingest happy-path, reminder, and risk regression tests."
+    },
+    {
+      "file": "packages/model-gateway/src/index.test.ts",
+      "maxLines": 725,
+      "owner": "model-gateway",
+      "reason": "Normalization and provider timeout coverage are still consolidated.",
+      "exitCriteria": "Split normalization, prompt composition, and provider transport tests."
+    },
+    {
+      "file": "services/api-server/src/index.test.ts",
+      "maxLines": 650,
+      "owner": "api-server",
+      "reason": "HTTP regression coverage remains centralized around the public API surface.",
+      "exitCriteria": "Split route contract, debug route, and runtime boot tests."
+    },
+    {
+      "file": "packages/memory-store/src/postgres.test.ts",
+      "maxLines": 525,
+      "owner": "memory-store",
+      "reason": "Postgres integration coverage is still a broad round-trip suite.",
+      "exitCriteria": "Split truth records, idempotency, and semantic index integration tests."
+    },
+    {
+      "file": "apps/web-mvp/src/App.test.tsx",
+      "maxLines": 500,
+      "owner": "web-mvp",
+      "reason": "The UI regression suite is still centered on the top-level app behavior.",
+      "exitCriteria": "Split interaction tests by draft flow, reminders, recall, and settings."
+    },
+    {
+      "file": "scripts/graphiti-comparison-e2e.ts",
+      "maxLines": 1050,
+      "owner": "evals",
+      "reason": "The long-lived Graphiti comparison harness remains a single benchmark script.",
+      "exitCriteria": "Extract shared fixtures, assertions, and result classification helpers."
+    },
+    {
+      "file": "scripts/golden-e2e.ts",
+      "maxLines": 700,
+      "owner": "evals",
+      "reason": "Golden E2E flow control and assertion logic remain co-located.",
+      "exitCriteria": "Split request helpers, fixture loading, and assertion logic."
+    },
+    {
+      "file": "scripts/memory-lint.ts",
+      "maxLines": 475,
+      "owner": "evals",
+      "reason": "Memory lint fixture processing and rule evaluation remain in one script.",
+      "exitCriteria": "Split fixture parsing, rule evaluation, and CLI presentation."
+    }
+  ]
+}

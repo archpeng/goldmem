@@ -3,33 +3,29 @@ import {
   arrayValue,
   asRecord,
   booleanValue,
-  ENTITY_TYPES,
-  enumValue,
-  EVENT_TYPES,
-  inferEntityType,
-  inferEventType,
-  inferQueryIntent,
   isRecord,
   numberValue,
   optionalIso,
+  optionalString,
   QUERY_SAFETY_TAGS,
-  QUERY_INTENTS,
   RELATION_QUERY_INTENTS,
-  stringValue,
 } from "./common.js";
 import type { JsonRecord } from "./common.js";
 
 export function normalizeParsedMemoryQueryResult(raw: unknown, input: ParseMemoryQueryInput): unknown {
   const record = asRecord(raw);
-
-  const relationQueryIntent = enumValue(record.relationQueryIntent, RELATION_QUERY_INTENTS, "none");
+  void input;
+  const relationQueryIntent = typeof record.relationQueryIntent === "string"
+    && RELATION_QUERY_INTENTS.includes(record.relationQueryIntent as (typeof RELATION_QUERY_INTENTS)[number])
+    ? record.relationQueryIntent
+    : "none";
 
   return {
     ...record,
-    intent: enumValue(record.intent, QUERY_INTENTS, inferQueryIntent(input.query)),
+    intent: optionalString(record.intent),
     timeRange: normalizeTimeRange(record.timeRange),
     entities: arrayValue(record.entities).map(normalizeQueryEntity).filter(isRecord),
-    eventTypes: normalizeQueryEventTypes(record.eventTypes, input.query),
+    eventTypes: normalizeQueryEventTypes(record.eventTypes),
     safetyTags: normalizeSafetyTags(record.safetyTags),
     requiresTemporalEvidence: booleanValue(record.requiresTemporalEvidence, relationQueryIntent !== "none"),
     relationQueryIntent,
@@ -52,34 +48,24 @@ function normalizeTimeRange(raw: unknown): JsonRecord | undefined {
 
 function normalizeQueryEntity(raw: unknown): JsonRecord | undefined {
   const record = typeof raw === "string" ? { name: raw } : asRecord(raw);
-  const name = stringValue(record.name, "");
+  const name = optionalString(record.name);
   if (!name) return undefined;
 
   return {
-    type: enumValue(record.type, ENTITY_TYPES, inferEntityType(name)),
+    type: optionalString(record.type),
     name,
     confidence: numberValue(record.confidence, 0.5),
   };
 }
 
-function normalizeQueryEventTypes(raw: unknown, query: string): Array<(typeof EVENT_TYPES)[number]> {
-  const normalizedTypes = arrayValue(raw)
-    .map((item) => normalizeEventTypeValue(item))
-    .filter((item): item is (typeof EVENT_TYPES)[number] => item !== undefined);
-
-  if (normalizedTypes.length > 0) return [...new Set(normalizedTypes)];
-  return [inferEventType(query)];
-}
-
-function normalizeEventTypeValue(value: unknown): (typeof EVENT_TYPES)[number] | undefined {
-  if (typeof value !== "string") return undefined;
-  if (EVENT_TYPES.includes(value as (typeof EVENT_TYPES)[number])) return value as (typeof EVENT_TYPES)[number];
-
-  const normalized = value.trim().toLowerCase();
-  if (["purchase", "errand", "grocery", "groceries"].includes(normalized)) return "shopping";
-  if (["medical", "doctor"].includes(normalized)) return "health";
-  if (["money", "payment", "banking"].includes(normalized)) return "finance";
-  return undefined;
+function normalizeQueryEventTypes(raw: unknown): string[] {
+  return [
+    ...new Set(
+      arrayValue(raw)
+        .map((item) => optionalString(item))
+        .filter((item): item is string => Boolean(item)),
+    ),
+  ];
 }
 
 function normalizeSafetyTags(raw: unknown): Array<(typeof QUERY_SAFETY_TAGS)[number]> {
