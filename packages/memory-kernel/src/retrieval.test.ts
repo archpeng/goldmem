@@ -105,6 +105,101 @@ describe("retrieval evidence merge", () => {
     expect(merged).toHaveLength(12);
     expect(merged.some((entry) => entry.retrievalSource === "graphiti")).toBe(false);
   });
+
+  it("orders newer evidence first for temporal relationship queries", () => {
+    const historical = item({
+      sourceId: "source-historical",
+      eventId: "event-historical",
+      summary: "历史记录：复查原来是周三下午。",
+      score: 0.82,
+      retrievalSource: "postgres",
+      createdAt: "2026-05-01T08:00:00.000Z",
+    });
+    const current = item({
+      sourceId: "source-current",
+      eventId: "event-current",
+      summary: "当前记录：复查后来改到周五上午十点。",
+      score: 0.74,
+      retrievalSource: "postgres",
+      createdAt: "2026-05-03T08:00:00.000Z",
+    });
+
+    const merged = mergeRetrievedEvidence([historical, current], { prioritizeCurrentEvidence: true });
+
+    expect(merged[0]).toEqual(expect.objectContaining({ eventId: "event-current" }));
+    expect(merged[1]).toEqual(expect.objectContaining({ eventId: "event-historical" }));
+  });
+
+  it("uses PostgreSQL event creation time for aligned temporal evidence ordering", () => {
+    const historical = memoryEvent({
+      id: "event-historical",
+      sourceId: "source-historical",
+      title: "牙科复查原始记录",
+      summary: "牙科复查原来记成周三下午。",
+      createdAt: "2026-05-01T08:00:00.000Z",
+    });
+    const current = memoryEvent({
+      id: "event-current",
+      sourceId: "source-current",
+      title: "牙科复查确认记录",
+      summary: "小敏确认牙科复查改为周五上午十点。",
+      createdAt: "2026-05-03T08:00:00.000Z",
+    });
+
+    const merged = mergeEvidence(
+      [historical, current],
+      [],
+      [{
+        retrievalSource: "graphiti",
+        origin: "provenance_fallback",
+        sourceId: historical.sourceId,
+        eventId: historical.id,
+        episodeId: "episode-historical",
+        entityNames: ["牙科复查"],
+        fact: "牙科复查原来是周三下午。",
+        validFrom: "2026-05-10T08:00:00.000Z",
+        score: 1,
+        reason: "Graphiti provenance matched historical record.",
+        metadata: { eventCreatedAt: historical.createdAt },
+      }],
+      {
+        ...parsedQuery(),
+        requiresTemporalEvidence: true,
+        relationQueryIntent: "temporal_change",
+      },
+      "牙科复查到底是周三还是周五？",
+      now,
+    );
+
+    expect(merged[0]).toEqual(expect.objectContaining({ eventId: "event-current" }));
+    expect(merged.find((entry) => entry.retrievalSource === "graphiti_provenance")?.createdAt).toBe(historical.createdAt);
+  });
+
+  it("keeps confirmation-state diversity for reminder classification queries", () => {
+    const requiresConfirmation = Array.from({ length: 12 }, (_, index) => item({
+      sourceId: `source-confirm-${index}`,
+      eventId: `event-confirm-${index}`,
+      summary: `需要确认的事项 ${index}`,
+      score: 1,
+      requiresConfirmation: true,
+      retrievalSource: "postgres",
+    }));
+    const privateNote = item({
+      sourceId: "source-private",
+      eventId: "event-private",
+      summary: "只是自己记录的私人事项。",
+      score: 0.96,
+      requiresConfirmation: false,
+      retrievalSource: "postgres",
+    });
+
+    const merged = mergeRetrievedEvidence([...requiresConfirmation, privateNote], {
+      preserveConfirmationDiversity: true,
+    });
+
+    expect(merged).toHaveLength(12);
+    expect(merged.some((entry) => entry.requiresConfirmation === false)).toBe(true);
+  });
 });
 
 function parsedQuery(): ParsedMemoryQuery {
@@ -148,7 +243,7 @@ function item(input: Partial<RetrievedEvidence>): RetrievedEvidence {
   return {
     sourceId: input.sourceId ?? "source",
     eventId: input.eventId,
-    createdAt: now,
+    createdAt: input.createdAt ?? now,
     summary: input.summary ?? "Evidence summary.",
     score: input.score ?? 0.5,
     canPlayAudio: true,

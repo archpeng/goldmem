@@ -351,6 +351,8 @@ class InMemorySourceStore implements SourceStore {
 class InMemoryEventStore implements EventStore {
   events: MemoryEvent[] = [];
   searchResults?: MemoryEvent[];
+  searchResultsQueue?: MemoryEvent[][];
+  searchInputs: Array<Parameters<EventStore["search"]>[0]> = [];
 
   async create(input: CreateEventInput): Promise<MemoryEvent> {
     const event = {
@@ -363,6 +365,10 @@ class InMemoryEventStore implements EventStore {
   }
 
   async search(input: Parameters<EventStore["search"]>[0]): Promise<MemoryEvent[]> {
+    this.searchInputs.push(input);
+    if (this.searchResultsQueue && this.searchResultsQueue.length > 0) {
+      return this.searchResultsQueue.shift() ?? [];
+    }
     return this.searchResults ?? this.events.filter((event) => event.tenantId === input.tenantId && event.elderId === input.elderId);
   }
 

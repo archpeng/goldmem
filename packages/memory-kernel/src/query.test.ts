@@ -469,6 +469,195 @@ describe("ElderMemoryKernel query", () => {
     });
   });
 
+  it("uses broad PostgreSQL fallback when relation evidence lacks query coverage", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    const unrelated = memoryEvent({
+      id: "event-unrelated-fraud",
+      sourceId: "source-unrelated-fraud",
+      type: "finance",
+      title: "银行卡密码风险",
+      summary: "小敏提醒你不要把银行卡密码写给陌生人。",
+      riskLevel: "fraud_risk",
+      importance: 0.9,
+    });
+    const phoneRisk = memoryEvent({
+      id: "event-medication-phone",
+      sourceId: "source-medication-phone",
+      type: "medication",
+      title: "陌生电话要求停药",
+      summary: "下午有个陌生电话说降压药可以直接停药，你没有确认，也不敢照着做。",
+      riskLevel: "medical",
+      requiresConfirmation: true,
+      importance: 0.9,
+    });
+    const familyConfirmed = memoryEvent({
+      id: "event-medication-family",
+      sourceId: "source-medication-family",
+      type: "medication",
+      title: "小敏确认停药电话不可信",
+      summary: "小敏确认张医生最新交代还是晚饭后一片，陌生电话说停药不可信。",
+      riskLevel: "medical",
+      requiresConfirmation: true,
+      importance: 0.9,
+    });
+    harness.eventStore.searchResultsQueue = [
+      [unrelated],
+      [phoneRisk, familyConfirmed],
+    ];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      requiresTemporalEvidence: true,
+      relationQueryIntent: "conflict_resolution",
+      eventTypes: ["medication"],
+      safetyTags: ["medication", "fraud"],
+      entities: [
+        { type: "unknown", name: "陌生电话", confidence: 0.5 },
+        { type: "medicine", name: "停药", confidence: 0.5 },
+      ],
+    };
+    harness.model.answer = {
+      answerText: "这条陌生电话说停药的说法不可靠，小敏确认张医生的最新说法仍是晚饭后一片。",
+      confidence: 0.85,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "陌生电话说停药这件事可靠吗？",
+      now,
+    });
+
+    expect(harness.eventStore.searchInputs).toHaveLength(2);
+    expect(harness.eventStore.searchInputs[0]).toMatchObject({ limit: 30 });
+    expect(harness.eventStore.searchInputs[1]).toMatchObject({ limit: 30, query: "陌生电话说停药这件事可靠吗？" });
+    expect(harness.eventStore.searchInputs[1]?.timeRange).toBeUndefined();
+    expect(harness.eventStore.searchInputs[1]?.entityNames).toBeUndefined();
+    expect(answer.retrievedEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventId: "event-medication-phone" }),
+        expect.objectContaining({ eventId: "event-medication-family" }),
+      ]),
+    );
+    expect(harness.audit.records.at(-1)?.payload.retrieval).toEqual(
+      expect.objectContaining({
+        postgresFallbackUsed: true,
+        postgresFallbackCount: 2,
+        evidenceCoverageRequired: true,
+        evidenceCoveragePassed: true,
+      }),
+    );
+  });
+
+  it("does not call the answer model when relation evidence coverage still fails", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    const unrelated = memoryEvent({
+      id: "event-unrelated-fraud",
+      sourceId: "source-unrelated-fraud",
+      type: "finance",
+      title: "银行卡密码风险",
+      summary: "小敏提醒你不要把银行卡密码写给陌生人。",
+      riskLevel: "fraud_risk",
+      importance: 0.9,
+    });
+    harness.eventStore.searchResultsQueue = [
+      [unrelated],
+      [unrelated],
+    ];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      requiresTemporalEvidence: true,
+      relationQueryIntent: "conflict_resolution",
+      eventTypes: ["medication"],
+      safetyTags: ["medication", "fraud"],
+      entities: [
+        { type: "unknown", name: "陌生电话", confidence: 0.5 },
+        { type: "medicine", name: "停药", confidence: 0.5 },
+      ],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "陌生电话说停药这件事可靠吗？",
+      now,
+    });
+
+    expect(harness.model.answerCalls).toBe(0);
+    expect(answer.confidence).toBe(0);
+    expect(answer.retrievedEvidence).toEqual([]);
+    expect(harness.audit.records.at(-1)?.payload).toEqual(
+      expect.objectContaining({
+        failureType: "insufficient_evidence_coverage",
+        retrieval: expect.objectContaining({
+          postgresFallbackUsed: true,
+          evidenceCoveragePassed: false,
+        }),
+      }),
+    );
+  });
+
+  it("uses evidence-bound fallback when relation answer generation declines covered evidence", async () => {
+    const harness = createHarness(buildPlan({ summary: "No-op plan." }));
+    harness.eventStore.searchResults = [
+      memoryEvent({
+        id: "event-medication-phone",
+        sourceId: "source-medication-phone",
+        type: "medication",
+        title: "陌生电话要求停药",
+        summary: "下午有个陌生电话说降压药可以直接停药，你没有确认，也不敢照着做。",
+        riskLevel: "medical",
+        requiresConfirmation: true,
+        importance: 0.9,
+      }),
+    ];
+    harness.semanticMemory.searchResults = [];
+    harness.model.parsedQuery = {
+      intent: "recall_event",
+      requiresSourceEvidence: true,
+      requiresTemporalEvidence: true,
+      relationQueryIntent: "safety_chain",
+      eventTypes: ["medication"],
+      safetyTags: ["medication", "fraud"],
+      entities: [
+        { type: "unknown", name: "陌生电话", confidence: 0.5 },
+        { type: "medicine", name: "停药", confidence: 0.5 },
+      ],
+    };
+    harness.model.answer = {
+      answerText: "我没有找到可以回答这件事的记忆。",
+      confidence: 0.2,
+      matchedSources: [],
+      retrievedEvidence: [],
+      suggestedActions: [],
+    };
+
+    const answer = await harness.kernel.queryMemory({
+      elderId: "elder-1",
+      query: "陌生电话说停药这件事可靠吗？",
+      now,
+    });
+
+    expect(harness.model.answerCalls).toBe(1);
+    expect(answer.confidence).toBeGreaterThan(0);
+    expect(answer.retrievedEvidence).toHaveLength(1);
+    expect(answer.answerText).toContain("陌生电话");
+    expect(harness.audit.records.some((record) => record.type === "memory_query_answer_decline_fallback_used")).toBe(true);
+    expect(harness.audit.records.at(-1)?.payload).toEqual(
+      expect.objectContaining({
+        answerDeclineFallbackUsed: true,
+        retrieval: expect.objectContaining({
+          evidenceCoverageRequired: true,
+          evidenceCoveragePassed: true,
+        }),
+      }),
+    );
+  });
+
   it("uses event type as a ranking signal instead of a hard recall filter", async () => {
     const harness = createHarness(buildPlan({ summary: "No-op plan." }));
     harness.eventStore.searchResults = [

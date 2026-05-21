@@ -74,7 +74,7 @@ export function applyElderSecretaryVoice(answer: MemoryAnswer): MemoryAnswer {
   };
 }
 
-function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
+export function buildEvidenceBoundFallbackAnswer(traceId: string, evidence: RetrievedEvidence[]): MemoryAnswer {
   const top = evidence[0];
   const confidence = top ? clampScore(top.score) : 0;
   const matchedSources = evidenceBoundMatchedSources([], evidence);

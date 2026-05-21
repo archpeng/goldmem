@@ -48,7 +48,7 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       DATABASE_URL: ${GRAPHITI_PROVENANCE_DATABASE_URL:-postgres://mem:mem@postgres:5432/mem}
       GRAPHITI_PROVENANCE_DATABASE_URL: ${GRAPHITI_PROVENANCE_DATABASE_URL:-postgres://mem:mem@postgres:5432/mem}
-      MODEL_NAME: ${GRAPHITI_MODEL:-${OPENAI_MODEL:-gpt-4.1-mini}}
+      MODEL_NAME: ${GRAPHITI_MODEL:-${OPENAI_MODEL:-claude-sonnet-4-6}}
       GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
       GRAPHITI_NEO4J_URI: ${GRAPHITI_SIDECAR_NEO4J_URI:-bolt://graphiti-neo4j:7687}
       GRAPHITI_NEO4J_USER: ${GRAPHITI_NEO4J_USER:-neo4j}
@@ -69,7 +69,7 @@ services:
       graphiti-sidecar:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://mem:mem@postgres:5432/mem
+      DATABASE_URL: ${GRAPHITI_PROVENANCE_DATABASE_URL:-postgres://mem:mem@postgres:5432/mem}
       GRAPHITI_BASE_URL: http://graphiti-sidecar:8000
       GRAPHITI_API_KEY: ${GRAPHITI_API_KEY:-}
       GRAPHITI_WORKER_BATCH_SIZE: ${GRAPHITI_WORKER_BATCH_SIZE:-10}

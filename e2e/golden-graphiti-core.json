@@ -43,6 +43,7 @@
   "queries": [
     {
       "id": "later-changed-medication",
+      "graphitiRequirement": "raw_required",
       "query": "降压药后来改了吗？",
       "expectedAnswerHints": ["晚饭后"],
       "expectedEvidenceHints": ["降压药", "早饭后", "晚饭后"],
@@ -60,6 +61,7 @@
     },
     {
       "id": "current-effective-medication",
+      "graphitiRequirement": "raw_required",
       "query": "现在到底按哪个降压药说法记？",
       "expectedAnswerHints": ["晚饭后"],
       "expectedEvidenceHints": ["早饭后", "晚饭后", "旧说法"],
@@ -77,6 +79,7 @@
     },
     {
       "id": "medical-appointment-change-chain",
+      "graphitiRequirement": "raw_required",
       "query": "社区医院复查是不是改期了？医保卡还要带吗？",
       "expectedAnswerHints": ["社区医院", "医保卡"],
       "expectedEvidenceHints": ["周五", "下周一", "医保卡"],
@@ -89,6 +92,7 @@
     },
     {
       "id": "fraud-identity-risk-chain",
+      "graphitiRequirement": "raw_required",
       "query": "那个补贴的人让我发什么，安全吗？",
       "expectedAnswerHints": ["身份证号", "验证码"],
       "expectedEvidenceHints": ["陌生人", "身份证号", "验证码", "补贴"],
@@ -104,6 +108,7 @@
     },
     {
       "id": "multi-event-relationship",
+      "graphitiRequirement": "raw_required",
       "query": "下周三下午三点吃面和医院复查是一回事吗？",
       "expectedAnswerHints": ["老街"],
       "expectedEvidenceHints": ["老街", "面", "社区医院", "血压"],

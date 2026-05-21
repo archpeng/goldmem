@@ -81,6 +81,7 @@ export async function alignTemporalEvidence(input: {
         ...result,
         metadata: {
           ...result.metadata,
+          eventCreatedAt: event.createdAt,
           eventType: event.type,
           riskLevel: event.riskLevel,
           requiresConfirmation: event.requiresConfirmation,

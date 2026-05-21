@@ -7,6 +7,7 @@ import {
   MemoryAnswerSchema,
   type FamilyAssistTask,
   type FamilyTask,
+  type MemoryAnswer,
   type MemoryEvent,
   type Reminder,
 } from "../packages/memory-schema/src/index.js";
@@ -27,6 +28,10 @@ const GoldenCaseSchema = z.object({
       semanticAnswerExpectations: z.array(z.string().min(1)).default([]),
       semanticAnswerForbiddenClaims: z.array(z.string().min(1)).default([]),
       expectedEvidenceHints: z.array(z.string().min(1)).default([]),
+      expectedEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+      expectedCurrentEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+      expectedHistoricalEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+      forbiddenEvidenceSeedIds: z.array(z.string().min(1)).default([]),
       forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
       forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
       allowedSources: z.array(z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"])).default(["postgres", "semantic", "graphiti", "graphiti_provenance"]),
@@ -98,7 +103,7 @@ const graphitiMode = process.env.GOLDEN_E2E_GRAPHITI_MODE
 const health = await request<Json>("GET", "/health");
 assert(health.ok === true, "API health check failed");
 assert(health.semanticMemory === "pgvector", "Semantic recall index must be pgvector for golden E2E");
-const expectedApiModel = process.env.GOLDEN_E2E_API_MODEL ?? "gpt-4.1-mini";
+const expectedApiModel = process.env.GOLDEN_E2E_API_MODEL ?? process.env.OPENAI_MODEL ?? "claude-sonnet-4-6";
 assert(health.model === expectedApiModel, `Golden E2E requires API model ${expectedApiModel}; current API model is ${String(health.model)}`);
 if (graphitiMode === "required") {
   assert(health.graphiti === "ok", "Graphiti must be healthy for this golden E2E fixture");
@@ -285,6 +290,7 @@ for (const queryCase of fixture.queries) {
   for (const hint of queryCase.expectedEvidenceHints) {
     assert(textIncludes(evidenceText, hint), `${queryCase.id} evidence missing hint: ${hint}`);
   }
+  assertEvidenceContracts(queryCase.id, answer.retrievedEvidence, queryCase);
   for (const hint of queryCase.forbiddenAnswerHints) {
     assert(!textIncludes(answerText, hint), `${queryCase.id} answer contained forbidden hint: ${hint}`);
   }
@@ -310,8 +316,10 @@ console.log(
   `golden e2e ok: elderId=${elderId} seeds=${fixture.seedNotes.length} events=${events.length} reminders=${reminders.length} familyTasks=${familyTasks.length} semanticQueries=${semanticEvidenceQueries}`,
 );
 
-async function ingestNote(note: { id: string; transcript: string }) {
-  const turn = await withModelRetry(`seed ${note.id}`, () =>
+async function ingestNote(note: { id?: string; transcript?: string }) {
+  const id = requiredString(note.id, "seed note id");
+  const transcript = requiredString(note.transcript, "seed note transcript");
+  const turn = await withModelRetry(`seed ${id}`, () =>
     request<{
       draft?: {
         sourceId: string;
@@ -321,8 +329,8 @@ async function ingestNote(note: { id: string; transcript: string }) {
     }>("POST", "/elder/turn", {
       tenantId,
       elderId,
-      text: note.transcript,
-      clientTurnId: `golden-seed-${elderId}-${note.id}`,
+      text: transcript,
+      clientTurnId: `golden-seed-${elderId}-${id}`,
     }),
   );
   if (!turn.draft) throw new Error("Elder turn did not return draft for seed note");
@@ -422,6 +430,11 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function requiredString(value: string | undefined, label: string): string {
+  if (!value) throw new Error(`${label} is required`);
+  return value;
+}
+
 async function request<T>(method: string, path: string, body?: Json): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
@@ -488,6 +501,53 @@ function requiredIngest(ingests: Map<string, Awaited<ReturnType<typeof ingestNot
   return ingest;
 }
 
+function assertEvidenceContracts(
+  queryId: string,
+  evidence: MemoryAnswer["retrievedEvidence"],
+  queryCase: (typeof fixture.queries)[number],
+): void {
+  const expectedSeedIds = [
+    ...queryCase.expectedEvidenceSeedIds,
+    ...queryCase.expectedCurrentEvidenceSeedIds,
+    ...queryCase.expectedHistoricalEvidenceSeedIds,
+  ];
+  for (const seedId of expectedSeedIds) {
+    assert(
+      evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)) >= 0,
+      `${queryId} missing expected evidence seed: ${seedId}`,
+    );
+  }
+  for (const seedId of queryCase.forbiddenEvidenceSeedIds) {
+    assert(
+      evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)) < 0,
+      `${queryId} included forbidden evidence seed: ${seedId}`,
+    );
+  }
+  if (queryCase.expectedCurrentEvidenceSeedIds.length > 0 && queryCase.expectedHistoricalEvidenceSeedIds.length > 0) {
+    const currentIndex = minEvidenceIndex(evidence, queryCase.expectedCurrentEvidenceSeedIds);
+    const historicalIndex = minEvidenceIndex(evidence, queryCase.expectedHistoricalEvidenceSeedIds);
+    assert(
+      currentIndex >= 0 && historicalIndex >= 0 && currentIndex < historicalIndex,
+      `${queryId} expected current evidence before historical evidence; current=${currentIndex} historical=${historicalIndex}`,
+    );
+  }
+}
+
+function minEvidenceIndex(evidence: MemoryAnswer["retrievedEvidence"], seedIds: string[]): number {
+  const indexes = seedIds
+    .map((seedId) => evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)))
+    .filter((index) => index >= 0);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function evidenceIndexForSeed(
+  evidence: MemoryAnswer["retrievedEvidence"],
+  ingest: Awaited<ReturnType<typeof ingestNote>>,
+): number {
+  const eventIds = new Set(ingest.events.map((event) => event.id));
+  return evidence.findIndex((item) => item.sourceId === ingest.sourceId || Boolean(item.eventId && eventIds.has(item.eventId)));
+}
+
 function assertFamilyAssistPrivacy(tasks: FamilyAssistTask[]): void {
   const allowedKeys = new Set(["id", "title", "summary", "type", "urgency", "status", "visibility", "createdAt"]);
   for (const task of tasks as Array<Record<string, unknown>>) {
@@ -531,7 +591,7 @@ function createSemanticJudge() {
     client ??= new OpenAI({ apiKey, baseURL: process.env.OPENAI_BASE_URL || undefined });
 
     const response = await client.chat.completions.create({
-      model: process.env.GOLDEN_E2E_JUDGE_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+      model: process.env.GOLDEN_E2E_JUDGE_MODEL ?? process.env.OPENAI_MODEL ?? "claude-sonnet-4-6",
       response_format: { type: "json_object" },
       messages: [
         {

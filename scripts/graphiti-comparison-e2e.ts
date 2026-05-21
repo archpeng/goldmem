@@ -7,6 +7,7 @@ import { createPostgresStores } from "../packages/memory-store/src/index.js";
 import {
   MemoryAnswerSchema,
   type FamilyAssistTask,
+  type MemoryAnswer,
   type MemoryEvent,
   type Reminder,
 } from "../packages/memory-schema/src/index.js";
@@ -24,33 +25,53 @@ type RedactedDebugTrace = {
 };
 
 const EvidenceSourceSchema = z.enum(["postgres", "semantic", "context_link", "graphiti", "graphiti_provenance"]);
+const GraphitiRequirementSchema = z.enum(["raw_required", "temporal_allowed", "optional", "forbidden"]);
+const ProfileKindSchema = z.enum([
+  "supersession",
+  "same_matter",
+  "cross_episode_risk",
+  "family_confirmation",
+  "long_term_trend",
+  "ordinary_distractor",
+]);
 
 const GraphitiComparisonFixtureSchema = z.object({
   version: z.number(),
   description: z.string().optional(),
   profiles: z.array(z.object({
     id: z.string().min(1),
+    profileKind: ProfileKindSchema.optional(),
     description: z.string().optional(),
   })).default([]),
   minRawGraphitiQueries: z.number().int().nonnegative().default(3),
   seedNotes: z.array(z.object({
     id: z.string(),
     profile: z.string().min(1).optional(),
+    profileKind: ProfileKindSchema.optional(),
+    allowNoRecords: z.boolean().default(false),
     transcript: z.string().min(1),
   })),
   queries: z.array(z.object({
     id: z.string(),
     profile: z.string().min(1).optional(),
+    profileKind: ProfileKindSchema.optional(),
+    graphitiRequirement: GraphitiRequirementSchema.default("raw_required"),
+    allowNoEvidence: z.boolean().default(false),
     query: z.string().min(1),
     expectedAnswerHints: z.array(z.string().min(1)).default([]),
     expectedAnswerAnyHints: z.array(z.array(z.string().min(1)).min(1)).default([]),
     expectedEvidenceHints: z.array(z.string().min(1)).default([]),
+    expectedEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+    expectedEvidenceAnySeedIds: z.array(z.string().min(1)).default([]),
+    expectedCurrentEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+    expectedHistoricalEvidenceSeedIds: z.array(z.string().min(1)).default([]),
+    forbiddenEvidenceSeedIds: z.array(z.string().min(1)).default([]),
     forbiddenAnswerHints: z.array(z.string().min(1)).default([]),
     forbiddenEvidenceHints: z.array(z.string().min(1)).default([]),
     disabledForbiddenAnswerHints: z.array(z.string().min(1)).default([]),
     semanticAnswerExpectations: z.array(z.string().min(1)).default([]),
     semanticAnswerForbiddenClaims: z.array(z.string().min(1)).default([]),
-    enabledExpectedEvidenceSources: z.array(EvidenceSourceSchema).default(["graphiti"]),
+    enabledExpectedEvidenceSources: z.array(EvidenceSourceSchema).optional(),
     minConfidence: z.number().min(0).max(1).default(0.4),
   })),
   riskExpectations: z.array(z.object({
@@ -97,6 +118,34 @@ const tenantId = process.env.GRAPHITI_E2E_TENANT_ID ?? "tenant-mvp";
 const elderIdBase = process.env.GRAPHITI_E2E_ELDER_ID ?? `graphiti-core-${Date.now()}`;
 const fixture = GraphitiComparisonFixtureSchema.parse(JSON.parse(await readFile(fixturePath, "utf8")));
 const semanticJudge = createSemanticJudge();
+type Fixture = z.infer<typeof GraphitiComparisonFixtureSchema>;
+type QueryCase = Fixture["queries"][number];
+type SeedNote = Fixture["seedNotes"][number];
+type QueryFailure = {
+  label: string;
+  id: string;
+  profile: string;
+  profileKind?: string;
+  category: string;
+  message: string;
+};
+type QueryReport = {
+  id: string;
+  profile: string;
+  profileKind?: string;
+  graphitiRequirement: QueryCase["graphitiRequirement"];
+  answerText: string;
+  confidence: number;
+  sources: EvidenceSource[];
+  evidenceRefs: Array<{
+    sourceId: string;
+    eventId?: string;
+    retrievalSource: EvidenceSource;
+  }>;
+  retrieval?: Record<string, number>;
+  timings?: Record<string, unknown>;
+  durationMs: number;
+};
 
 const enabledRun = await runApiScenario({
   label: "graphiti",
@@ -114,7 +163,6 @@ const disabledRun = await runApiScenario({
 });
 
 assert(enabledRun.rawGraphitiQueryCount >= fixture.minRawGraphitiQueries, `Graphiti raw temporal evidence under threshold: expected >=${fixture.minRawGraphitiQueries}, got ${enabledRun.rawGraphitiQueryCount}`);
-assert(enabledRun.temporalEvidenceQueryCount === fixture.queries.length, `Graphiti enabled run did not return temporal evidence for every query: ${enabledRun.temporalEvidenceQueryCount}/${fixture.queries.length}`);
 assert(disabledRun.temporalEvidenceQueryCount === 0, `Graphiti disabled run returned temporal evidence in ${disabledRun.temporalEvidenceQueryCount} query/queryies`);
 const failures = [...enabledRun.queryFailures, ...disabledRun.queryFailures];
 
@@ -129,12 +177,18 @@ console.log(JSON.stringify({
     return {
       id: enabled.id,
       profile: enabled.profile,
+      profileKind: enabled.profileKind,
+      graphitiRequirement: enabled.graphitiRequirement,
       enabledSources: enabled.sources,
       disabledSources: disabled?.sources ?? [],
       graphitiRawAlignedCount: enabled.retrieval?.graphitiRawAlignedCount ?? 0,
       graphitiRawEvidenceCount: enabled.retrieval?.graphitiRawEvidenceCount ?? 0,
+      graphitiRawUnalignedCount: enabled.retrieval?.graphitiRawUnalignedCount ?? 0,
+      graphitiRawDroppedByRankCount: enabled.retrieval?.graphitiRawDroppedByRankCount ?? 0,
       graphitiProvenanceAlignedCount: enabled.retrieval?.graphitiProvenanceAlignedCount ?? 0,
       graphitiProvenanceEvidenceCount: enabled.retrieval?.graphitiProvenanceEvidenceCount ?? 0,
+      graphitiProvenanceDroppedByRankCount: enabled.retrieval?.graphitiProvenanceDroppedByRankCount ?? 0,
+      evidenceRefs: enabled.evidenceRefs,
       enabledDurationMs: enabled.durationMs,
       disabledDurationMs: disabled?.durationMs,
       enabledAnswer: enabled.answerText,
@@ -145,7 +199,7 @@ console.log(JSON.stringify({
   failures,
 }, null, 2));
 
-assert(failures.length === 0, `Graphiti comparison E2E had query failures:\n${failures.join("\n")}`);
+assert(failures.length === 0, `Graphiti comparison E2E had query failures:\n${failures.map(formatFailure).join("\n")}`);
 
 async function runApiScenario(input: {
   label: string;
@@ -163,7 +217,9 @@ async function runApiScenario(input: {
   }
 
   const ingests = new Map<string, Awaited<ReturnType<typeof ingestNote>>>();
-  await seedNotesByProfile(input, ingests);
+  const seedMetrics = { allowedNoRecordCount: 0, allowedNoRecordSeedIds: [] as string[] };
+  const retryMetrics = { modelRetryCount: 0 };
+  await seedNotesByProfile(input, ingests, seedMetrics, retryMetrics);
 
   await waitForMemoryProcessingIdle(input.elderId);
   if (input.requireGraphitiWrites) await drainGraphitiJobs(input.label, input.elderId);
@@ -175,12 +231,13 @@ async function runApiScenario(input: {
   assertFamilyAssistPrivacy(input.label, familyTasks);
   assertScenarioExpectations(input.label, ingests, reminders, familyTasks);
 
-  const queryReports = [];
-  const queryFailures: string[] = [];
+  const queryReports: QueryReport[] = [];
+  const queryFailures: QueryFailure[] = [];
   let rawGraphitiQueryCount = 0;
   let temporalEvidenceQueryCount = 0;
 
   for (const queryCase of fixture.queries) {
+    let queryReport: QueryReport | undefined;
     try {
       console.log(`[${input.label}] query start: ${queryCase.id}`);
       const startedAt = Date.now();
@@ -190,6 +247,9 @@ async function runApiScenario(input: {
           elderId: input.elderId,
           text: queryCase.query,
         }),
+        () => {
+          retryMetrics.modelRetryCount += 1;
+        },
       );
       assert(turn.answer, `[${input.label}] ${queryCase.id} returned no answer; turnType=${turn.turnType ?? "unknown"} message=${turn.message ?? ""} traceId=${turn.traceId}`);
       const answer = MemoryAnswerSchema.parse(turn.answer);
@@ -205,17 +265,35 @@ async function runApiScenario(input: {
       if (hasTemporalEvidence) temporalEvidenceQueryCount += 1;
       if (sources.includes("graphiti")) rawGraphitiQueryCount += 1;
 
-      assert(answer.retrievedEvidence.length > 0, `[${input.label}] ${queryCase.id} returned no evidence`);
+      queryReport = {
+        id: queryCase.id,
+        profile: queryCase.profile ?? "default",
+        profileKind: queryCase.profileKind ?? profileKindFor(queryCase.profile),
+        graphitiRequirement: queryCase.graphitiRequirement,
+        answerText: answer.answerText,
+        confidence: answer.confidence,
+        sources,
+        evidenceRefs: answer.retrievedEvidence.map((item) => ({
+          sourceId: item.sourceId,
+          eventId: item.eventId,
+          retrievalSource: item.retrievalSource,
+        })),
+        retrieval,
+        timings: extractTimings(debugTrace),
+        durationMs: Date.now() - startedAt,
+      };
+
+      if (!queryCase.allowNoEvidence) {
+        assert(answer.retrievedEvidence.length > 0, `[${input.label}] ${queryCase.id} returned no evidence`);
+      }
       assert(!sources.includes("context_link"), `[${input.label}] ${queryCase.id} returned context_link evidence after query expansion was disabled`);
       if (input.requireGraphitiWrites) {
         assert(answer.confidence >= queryCase.minConfidence, `[${input.label}] ${queryCase.id} confidence too low: ${answer.confidence}`);
-        assert(hasTemporalEvidence, `[${input.label}] ${queryCase.id} returned no Graphiti temporal evidence`);
-        if (retrieval) {
-          assert((retrieval.graphitiAlignedCount ?? 0) > 0, `[${input.label}] ${queryCase.id} debug retrieval has no aligned Graphiti evidence`);
-        }
-        for (const source of queryCase.enabledExpectedEvidenceSources) {
+        assertGraphitiRequirement(input.label, queryCase, sources, retrieval);
+        for (const source of expectedEnabledEvidenceSources(queryCase)) {
           assert(sources.includes(source), expectedEvidenceSourceError(input.label, queryCase.id, source, sources, retrieval));
         }
+        assertEvidenceContracts(input.label, queryCase, answer.retrievedEvidence, ingests);
         assertHints(queryCase.id, input.label, answerText, evidenceText, queryCase);
         if (queryCase.semanticAnswerExpectations.length || queryCase.semanticAnswerForbiddenClaims.length) {
           const judgment = await semanticJudge({
@@ -241,20 +319,20 @@ async function runApiScenario(input: {
         }
       }
 
-      queryReports.push({
-        id: queryCase.id,
-        profile: queryCase.profile ?? "default",
-        answerText: answer.answerText,
-        confidence: answer.confidence,
-        sources,
-        retrieval,
-        timings: extractTimings(debugTrace),
-        durationMs: Date.now() - startedAt,
-      });
+      queryReports.push(queryReport);
+      queryReport = undefined;
       console.log(`[${input.label}] query ok: ${queryCase.id} confidence=${answer.confidence} sources=${sources.join(",")}`);
     } catch (error) {
+      if (queryReport) queryReports.push(queryReport);
       const message = error instanceof Error ? error.message : String(error);
-      queryFailures.push(message);
+      queryFailures.push({
+        label: input.label,
+        id: queryCase.id,
+        profile: queryCase.profile ?? "default",
+        profileKind: queryCase.profileKind ?? profileKindFor(queryCase.profile),
+        category: categorizeFailure(message),
+        message,
+      });
       console.error(`[${input.label}] query failed: ${queryCase.id}: ${message}`);
     }
   }
@@ -268,6 +346,8 @@ async function runApiScenario(input: {
     familyTasks: familyTasks.length,
     rawGraphitiQueryCount,
     temporalEvidenceQueryCount,
+    seedMetrics,
+    modelRetryCount: retryMetrics.modelRetryCount,
     queryReports,
     queryFailures,
   };
@@ -281,6 +361,8 @@ async function seedNotesByProfile(
     requireGraphitiWrites: boolean;
   },
   ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>,
+  seedMetrics: { allowedNoRecordCount: number; allowedNoRecordSeedIds: string[] },
+  retryMetrics: { modelRetryCount: number },
 ): Promise<void> {
   const groups = groupSeedNotes();
   let cursor = 0;
@@ -291,8 +373,21 @@ async function seedNotesByProfile(
       if (!group) return;
       for (const note of group.notes) {
         console.log(`[${input.label}] seed start: ${note.id}`);
-        const result = await withModelRetry(`[${input.label}] seed ${note.id}`, () => ingestNote(input.baseUrl, input.elderId, note.transcript));
-        assert(result.events.length > 0 || result.reminderCandidates.length > 0, `[${input.label}] seed ${note.id} produced no records`);
+        const result = await withModelRetry(
+          `[${input.label}] seed ${note.id}`,
+          () => ingestNote(input.baseUrl, input.elderId, note.transcript),
+          () => {
+            retryMetrics.modelRetryCount += 1;
+          },
+        );
+        if (result.events.length === 0 && result.reminderCandidates.length === 0) {
+          if (note.allowNoRecords) {
+            seedMetrics.allowedNoRecordCount += 1;
+            seedMetrics.allowedNoRecordSeedIds.push(note.id);
+          } else {
+            throw new Error(`[${input.label}] seed ${note.id} produced no records`);
+          }
+        }
         if (input.requireGraphitiWrites) {
           assert(result.temporalMemory?.status === "queued" || result.temporalMemory?.status === "not_needed", `[${input.label}] seed ${note.id} returned invalid temporal memory status`);
         }
@@ -303,8 +398,8 @@ async function seedNotesByProfile(
   }));
 }
 
-function groupSeedNotes(): Array<{ profile: string; notes: typeof fixture.seedNotes }> {
-  const groups = new Map<string, typeof fixture.seedNotes>();
+function groupSeedNotes(): Array<{ profile: string; notes: SeedNote[] }> {
+  const groups = new Map<string, SeedNote[]>();
   for (const note of fixture.seedNotes) {
     const profile = note.profile ?? "default";
     const group = groups.get(profile) ?? [];
@@ -420,7 +515,11 @@ async function drainGraphitiJobs(label: string, elderId: string): Promise<void> 
   }
 }
 
-async function withModelRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+async function withModelRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  onRetry?: (error: unknown, attempt: number) => void,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= modelRetries; attempt += 1) {
     try {
@@ -428,6 +527,7 @@ async function withModelRetry<T>(label: string, fn: () => Promise<T>): Promise<T
     } catch (error) {
       lastError = error;
       if (attempt >= modelRetries || !isRetryableModelError(error)) break;
+      onRetry?.(error, attempt + 1);
       const delayMs = 1000 * (attempt + 1);
       console.warn(`${label} model retry ${attempt + 1}/${modelRetries}: ${error instanceof Error ? error.message : String(error)}`);
       await delay(delayMs);
@@ -506,7 +606,7 @@ function assertHints(
   label: string,
   answerText: string,
   evidenceText: string,
-  queryCase: z.infer<typeof GraphitiComparisonFixtureSchema>["queries"][number],
+  queryCase: QueryCase,
 ) {
   for (const hint of queryCase.expectedAnswerHints) {
     assert(textIncludes(answerText, hint), `[${label}] ${queryId} answer missing hint: ${hint}`);
@@ -605,6 +705,10 @@ function summarizeRun(run: Awaited<ReturnType<typeof runApiScenario>>) {
     familyTasks: run.familyTasks,
     rawGraphitiQueryCount: run.rawGraphitiQueryCount,
     temporalEvidenceQueryCount: run.temporalEvidenceQueryCount,
+    sourceMix: summarizeSourceMix(run.queryReports),
+    allowedNoRecordSeedCount: run.seedMetrics.allowedNoRecordCount,
+    allowedNoRecordSeedIds: run.seedMetrics.allowedNoRecordSeedIds,
+    modelRetryCount: run.modelRetryCount,
     queryDurationP95Ms: p95(run.queryReports.map((report) => report.durationMs)),
   };
 }
@@ -624,8 +728,13 @@ function summarizeProfiles(
     return {
       profile,
       queries: enabledReports.length,
+      rawRequiredQueries: enabledReports.filter((report) => report.graphitiRequirement === "raw_required").length,
+      temporalAllowedQueries: enabledReports.filter((report) => report.graphitiRequirement === "temporal_allowed").length,
+      optionalQueries: enabledReports.filter((report) => report.graphitiRequirement === "optional").length,
       enabledTemporalEvidenceQueries: enabledReports.filter((report) => report.sources.includes("graphiti") || report.sources.includes("graphiti_provenance")).length,
       disabledTemporalEvidenceQueries: disabledReports.filter((report) => report.sources.includes("graphiti") || report.sources.includes("graphiti_provenance")).length,
+      enabledSourceMix: summarizeSourceMix(enabledReports),
+      disabledSourceMix: summarizeSourceMix(disabledReports),
       enabledQueryP95Ms: p95(enabledReports.map((report) => report.durationMs)),
       disabledQueryP95Ms: p95(disabledReports.map((report) => report.durationMs)),
     };
@@ -641,6 +750,120 @@ function assertFamilyAssistPrivacy(label: string, tasks: FamilyAssistTask[]): vo
     }
     assert(!forbiddenText.test(JSON.stringify(task)), `[${label}] family assist task leaked raw/debug/evidence marker`);
   }
+}
+
+function assertGraphitiRequirement(
+  label: string,
+  queryCase: QueryCase,
+  sources: EvidenceSource[],
+  retrieval: Record<string, number> | undefined,
+): void {
+  const hasTemporalEvidence = sources.includes("graphiti") || sources.includes("graphiti_provenance");
+  if (queryCase.graphitiRequirement === "raw_required") {
+    assert(sources.includes("graphiti"), `[${label}] ${queryCase.id} expected raw Graphiti evidence, got sources=${sources.join(",") || "none"}`);
+    if (retrieval) {
+      assert((retrieval.graphitiRawAlignedCount ?? 0) > 0, `[${label}] ${queryCase.id} debug retrieval has no aligned raw Graphiti evidence`);
+      assert((retrieval.graphitiRawEvidenceCount ?? 0) > 0, `[${label}] ${queryCase.id} final evidence has no raw Graphiti evidence`);
+    }
+  }
+  if (queryCase.graphitiRequirement === "forbidden") {
+    assert(!hasTemporalEvidence, `[${label}] ${queryCase.id} returned temporal evidence despite graphitiRequirement=forbidden`);
+  }
+}
+
+function expectedEnabledEvidenceSources(queryCase: QueryCase): EvidenceSource[] {
+  if (queryCase.graphitiRequirement !== "raw_required") return [];
+  return queryCase.enabledExpectedEvidenceSources ?? ["graphiti"];
+}
+
+function assertEvidenceContracts(
+  label: string,
+  queryCase: QueryCase,
+  evidence: MemoryAnswer["retrievedEvidence"],
+  ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>,
+): void {
+  const expectedSeedIds = [
+    ...queryCase.expectedEvidenceSeedIds,
+    ...queryCase.expectedCurrentEvidenceSeedIds,
+    ...queryCase.expectedHistoricalEvidenceSeedIds,
+  ];
+  for (const seedId of expectedSeedIds) {
+    assert(
+      evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)) >= 0,
+      `[${label}] ${queryCase.id} missing expected evidence seed: ${seedId}`,
+    );
+  }
+  if (queryCase.expectedEvidenceAnySeedIds.length > 0) {
+    assert(
+      queryCase.expectedEvidenceAnySeedIds.some((seedId) => evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)) >= 0),
+      `[${label}] ${queryCase.id} missing any expected evidence seed: ${queryCase.expectedEvidenceAnySeedIds.join(",")}`,
+    );
+  }
+  for (const seedId of queryCase.forbiddenEvidenceSeedIds) {
+    assert(
+      evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)) < 0,
+      `[${label}] ${queryCase.id} included forbidden evidence seed: ${seedId}`,
+    );
+  }
+  if (queryCase.expectedCurrentEvidenceSeedIds.length > 0 && queryCase.expectedHistoricalEvidenceSeedIds.length > 0) {
+    const currentIndex = minEvidenceIndex(evidence, queryCase.expectedCurrentEvidenceSeedIds, ingests);
+    const historicalIndex = minEvidenceIndex(evidence, queryCase.expectedHistoricalEvidenceSeedIds, ingests);
+    assert(
+      currentIndex >= 0 && historicalIndex >= 0 && currentIndex < historicalIndex,
+      `[${label}] ${queryCase.id} expected current evidence before historical evidence; current=${currentIndex} historical=${historicalIndex}`,
+    );
+  }
+}
+
+function minEvidenceIndex(
+  evidence: MemoryAnswer["retrievedEvidence"],
+  seedIds: string[],
+  ingests: Map<string, Awaited<ReturnType<typeof ingestNote>>>,
+): number {
+  const indexes = seedIds
+    .map((seedId) => evidenceIndexForSeed(evidence, requiredIngest(ingests, seedId)))
+    .filter((index) => index >= 0);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function evidenceIndexForSeed(
+  evidence: MemoryAnswer["retrievedEvidence"],
+  ingest: Awaited<ReturnType<typeof ingestNote>>,
+): number {
+  const eventIds = new Set(ingest.events.map((event) => event.id));
+  return evidence.findIndex((item) => item.sourceId === ingest.sourceId || Boolean(item.eventId && eventIds.has(item.eventId)));
+}
+
+function profileKindFor(profile: string | undefined): string | undefined {
+  return fixture.profiles.find((item) => item.id === profile)?.profileKind;
+}
+
+function categorizeFailure(message: string): string {
+  if (/missing expected evidence seed|included forbidden evidence seed/i.test(message)) return "evidence_contract_missing";
+  if (/expected current evidence before historical/i.test(message)) return "bad_current_order";
+  if (/answer missing hint|answer missing any hint/i.test(message)) return "answer_hint_missing";
+  if (/evidence missing hint|evidence contained forbidden hint/i.test(message)) return "evidence_hint_mismatch";
+  if (/raw Graphiti|raw temporal|graphitiRaw/i.test(message)) return "missing_raw_graphiti";
+  if (/disabled|no-graphiti|while Graphiti is disabled/i.test(message)) return "disabled_leak";
+  if (/no Graphiti temporal|temporal evidence|Graphiti evidence/i.test(message)) return "missing_temporal_evidence";
+  if (/current evidence before historical|latest|current/i.test(message)) return "bad_current_order";
+  if (/provider_error|schema_validation_error|JSON completion|timed out|Request timed out/i.test(message)) return "provider_failure";
+  if (/produced no records|no evidence/i.test(message)) return "ordinary_unexpected_no_record";
+  return "assertion_failure";
+}
+
+function formatFailure(failure: QueryFailure): string {
+  return `[${failure.label}] ${failure.id} (${failure.category}): ${failure.message}`;
+}
+
+function summarizeSourceMix(reports: Array<{ sources: EvidenceSource[] }>) {
+  return {
+    postgres: reports.filter((report) => report.sources.includes("postgres")).length,
+    semantic: reports.filter((report) => report.sources.includes("semantic")).length,
+    rawGraphiti: reports.filter((report) => report.sources.includes("graphiti")).length,
+    graphitiProvenance: reports.filter((report) => report.sources.includes("graphiti_provenance")).length,
+    noEvidence: reports.filter((report) => report.sources.length === 0).length,
+  };
 }
 
 function p95(values: number[]): number {
@@ -667,7 +890,7 @@ function createSemanticJudge() {
     client ??= new OpenAI({ apiKey, baseURL: process.env.OPENAI_BASE_URL || undefined });
 
     const response = await client.chat.completions.create({
-      model: process.env.GRAPHITI_E2E_JUDGE_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+      model: process.env.GRAPHITI_E2E_JUDGE_MODEL ?? process.env.OPENAI_MODEL ?? "claude-sonnet-4-6",
       response_format: { type: "json_object" },
       messages: [
         {
@@ -686,8 +909,24 @@ function createSemanticJudge() {
 
     const content = response.choices[0]?.message.content;
     assert(content, `${input.queryId} semantic judge returned empty response`);
-    return SemanticJudgeResultSchema.parse(JSON.parse(content));
+    return SemanticJudgeResultSchema.parse(parseJsonContent(content));
   };
+}
+
+function parseJsonContent(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const jsonText = fenced?.[1]?.trim() ?? trimmed;
+  try {
+    return JSON.parse(jsonText) as unknown;
+  } catch (error) {
+    const objectStart = jsonText.indexOf("{");
+    const objectEnd = jsonText.lastIndexOf("}");
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      return JSON.parse(jsonText.slice(objectStart, objectEnd + 1)) as unknown;
+    }
+    throw error;
+  }
 }
 
 function assert(condition: unknown, message: string): asserts condition {

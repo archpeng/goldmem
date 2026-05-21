@@ -98,6 +98,164 @@ describe("ElderMemoryKernel context-links", () => {
     expect(harness.familyTasks.tasks.some((task) => task.type === "reminder_confirm")).toBe(true);
   });
 
+  it("repairs valid reminder updates that omit target reminder context links", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Confirmed a corrected appointment.",
+        events: [
+          buildEvent({
+            title: "牙科复查时间确认",
+            summary: "小敏确认牙科复查按周五上午十点。",
+            type: "appointment",
+            timeText: "未提到时间",
+            timeConfidence: 0.3,
+          }),
+        ],
+        reminderCandidates: [
+          {
+            title: "牙科复查时间确认",
+            description: "小敏确认牙科复查按周五上午十点。",
+            timeText: "未提到时间",
+            timeConfidence: 0.3,
+            relatedEventIndex: 0,
+            confirmationRequired: true,
+            suggestedConfirmers: [{ role: "family" }],
+            confidence: 0.8,
+            reason: "这条输入确认并更新已有牙科复查提醒。",
+          },
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "update_existing_reminder_candidate",
+            targetReminderId: "reminder-prior",
+            reminderCandidateIndex: 0,
+            reason: "这条输入确认并更新已有牙科复查提醒。",
+          }),
+        ],
+        contextLinks: [],
+      }),
+    );
+    harness.eventStore.events.push(memoryEvent({
+      id: "event-prior",
+      sourceId: "source-prior",
+      title: "牙科复查",
+      summary: "牙科复查改到周五上午十点。",
+      type: "appointment",
+      timeText: "周五上午十点",
+      eventTimeStart: "2026-05-15T10:00:00.000Z",
+    }));
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      recentEvents: [
+        {
+          eventId: "event-prior",
+          sourceId: "source-prior",
+          title: "牙科复查",
+          summary: "牙科复查改到周五上午十点。",
+          createdAt: now,
+        },
+      ],
+      openReminders: [
+        {
+          reminderId: "reminder-prior",
+          eventId: "event-prior",
+          title: "牙科复查",
+          reason: "待确认的牙科复查提醒。",
+          timeText: "周五上午十点",
+          remindAt: "2026-05-15T10:00:00.000Z",
+          timeConfidence: 0.9,
+          status: "pending_family_confirm",
+        },
+      ],
+    };
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "小敏确认牙科复查按周五上午十点。",
+    });
+
+    expect(result.reminderCandidates[0]).toMatchObject({
+      timeText: "周五上午十点",
+      remindAt: "2026-05-15T10:00:00.000Z",
+      timeConfidence: 0.9,
+      confirmationRequired: true,
+    });
+    expect(harness.contextLinkStore.links[0]).toMatchObject({
+      toEventId: "event-prior",
+      reminderId: "reminder-prior",
+      status: "needs_confirmation",
+    });
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_context_link_repaired")).toBe(true);
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_update_time_repaired")).toBe(true);
+  });
+
+  it("keeps reminder updates pending when the target reminder has no event or actionable time", async () => {
+    const harness = createHarness(
+      buildPlan({
+        summary: "Added reminder details without a time.",
+        events: [
+          buildEvent({
+            title: "牙科复查携带物品",
+            summary: "牙科复查要带医保卡和病历本。",
+            type: "appointment",
+            timeText: "未提到时间",
+            timeConfidence: 0.3,
+          }),
+        ],
+        reminderCandidates: [
+          {
+            title: "牙科复查携带物品",
+            description: "牙科复查要带医保卡和病历本。",
+            timeText: "未提到时间",
+            timeConfidence: 0.3,
+            relatedEventIndex: 0,
+            confirmationRequired: true,
+            suggestedConfirmers: [{ role: "family" }],
+            confidence: 0.8,
+            reason: "这是对已有提醒的补充，但没有新的具体时间。",
+          },
+        ],
+        eventActionDecisions: [
+          buildEventActionDecision({
+            eventIndex: 0,
+            action: "update_existing_reminder_candidate",
+            targetReminderId: "reminder-without-event",
+            reminderCandidateIndex: 0,
+            reason: "这条输入补充已有提醒。",
+          }),
+        ],
+      }),
+    );
+    harness.personalContextStore.context = {
+      ...emptyContext(),
+      openReminders: [
+        {
+          reminderId: "reminder-without-event",
+          title: "牙科复查",
+          reason: "已有提醒缺少关联事件。",
+          timeText: "未提到时间",
+          timeConfidence: 0.3,
+          status: "pending_family_confirm",
+        },
+      ],
+    };
+
+    const result = await harness.kernel.ingestText({
+      elderId: "elder-1",
+      transcript: "牙科复查要带医保卡和病历本。",
+    });
+
+    expect(result.reminderCandidates[0]).toMatchObject({
+      status: "pending_family_confirm",
+      confirmationRequired: true,
+      remindAt: undefined,
+      timeText: "未提到时间",
+    });
+    expect(harness.contextLinkStore.links).toHaveLength(0);
+    expect(harness.audit.records.some((record) => record.type === "memory_plan_completeness_failed")).toBe(false);
+  });
+
   it("persists medium-confidence context links as confirmation-required relationships", async () => {
     const harness = createHarness(
       buildPlan({

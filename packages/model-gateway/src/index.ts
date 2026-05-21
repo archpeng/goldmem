@@ -320,7 +320,7 @@ export class OpenAIModelGateway implements ModelGateway {
         throw new ModelGatewayError("provider_error", "OpenAI returned an empty response");
       }
 
-      return JSON.parse(content) as unknown;
+      return parseProviderJsonContent(content);
     } catch (error) {
       if (error instanceof ModelGatewayError) throw error;
       const details = providerRecorded
@@ -369,6 +369,23 @@ export class OpenAIModelGateway implements ModelGateway {
 
   private timeoutMs(operation?: ModelGatewayOperation): number {
     return (operation ? this.options.operationTimeouts?.[operation] : undefined) ?? this.options.timeoutMs ?? 15_000;
+  }
+}
+
+function parseProviderJsonContent(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const jsonText = fenced?.[1]?.trim() ?? trimmed;
+
+  try {
+    return JSON.parse(jsonText) as unknown;
+  } catch (error) {
+    const objectStart = jsonText.indexOf("{");
+    const objectEnd = jsonText.lastIndexOf("}");
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      return JSON.parse(jsonText.slice(objectStart, objectEnd + 1)) as unknown;
+    }
+    throw error;
   }
 }
 

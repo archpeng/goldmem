@@ -624,6 +624,9 @@ describe("ElderMemoryKernel graphiti", () => {
     expect(harness.audit.records.at(-1)?.payload.retrieval).toMatchObject({
       graphitiCount: 1,
       graphitiAlignedCount: 0,
+      graphitiRawCount: 1,
+      graphitiRawUnalignedCount: 1,
+      graphitiRawEvidenceCount: 0,
       evidenceCount: 0,
     });
   });

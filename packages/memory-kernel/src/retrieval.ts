@@ -58,7 +58,7 @@ export function mergeEvidence(
       {
         sourceId: result.sourceId,
         eventId: result.eventId,
-        createdAt: result.validFrom ?? now,
+        createdAt: temporalEvidenceCreatedAt(result, event, now),
         summary: result.fact,
         score: result.score,
         canPlayAudio: true,
@@ -72,6 +72,8 @@ export function mergeEvidence(
 
   return mergeRetrievedEvidence([...eventEvidence, ...semanticEvidence, ...temporalEvidence], {
     preserveRawGraphiti: shouldSearchTemporalMemory(query, parsedQuery),
+    prioritizeCurrentEvidence: shouldPrioritizeCurrentEvidence(query, parsedQuery),
+    preserveConfirmationDiversity: shouldPreserveConfirmationDiversity(parsedQuery),
   });
 }
 
@@ -112,7 +114,11 @@ function parseRiskLevel(value: unknown): MemoryEvent["riskLevel"] | undefined {
 
 export function mergeRetrievedEvidence(
   evidence: RetrievedEvidence[],
-  options: { preserveRawGraphiti?: boolean } = {},
+  options: {
+    preserveRawGraphiti?: boolean;
+    prioritizeCurrentEvidence?: boolean;
+    preserveConfirmationDiversity?: boolean;
+  } = {},
 ): RetrievedEvidence[] {
   const byKey = new Map<string, RetrievedEvidence>();
   for (const item of evidence) {
@@ -123,8 +129,12 @@ export function mergeRetrievedEvidence(
     }
   }
 
-  const ranked = [...byKey.values()].sort((a, b) => b.score - a.score);
-  const selected = ranked.slice(0, 12);
+  const ranked = [...byKey.values()].sort((a, b) => compareRetrievedEvidence(a, b, options));
+  const selected = ensureConfirmationDiversity(
+    ranked,
+    ranked.slice(0, 12),
+    options,
+  );
   if (!options.preserveRawGraphiti || selected.some((item) => item.retrievalSource === "graphiti")) {
     return selected;
   }
@@ -135,7 +145,54 @@ export function mergeRetrievedEvidence(
 
   const replacementIndex = lowestPriorityReplacementIndex(selected);
   return selected.map((item, index) => index === replacementIndex ? rawGraphiti : item)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => compareRetrievedEvidence(a, b, options));
+}
+
+function compareRetrievedEvidence(
+  a: RetrievedEvidence,
+  b: RetrievedEvidence,
+  options: { prioritizeCurrentEvidence?: boolean },
+): number {
+  const scoreDelta = b.score - a.score;
+  if (!options.prioritizeCurrentEvidence || Math.abs(scoreDelta) > 0.15) {
+    return scoreDelta;
+  }
+
+  const recencyDelta = evidenceTimeMs(b) - evidenceTimeMs(a);
+  if (recencyDelta !== 0) return recencyDelta;
+  return scoreDelta;
+}
+
+function ensureConfirmationDiversity(
+  ranked: RetrievedEvidence[],
+  selected: RetrievedEvidence[],
+  options: { preserveConfirmationDiversity?: boolean },
+): RetrievedEvidence[] {
+  if (!options.preserveConfirmationDiversity || selected.length === 0) return selected;
+  return ensureBooleanFacetDiversity(
+    ranked,
+    selected,
+    (item) => item.requiresConfirmation,
+  );
+}
+
+function ensureBooleanFacetDiversity(
+  ranked: RetrievedEvidence[],
+  selected: RetrievedEvidence[],
+  valueFor: (item: RetrievedEvidence) => boolean | undefined,
+): RetrievedEvidence[] {
+  const selectedValues = new Set(selected.map(valueFor).filter((value): value is boolean => typeof value === "boolean"));
+  if (selectedValues.size !== 1) return selected;
+
+  const presentValue = [...selectedValues][0];
+  if (typeof presentValue !== "boolean") return selected;
+  const missingCandidate = ranked.find((item) => valueFor(item) === !presentValue);
+  if (!missingCandidate || selected.includes(missingCandidate)) return selected;
+  if (selected.length < 12) return [...selected, missingCandidate];
+
+  const replacementIndex = lowestPriorityReplacementIndex(selected);
+  if (replacementIndex < 0) return selected;
+  return selected.map((item, index) => index === replacementIndex ? missingCandidate : item);
 }
 
 function lowestPriorityReplacementIndex(evidence: RetrievedEvidence[]): number {
@@ -170,6 +227,34 @@ export function shouldSearchTemporalMemory(_query: string, parsedQuery: ParsedMe
     tag === "identity" ||
     tag === "privacy"
   ));
+}
+
+function shouldPrioritizeCurrentEvidence(_query: string, parsedQuery: ParsedMemoryQuery): boolean {
+  return parsedQuery.requiresTemporalEvidence || parsedQuery.relationQueryIntent !== "none";
+}
+
+function shouldPreserveConfirmationDiversity(parsedQuery: ParsedMemoryQuery): boolean {
+  return parsedQuery.intent === "check_reminder" || parsedQuery.safetyTags.includes("privacy");
+}
+
+function evidenceTimeMs(item: RetrievedEvidence): number {
+  const ms = Date.parse(item.createdAt);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function temporalEvidenceCreatedAt(
+  result: TemporalEvidence,
+  event: MemoryEvent | undefined,
+  now: string,
+): string {
+  return event?.createdAt
+    ?? stringMetadata(result.metadata?.eventCreatedAt)
+    ?? result.validFrom
+    ?? now;
+}
+
+function stringMetadata(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function scoreStructuredEvent(event: MemoryEvent, parsedQuery: ParsedMemoryQuery, query: string): number {

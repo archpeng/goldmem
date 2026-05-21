@@ -96,6 +96,7 @@ Recommendation:
 
 Follow-up runtime decision:
 
-- The checked-in default is `deepseek-v4-flash` for both `OPENAI_MODEL` and `GRAPHITI_MODEL`.
-- This is not the fastest overall model, but it was selected as a conservative speed improvement over `gpt-5.4-mini`: `deepseek-v4-flash` averaged 16.381s across the four GoldMem gateway operations with 4/4 success, while `gpt-5.4-mini` averaged 23.542s across successful runs with one JSON completion failure.
-- Embedding remains `text-embedding-3-small` and ASR remains `whisper-1`; `deepseek-v4-flash` is a chat/completion model, not an embedding or transcription model.
+- The checked-in default is now `claude-sonnet-4-6` for both `OPENAI_MODEL` and `GRAPHITI_MODEL`.
+- `claude-sonnet-4-6` is selected as the current Claude-family default after gateway-level validation showed stable JSON compatibility and competitive latency against the tested Neko Claude routes.
+- Embedding remains `text-embedding-3-small` and ASR remains `whisper-1`; `claude-sonnet-4-6` is a chat/completion model, not an embedding or transcription model.
+- 2026-05-15 validation: `claude-sonnet-4-6` completed the GoldMem gateway latency probe with `planElderTurn=2.374s`, `generateMemoryPlan=8.552s`, `parseMemoryQuery=3.025s`, and `generateMemoryAnswer=2.542s`. The Graphiti sidecar container also completed an in-container Neko chat completion using `MODEL_NAME=claude-sonnet-4-6`.

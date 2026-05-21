@@ -418,6 +418,44 @@ describe("OpenAIModelGateway operation timeouts", () => {
     expect(prompts[1]).toContain("Secretary Voice");
   });
 
+  it("accepts fenced JSON content from OpenAI-compatible providers", async () => {
+    const gateway = new OpenAIModelGateway({
+      apiKey: "test-key",
+      model: "test-model",
+      promptsDir: "../../prompts",
+    });
+    const client = gateway as unknown as {
+      client: {
+        chat: {
+          completions: {
+            create: () => Promise<unknown>;
+          };
+        };
+      };
+    };
+    client.client.chat.completions.create = async () => ({
+      choices: [{
+        message: {
+          content: [
+            "```json",
+            "{",
+            "  \"intent\": \"record\",",
+            "  \"confidence\": 0.97,",
+            "  \"recordText\": \"蓝色钥匙放在门口鞋柜上了。\",",
+            "  \"requiresIngestContextRecall\": false",
+            "}",
+            "```",
+          ].join("\n"),
+        },
+      }],
+    });
+
+    await expect(gateway.planElderTurn(turnInput())).resolves.toMatchObject({
+      intent: "record",
+      recordText: "蓝色钥匙放在门口鞋柜上了。",
+    });
+  });
+
   it("uses the MemoryPlan-specific timeout for JSON completion failures", async () => {
     const gateway = new OpenAIModelGateway({
       apiKey: "test-key",

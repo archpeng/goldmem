@@ -19,7 +19,8 @@ export async function enforceMemoryPlanCompleteness(input: {
   const problems: string[] = [];
   const decisionsByEvent = new Map<number, MemoryPlan["eventActionDecisions"][number]>();
   const referencedReminderIndexes = new Set<number>();
-  const openReminderIds = new Set((input.context.openReminders ?? []).map((reminder) => reminder.reminderId));
+  const openRemindersById = new Map((input.context.openReminders ?? []).map((reminder) => [reminder.reminderId, reminder]));
+  const openReminderIds = new Set(openRemindersById.keys());
 
   for (const decision of plan.eventActionDecisions) {
     if (decision.eventIndex >= plan.events.length) {
@@ -33,15 +34,35 @@ export async function enforceMemoryPlanCompleteness(input: {
     decisionsByEvent.set(decision.eventIndex, decision);
   }
 
-  const repairs = repairActionObligations(plan, decisionsByEvent, openReminderIds, input.now);
-  if (repairs.length > 0) {
+  const repairs = repairActionObligations(plan, decisionsByEvent, openRemindersById, input.now);
+  if (repairs.actionRepairs.length > 0) {
     await input.auditLog.record({
       type: "memory_plan_action_obligation_repaired",
       tenantId: plan.tenantId,
       elderId: plan.elderId,
       sourceId: plan.sourceId,
       traceId: input.traceId,
-      payload: { traceId: input.traceId, repairs },
+      payload: { traceId: input.traceId, repairs: repairs.actionRepairs },
+    });
+  }
+  if (repairs.contextLinkRepairs.length > 0) {
+    await input.auditLog.record({
+      type: "memory_plan_context_link_repaired",
+      tenantId: plan.tenantId,
+      elderId: plan.elderId,
+      sourceId: plan.sourceId,
+      traceId: input.traceId,
+      payload: { traceId: input.traceId, repairs: repairs.contextLinkRepairs },
+    });
+  }
+  if (repairs.updateTimeRepairs.length > 0) {
+    await input.auditLog.record({
+      type: "memory_plan_update_time_repaired",
+      tenantId: plan.tenantId,
+      elderId: plan.elderId,
+      sourceId: plan.sourceId,
+      traceId: input.traceId,
+      payload: { traceId: input.traceId, repairs: repairs.updateTimeRepairs },
     });
   }
 
@@ -59,7 +80,7 @@ export async function enforceMemoryPlanCompleteness(input: {
     }
 
     if (decision.action === "update_existing_reminder_candidate") {
-      validateUpdateDecision(plan, decision, eventIndex, referencedReminderIndexes, openReminderIds, problems);
+      validateUpdateDecision(plan, decision, eventIndex, referencedReminderIndexes, openRemindersById, problems);
       continue;
     }
 
@@ -118,24 +139,72 @@ type ActionObligationRepair = {
   originalAction?: MemoryPlan["eventActionDecisions"][number]["action"];
 };
 
+type ContextLinkRepair = {
+  obligation: "update_context_link_required";
+  eventIndex: number;
+  targetReminderId: string;
+  contextLinkIndex: number;
+  targetEventId: string;
+};
+
+type UpdateTimeRepair = {
+  obligation: "update_candidate_time_required";
+  eventIndex: number;
+  reminderCandidateIndex: number;
+  targetReminderId: string;
+  inherited: Array<"timeText" | "remindAt" | "timeConfidence">;
+};
+
+type CompletenessRepairs = {
+  actionRepairs: ActionObligationRepair[];
+  contextLinkRepairs: ContextLinkRepair[];
+  updateTimeRepairs: UpdateTimeRepair[];
+};
+
 function repairActionObligations(
   plan: MemoryPlan,
   decisionsByEvent: Map<number, MemoryPlan["eventActionDecisions"][number]>,
-  openReminderIds: Set<string>,
+  openRemindersById: Map<string, NonNullable<PersonalContext["openReminders"]>[number]>,
   now: string,
-): ActionObligationRepair[] {
-  const repairs: ActionObligationRepair[] = [];
+): CompletenessRepairs {
+  const actionRepairs: ActionObligationRepair[] = [];
+  const contextLinkRepairs: ContextLinkRepair[] = [];
+  const updateTimeRepairs: UpdateTimeRepair[] = [];
 
   for (let eventIndex = 0; eventIndex < plan.events.length; eventIndex += 1) {
     const event = plan.events[eventIndex];
     const decision = decisionsByEvent.get(eventIndex);
     if (!event) continue;
 
-    if (decision?.action === "update_existing_reminder_candidate" && decision.targetReminderId && openReminderIds.has(decision.targetReminderId)) {
+    const targetReminder = decision?.targetReminderId ? openRemindersById.get(decision.targetReminderId) : undefined;
+    if (decision?.action === "update_existing_reminder_candidate" && targetReminder) {
       if (!validReminderIndex(plan, decision.reminderCandidateIndex)) {
         const reminderCandidateIndex = appendReminderCandidate(plan, event, eventIndex, "这是对已有提醒的改期或补充，系统补充为待确认更新候选。");
         decision.reminderCandidateIndex = reminderCandidateIndex;
-        repairs.push({ obligation: "update_candidate_required", eventIndex, reminderCandidateIndex, originalAction: "update_existing_reminder_candidate" });
+        actionRepairs.push({ obligation: "update_candidate_required", eventIndex, reminderCandidateIndex, originalAction: "update_existing_reminder_candidate" });
+      }
+      const reminderCandidateIndex = decision.reminderCandidateIndex;
+      if (validReminderIndex(plan, reminderCandidateIndex)) {
+        const inherited = repairUpdateCandidateTime(plan.reminderCandidates[reminderCandidateIndex], targetReminder);
+        if (inherited.length > 0) {
+          updateTimeRepairs.push({
+            obligation: "update_candidate_time_required",
+            eventIndex,
+            reminderCandidateIndex,
+            targetReminderId: targetReminder.reminderId,
+            inherited,
+          });
+        }
+      }
+      const contextLinkIndex = repairUpdateContextLink(plan, decision, eventIndex, targetReminder, event);
+      if (contextLinkIndex !== undefined && targetReminder.eventId) {
+        contextLinkRepairs.push({
+          obligation: "update_context_link_required",
+          eventIndex,
+          targetReminderId: targetReminder.reminderId,
+          contextLinkIndex,
+          targetEventId: targetReminder.eventId,
+        });
       }
       continue;
     }
@@ -169,10 +238,10 @@ function repairActionObligations(
       plan.eventActionDecisions.push(newDecision);
       decisionsByEvent.set(eventIndex, newDecision);
     }
-    repairs.push({ obligation: "future_reminder_required", eventIndex, reminderCandidateIndex, originalAction });
+    actionRepairs.push({ obligation: "future_reminder_required", eventIndex, reminderCandidateIndex, originalAction });
   }
 
-  return repairs;
+  return { actionRepairs, contextLinkRepairs, updateTimeRepairs };
 }
 
 function requiresFutureReminder(event: MemoryPlan["events"][number], now: string): boolean {
@@ -212,6 +281,68 @@ function appendReminderCandidate(
   return plan.reminderCandidates.length - 1;
 }
 
+function repairUpdateCandidateTime(
+  reminder: MemoryPlan["reminderCandidates"][number],
+  targetReminder: NonNullable<PersonalContext["openReminders"]>[number],
+): Array<"timeText" | "remindAt" | "timeConfidence"> {
+  const inherited: Array<"timeText" | "remindAt" | "timeConfidence"> = [];
+  if (!hasActionableTimeText(reminder.timeText) && hasActionableTimeText(targetReminder.timeText)) {
+    reminder.timeText = targetReminder.timeText;
+    inherited.push("timeText");
+  }
+  if (!reminder.remindAt && targetReminder.remindAt) {
+    reminder.remindAt = targetReminder.remindAt;
+    inherited.push("remindAt");
+  }
+  if ((reminder.timeConfidence === undefined || reminder.timeConfidence < 0.7) && targetReminder.timeConfidence !== undefined) {
+    reminder.timeConfidence = targetReminder.timeConfidence;
+    inherited.push("timeConfidence");
+  }
+  return inherited;
+}
+
+function repairUpdateContextLink(
+  plan: MemoryPlan,
+  decision: MemoryPlan["eventActionDecisions"][number],
+  eventIndex: number,
+  targetReminder: NonNullable<PersonalContext["openReminders"]>[number],
+  event: MemoryPlan["events"][number],
+): number | undefined {
+  if (!targetReminder.eventId) return undefined;
+  const linked = plan.contextLinks.some(
+    (link) =>
+      link.fromEventIndex === eventIndex &&
+      link.reminderId === targetReminder.reminderId,
+  );
+  if (linked) return undefined;
+
+  const link: MemoryPlan["contextLinks"][number] = {
+    fromEventIndex: eventIndex,
+    toEventId: targetReminder.eventId,
+    reminderId: targetReminder.reminderId,
+    type: updateLinkType(plan, decision, event),
+    confidence: Math.min(0.95, Math.max(0.5, decision.confidence)),
+    status: "needs_confirmation",
+    reason: "更新已有提醒需要保留到目标提醒的待确认上下文关系，系统根据有效 targetReminderId 自动补齐。",
+    evidence: decision.evidence.length > 0 ? decision.evidence : event.evidence,
+  };
+  plan.contextLinks.push(link);
+  return plan.contextLinks.length - 1;
+}
+
+function updateLinkType(
+  plan: MemoryPlan,
+  decision: MemoryPlan["eventActionDecisions"][number],
+  event: MemoryPlan["events"][number],
+): MemoryPlan["contextLinks"][number]["type"] {
+  const reminder = validReminderIndex(plan, decision.reminderCandidateIndex)
+    ? plan.reminderCandidates[decision.reminderCandidateIndex]
+    : undefined;
+  return hasActionableTimeText(reminder?.timeText) || Boolean(reminder?.remindAt) || hasActionableTimeText(event.timeText) || Boolean(event.eventTimeStart)
+    ? "fills_missing_time"
+    : "possibly_related";
+}
+
 function validateReminderDecision(
   plan: MemoryPlan,
   decision: MemoryPlan["eventActionDecisions"][number],
@@ -239,7 +370,12 @@ function validateReminderDecision(
   }
   reminder.relatedEventIndex = eventIndex;
 
-  validateReminderTime(reminder, reminderIndex, problems);
+  const updateWithoutActionableTime = decision.action === "update_existing_reminder_candidate" &&
+    !hasActionableTimeText(reminder.timeText) &&
+    !reminder.remindAt;
+  if (!updateWithoutActionableTime) {
+    validateReminderTime(reminder, reminderIndex, problems);
+  }
 
   if (decision.action === "update_existing_reminder_candidate") {
     if (!decision.targetReminderId || !openReminderIds.has(decision.targetReminderId)) {
@@ -266,25 +402,28 @@ function validateUpdateDecision(
   decision: MemoryPlan["eventActionDecisions"][number],
   eventIndex: number,
   referencedReminderIndexes: Set<number>,
-  openReminderIds: Set<string>,
+  openRemindersById: Map<string, NonNullable<PersonalContext["openReminders"]>[number]>,
   problems: string[],
 ): void {
-  if (!decision.targetReminderId || !openReminderIds.has(decision.targetReminderId)) {
+  const targetReminder = decision.targetReminderId ? openRemindersById.get(decision.targetReminderId) : undefined;
+  if (!decision.targetReminderId || !targetReminder) {
     problems.push(`update action targetReminderId not found in open reminders at eventIndex: ${eventIndex}`);
     return;
   }
 
-  const linked = plan.contextLinks.some(
-    (link) =>
-      link.fromEventIndex === eventIndex &&
-      link.reminderId === decision.targetReminderId,
-  );
-  if (!linked) {
-    problems.push(`update action missing context link to target reminder at eventIndex: ${eventIndex}`);
+  if (targetReminder.eventId) {
+    const linked = plan.contextLinks.some(
+      (link) =>
+        link.fromEventIndex === eventIndex &&
+        link.reminderId === decision.targetReminderId,
+    );
+    if (!linked) {
+      problems.push(`update action missing context link to target reminder at eventIndex: ${eventIndex}`);
+    }
   }
 
   if (decision.reminderCandidateIndex !== undefined) {
-    validateReminderDecision(plan, decision, eventIndex, referencedReminderIndexes, openReminderIds, problems);
+    validateReminderDecision(plan, decision, eventIndex, referencedReminderIndexes, new Set(openRemindersById.keys()), problems);
   }
 }
 
@@ -324,6 +463,10 @@ function hasModelTimeText(value: string | undefined): value is string {
 
 function isNoTimeText(value: string | undefined): boolean {
   return value?.trim() === "未提到时间";
+}
+
+function hasActionableTimeText(value: string | undefined): value is string {
+  return hasModelTimeText(value) && !isNoTimeText(value);
 }
 
 function clonePlan(plan: MemoryPlan): MemoryPlan {
